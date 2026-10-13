@@ -9,7 +9,7 @@ export interface CustomerProps {
     name: string;
     email: Email;
     tel: Telephone;
-    version?: number;
+    version?: number | undefined;
 }
 
 export class Customer extends AggregateRoot<CustomerId> {
