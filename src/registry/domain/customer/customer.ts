@@ -1,4 +1,4 @@
-import { AggregateRoot } from '../../shared/domain/aggregate-root.js';
+import { AggregateRoot } from '../../../shared/domain/aggregate-root.js';
 import type { CustomerId } from './customer-id.js';
 import { CustomerRegistered } from './events/customer-registered.js';
 import type { Email } from './value-objects/email.js';
@@ -9,7 +9,7 @@ export interface CustomerProps {
     name: string;
     email: Email;
     tel: Telephone;
-    version?: number;
+    version?: number | undefined;
 }
 
 export class Customer extends AggregateRoot<CustomerId> {

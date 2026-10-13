@@ -1,16 +1,16 @@
-import { AggregateRoot } from '../../shared/domain/aggregate-root.js';
+import { AggregateRoot } from '../../../shared/domain/aggregate-root.js';
 import { VehicleId } from './vehicle-id.js';
 import { VehicleRegistered } from './events/vehicle-registered.js';
 import type { Plate } from './value-objects/plate.js';
 
 export interface VehicleProps {
-    id?: VehicleId | string;
+    id?: VehicleId | string | undefined;
     model: string;
     year: number;
     brand: string;
     color: string;
     plate: Plate;
-    version?: number;
+    version?: number | undefined;
 }
 
 export class Vehicle extends AggregateRoot<VehicleId> {

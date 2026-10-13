@@ -1,6 +1,6 @@
 // document.vo.ts
 
-import type { Identifier } from '../../../shared/domain/entity-id.js';
+import type { Identifier } from '../../../../shared/domain/entity-id.js';
 import { InvalidDocumentException } from '../exceptions/InvalidDocumentException.js';
 
 export type DocumentType = 'CPF' | 'CNPJ';
