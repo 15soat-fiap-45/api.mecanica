@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { VehicleRepository } from '../../domain/vehicle/vehicle.repository.js';
 import type { Vehicle } from '../../domain/vehicle/vehicle.js';
 import { InvalidPlateException } from '../../domain/vehicle/value-objects/plate.js';
-import type { EventBus } from '../../shared/application/event-bus.js';
+import type { EventBus } from '../../../shared/application/event-bus.js';
 import {
     RegisterVehicle,
     VehicleAlreadyExistsError,

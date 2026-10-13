@@ -1,9 +1,9 @@
 import type { VehicleRepository } from '../../domain/vehicle/vehicle.repository.js';
 import { Vehicle } from '../../domain/vehicle/vehicle.js';
 import { Plate } from '../../domain/vehicle/value-objects/plate.js';
-import type { EventBus } from '../../shared/application/event-bus.js';
-import type { UseCase } from '../../shared/application/use-case.js';
-import { ApplicationException } from '../shared/application-exception.js';
+import type { EventBus } from '../../../shared/application/event-bus.js';
+import type { UseCase } from '../../../shared/application/use-case.js';
+import { ApplicationException } from '../../../shared/application/application-exception.js';
 
 export class VehicleAlreadyExistsError extends ApplicationException {
     constructor(message = 'Vehicle with this plate already exists.') {

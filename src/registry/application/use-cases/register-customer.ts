@@ -3,9 +3,9 @@ import { Customer } from '../../domain/customer/customer.js';
 import { CpfCnpj } from '../../domain/customer/value-objects/cpf-cnpj.js';
 import { Email } from '../../domain/customer/value-objects/email.js';
 import { Telephone } from '../../domain/customer/value-objects/telephone.js';
-import type { EventBus } from '../../shared/application/event-bus.js';
-import type { UseCase } from '../../shared/application/use-case.js';
-import { ApplicationException } from '../shared/application-exception.js';
+import type { EventBus } from '../../../shared/application/event-bus.js';
+import type { UseCase } from '../../../shared/application/use-case.js';
+import { ApplicationException } from '../../../shared/application/application-exception.js';
 
 export class CustomerAlreadyExistsError extends ApplicationException {
     constructor() {

@@ -1,4 +1,4 @@
-import { AggregateRoot } from '../../shared/domain/aggregate-root.js';
+import { AggregateRoot } from '../../../shared/domain/aggregate-root.js';
 import { VehicleId } from './vehicle-id.js';
 import { VehicleRegistered } from './events/vehicle-registered.js';
 import type { Plate } from './value-objects/plate.js';

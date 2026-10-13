@@ -1,5 +1,5 @@
-import { DomainException } from '../../../shared/domain/domain-exception.js';
-import type { Identifier } from '../../../shared/domain/entity-id.js';
+import { DomainException } from '../../../../shared/domain/domain-exception.js';
+import type { Identifier } from '../../../../shared/domain/entity-id.js';
 
 export class InvalidPlateException extends DomainException {
     constructor(message: string) {

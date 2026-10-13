@@ -1,4 +1,4 @@
-import { ApplicationException } from '../../../shared/application/application-exception.js';
+import { ApplicationException } from '../../../../shared/application/application-exception.js';
 
 export class CustomerAlreadyExistsError extends ApplicationException {
     constructor() {

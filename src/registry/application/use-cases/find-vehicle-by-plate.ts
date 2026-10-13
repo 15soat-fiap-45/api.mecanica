@@ -1,7 +1,7 @@
 import type { VehicleRepository } from '../../domain/vehicle/vehicle.repository.js';
 import { Plate } from '../../domain/vehicle/value-objects/plate.js';
-import type { UseCase } from '../../shared/application/use-case.js';
-import { ApplicationException } from '../shared/application-exception.js';
+import type { UseCase } from '../../../shared/application/use-case.js';
+import { ApplicationException } from '../../../shared/application/application-exception.js';
 
 export class VehicleNotFoundError extends ApplicationException {
     constructor() {

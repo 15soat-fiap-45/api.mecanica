@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { CustomerRepository } from '../../domain/customer/customer.repository.js';
 import type { Customer } from '../../domain/customer/customer.js';
-import type { EventBus } from '../../shared/application/event-bus.js';
+import type { EventBus } from '../../../shared/application/event-bus.js';
 import {
     CustomerAlreadyExistsError,
     RegisterCustomer,

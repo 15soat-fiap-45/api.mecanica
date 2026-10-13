@@ -1,4 +1,4 @@
-import { EntityId } from '../../shared/domain/entity-id.js';
+import { EntityId } from '../../../shared/domain/entity-id.js';
 
 export class VehicleId extends EntityId {
     constructor(value?: string) {

@@ -1,7 +1,7 @@
 import type { CustomerRepository } from '../../domain/customer/customer.repository.js';
 import { CpfCnpj } from '../../domain/customer/value-objects/cpf-cnpj.js';
-import type { UseCase } from '../../shared/application/use-case.js';
-import { ApplicationException } from '../shared/application-exception.js';
+import type { UseCase } from '../../../shared/application/use-case.js';
+import { ApplicationException } from '../../../shared/application/application-exception.js';
 
 export class CustomerNotFoundError extends ApplicationException {
     constructor() {

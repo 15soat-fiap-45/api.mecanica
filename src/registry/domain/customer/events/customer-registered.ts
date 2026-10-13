@@ -1,4 +1,4 @@
-import { BaseDomainEvent } from '../../../shared/domain/domain-event.js';
+import { BaseDomainEvent } from '../../../../shared/domain/domain-event.js';
 
 export interface CustomerRegisteredProps {
     aggregateId: string;
