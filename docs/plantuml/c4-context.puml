@@ -1,0 +1,41 @@
+@startuml C4 Context - API Mecânica
+!define AWSPUML https://raw.githubusercontent.com/awslabs/aws-icons-for-plantuml/v14.0/dist
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Context.puml
+
+' Customização de cores
+!define PRIMARY_COLOR #8B1538
+!define SECONDARY_COLOR #F5A623
+!define EXTERNAL_COLOR #707070
+
+' Definir o skin
+SHOW_PERSON_OUTLINE()
+
+Person(cliente, "👤 Cliente", "Fornecedor do veículo\nConsulta status e realiza pagamentos")
+Person(recepcionista, "💼 Recepcionista", "Operador do sistema\nRegistra clientes e agenda serviços")
+Person(mecanico, "🔧 Mecânico", "Executor dos serviços\nExecuta trabalhos e registra progresso")
+Person(gerente, "👨‍💼 Gerente", "Gestor/Administrator\nVisualiza relatórios e controla operações")
+
+System(api, "🌐 API Mecânica", "Node.js / Express\nGerencia clientes, veículos, serviços\ne ordens de trabalho")
+
+System_Ext(db, "🗄️ PostgreSQL", "Database\nArmazena dados principais\n(clientes, veículos, serviços, transações)")
+System_Ext(email, "📧 Email Service", "SMTP Provider\nSendGrid / AWS SES\nEnvia notificações")
+System_Ext(payment, "💳 Payment Gateway", "Stripe / PayPal\nProcessa pagamentos online\nIntegração segura")
+System_Ext(sms, "📱 SMS Service", "Twilio / AWS SNS\nEnvia alertas e avisos\npara cliente")
+
+' Relacionamentos
+Rel(cliente, api, "HTTP/REST", "Consulta status\nRealiza pagamentos")
+Rel(recepcionista, api, "HTTP/REST + Web UI", "Registra clientes\nAgenda serviços")
+Rel(mecanico, api, "HTTP/REST + Mobile", "Executa serviços\nRegistra progresso")
+Rel(gerente, api, "HTTP/REST + Dashboard", "Visualiza relatórios\nControla operações")
+
+Rel(api, db, "PostgreSQL Driver", "Lê e escreve dados")
+Rel(api, email, "SMTP", "Envia notificações")
+Rel(api, payment, "HTTPS/REST", "Processa pagamentos")
+Rel(api, sms, "SMS API", "Envia alertas")
+
+Rel_Back(email, cliente, "Email", "Notificações de status")
+Rel_Back(sms, cliente, "SMS", "Alertas e lembretes")
+
+' Estilo
+SHOW_LEGEND()
+@enduml

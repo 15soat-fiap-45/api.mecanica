@@ -1,0 +1,107 @@
+@startuml Fluxo: Criar Ordem de Serviço
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Sequence.puml
+
+actor Rec as "👤 Recepcionista"
+participant API as "API"
+participant Service as "ServiceOrderService"
+participant ClientRepo as "ClientRepository"
+participant OrderRepo as "ServiceOrderRepository"
+participant DB as "🗄️ PostgreSQL"
+participant Cache as "💾 Redis"
+participant Email as "📧 Email"
+
+== 1️⃣ Recepcionista Cria Ordem ==
+
+Rec ->> API: POST /service-orders\n{clientId, vehicle, serviceType,\ndescription, scheduledDate}
+activate API
+
+== 2️⃣ Validação Inicial ==
+
+API ->> Service: createServiceOrder(data)
+activate Service
+
+Service ->> Service: validate(data)\n✓ clientId exists\n✓ serviceType valid\n✓ date not in past
+note right of Service: Validações de entrada
+
+== 3️⃣ Verifica Cliente ==
+
+Service ->> ClientRepo: findById(clientId)
+activate ClientRepo
+
+ClientRepo ->> DB: SELECT * FROM clients\nWHERE id = $1
+activate DB
+DB -->> ClientRepo: Client{...}
+deactivate DB
+
+ClientRepo -->> Service: Client{status: ACTIVE}
+deactivate ClientRepo
+
+note right of Service: Cliente existe e está ATIVO ✓
+
+== 4️⃣ Estima Preço ==
+
+Service ->> Service: estimatePrice(serviceType)\nBusca tabela_precos\nBase: R$ 450,00
+note right of Service: Cálculo baseado\nem tipo de serviço
+
+== 5️⃣ Cria Ordem no BD ==
+
+Service ->> OrderRepo: create(orderData)
+activate OrderRepo
+
+OrderRepo ->> DB: INSERT INTO service_orders\n(client_id, vehicle_plate, service_type,\nstatus, estimated_price, scheduled_date,\ncreated_by, created_at)\nVALUES (...)
+activate DB
+DB -->> OrderRepo: ✓ order_id: 789
+deactivate DB
+
+note right of OrderRepo: Status inicial: PENDING
+
+== 6️⃣ Invalida Cache ==
+
+OrderRepo ->> Cache: invalidate('orders:all')
+activate Cache
+OrderRepo ->> Cache: invalidate('client:123:orders')
+Cache -->> OrderRepo: OK
+deactivate Cache
+
+OrderRepo -->> Service: ServiceOrder{id: 789, ...}
+deactivate OrderRepo
+
+== 7️⃣ Email de Confirmação ==
+
+Service ->> Email: send(client.email,\n'order-created')\nSubject: "Ordem #789 Criada"
+activate Email
+
+Email -->> Service: ✓ queued
+deactivate Email
+
+note right of Email: Template com:\n- Número da ordem\n- Tipo de serviço\n- Data agendada\n- Preço estimado
+
+== 8️⃣ Publica Evento ==
+
+Service ->> Service: publishEvent('ORDER_CREATED')\n{orderId: 789, clientId: 123}
+note right of Service: Listeners podem reagir\n(ex: atualizar dashboard)
+
+== 9️⃣ Resposta Final ==
+
+Service -->> API: ServiceOrder{id: 789,\nstatus: PENDING, ...}
+deactivate Service
+
+API -->> Rec: 201 Created\n{order data}
+deactivate API
+
+Rec -->> Rec: ✓ Ordem #789 criada\nEmail enviado
+
+note over Email: 📧 Email envia em background\nDashboard atualiza em tempo real\n(WebSocket)
+
+== Fluxo de Erro (Cliente suspenso) ==
+
+Note over Service: ❌ Se cliente.status = SUSPENDED:
+
+Service -->> API: Error 422\n"Cliente suspenso não pode\nagendar serviços"
+API -->> Rec: 422 Unprocessable Entity
+
+== Performance Esperada ==
+
+Note over Rec: ⏱️ Timings\nValidação: ~50ms\nCliente lookup (cache): ~20ms\nEstimar preço: ~30ms\nINSERT ordem: ~100ms\nInvalidar cache: ~30ms\nEmail enqueue: ~10ms\n━━━━━━━━━━━━━━\nTotal: ~240ms
+
+@enduml

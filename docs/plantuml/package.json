@@ -1,0 +1,28 @@
+{
+  "name": "@api-mecanica/plantuml-diagrams",
+  "version": "1.0.0",
+  "description": "PlantUML diagrams for API Mecânica architecture documentation",
+  "scripts": {
+    "export:png": "plantuml -tpng './**/*.puml' -o ./generated",
+    "export:svg": "plantuml -tsvg './**/*.puml' -o ./generated",
+    "export:all": "npm run export:png && npm run export:svg",
+    "export:watch": "watch 'npm run export:all' .",
+    "view": "code README.md && echo 'Open VSCode and press Alt+D on any .puml file for preview'",
+    "clean": "rm -rf ./generated && mkdir ./generated && echo '✅ Limpeza concluída'"
+  },
+  "dependencies": {
+    "@planttext/plantuml-cli": "^1.5.0"
+  },
+  "devDependencies": {
+    "watch": "^1.1.0"
+  },
+  "keywords": [
+    "plantuml",
+    "architecture",
+    "c4-model",
+    "diagrams",
+    "documentation"
+  ],
+  "author": "API Mecânica Team",
+  "license": "MIT"
+}

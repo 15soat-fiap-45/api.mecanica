@@ -1,0 +1,188 @@
+@startuml Modelo E-R - Banco de Dados
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Deployment.puml
+
+entity "clients" as clients {
+    *id: UUID <<pk>>
+    --
+    name: VARCHAR(100)
+    email: VARCHAR(100) <<unique>>
+    cpf: VARCHAR(14) <<unique>>
+    phone: VARCHAR(20)
+    password_hash: VARCHAR(255)
+    status: ENUM (CREATED, ACTIVE, SUSPENDED, DELETED)
+    created_at: TIMESTAMP
+    updated_at: TIMESTAMP
+}
+
+entity "vehicles" as vehicles {
+    *id: UUID <<pk>>
+    --
+    client_id: UUID <<fk>>
+    plate: VARCHAR(10) <<unique>>
+    model: VARCHAR(100)
+    year: INTEGER
+    brand: VARCHAR(50)
+    color: VARCHAR(50)
+    mileage: INTEGER
+    created_at: TIMESTAMP
+}
+
+entity "service_orders" as orders {
+    *id: UUID <<pk>>
+    --
+    client_id: UUID <<fk>>
+    vehicle_id: UUID <<fk>>
+    service_type: ENUM
+    description: TEXT
+    status: ENUM (PENDING, SCHEDULED, IN_PROGRESS, PAUSED, COMPLETED, AWAITING_PAYMENT, PAID, DELIVERED, CANCELLED)
+    priority: ENUM (LOW, NORMAL, HIGH, URGENT)
+    estimated_price: DECIMAL(10,2)
+    actual_price: DECIMAL(10,2)
+    scheduled_date: TIMESTAMP
+    started_at: TIMESTAMP
+    completed_at: TIMESTAMP
+    created_by: UUID <<fk>>
+    created_at: TIMESTAMP
+    updated_at: TIMESTAMP
+}
+
+entity "service_items" as service_items {
+    *id: UUID <<pk>>
+    --
+    service_order_id: UUID <<fk>>
+    description: VARCHAR(255)
+    quantity: INTEGER
+    unit_price: DECIMAL(10,2)
+    total_price: DECIMAL(10,2)
+}
+
+entity "payments" as payments {
+    *id: UUID <<pk>>
+    --
+    service_order_id: UUID <<fk>>
+    client_id: UUID <<fk>>
+    amount: DECIMAL(10,2)
+    payment_method: ENUM (CREDIT_CARD, DEBIT_CARD, PIX, BOLETO, CASH)
+    status: ENUM (PENDING, PROCESSING, AUTHORIZED, CAPTURED, COMPLETED, DECLINED, REFUNDED)
+    stripe_transaction_id: VARCHAR(255) <<unique>>
+    receipt_url: VARCHAR(500)
+    paid_at: TIMESTAMP
+    created_at: TIMESTAMP
+}
+
+entity "payment_receipts" as receipts {
+    *id: UUID <<pk>>
+    --
+    payment_id: UUID <<fk>>
+    file_path: VARCHAR(500)
+    file_size: INTEGER
+    mime_type: VARCHAR(50)
+    s3_key: VARCHAR(255)
+    created_at: TIMESTAMP
+}
+
+entity "service_photos" as photos {
+    *id: UUID <<pk>>
+    --
+    service_order_id: UUID <<fk>>
+    file_path: VARCHAR(500)
+    file_size: INTEGER
+    uploaded_by: UUID <<fk>>
+    photo_type: ENUM (DIAGNOSIS, PROGRESS, COMPLETED)
+    s3_key: VARCHAR(255)
+    created_at: TIMESTAMP
+}
+
+entity "users" as users {
+    *id: UUID <<pk>>
+    --
+    email: VARCHAR(100) <<unique>>
+    password_hash: VARCHAR(255)
+    role: ENUM (ADMIN, MANAGER, RECEPTIONIST, MECHANIC)
+    status: ENUM (ACTIVE, INACTIVE, SUSPENDED)
+    last_login: TIMESTAMP
+    created_at: TIMESTAMP
+    updated_at: TIMESTAMP
+}
+
+entity "audit_logs" as audit {
+    *id: UUID <<pk>>
+    --
+    user_id: UUID <<fk>>
+    entity_type: VARCHAR(50)
+    entity_id: UUID
+    action: ENUM (CREATE, UPDATE, DELETE, VIEW)
+    old_values: JSONB
+    new_values: JSONB
+    ip_address: VARCHAR(45)
+    created_at: TIMESTAMP
+}
+
+entity "service_prices" as prices {
+    *id: UUID <<pk>>
+    --
+    service_type: VARCHAR(50) <<unique>>
+    base_price: DECIMAL(10,2)
+    description: TEXT
+    active: BOOLEAN
+    created_at: TIMESTAMP
+}
+
+' Relacionamentos
+clients ||--o{ vehicles: "tem"
+clients ||--o{ orders: "solicita"
+clients ||--o{ payments: "realiza"
+vehicles ||--o{ orders: "em"
+orders ||--o{ service_items: "contém"
+orders ||--o{ payments: "gera"
+orders ||--o{ photos: "tem"
+payments ||--o{ receipts: "tem"
+users ||--o{ orders: "cria"
+users ||--o{ photos: "envia"
+users ||--o{ audit: "executa"
+prices ||--o{ orders: "define_preço"
+
+note right of clients
+    Clientes do sistema
+    - Fornecedores de veículos
+    - Email e CPF únicos
+    - Status controla acesso
+end note
+
+note right of vehicles
+    Veículos dos clientes
+    - Placa única por sistema
+    - Histórico de manutenção
+    - Mileage atualizado
+end note
+
+note right of orders
+    Ordens de serviço
+    - Estado machine com transições
+    - Rastreamento completo
+    - Preço estimado vs real
+end note
+
+note right of payments
+    Pagamentos integrados
+    - Stripe transaction tracking
+    - Múltiplos métodos
+    - Webhook confirmação
+end note
+
+note right of users
+    Usuários internos
+    - Roles baseado em permissões
+    - Audit trail completo
+    - Last login tracking
+end note
+
+note right of audit
+    Log de auditoria
+    - Rastreamento completo
+    - Conformidade LGPD
+    - IP logging
+end note
+
+SHOW_LEGEND()
+@enduml

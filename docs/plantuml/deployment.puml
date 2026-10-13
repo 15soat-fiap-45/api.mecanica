@@ -1,0 +1,96 @@
+@startuml Deployment - API Mecânica
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Deployment.puml
+
+Deployment_Node(client_browser, "🖥️ Cliente / Recepcionista", "Browser Desktop") {
+    Container(web_ui, "Web Application", "React/TypeScript", "Dashboard\nFormuários\nRelatórios")
+}
+
+Deployment_Node(mobile_device, "📱 Mecânico", "Smartphone") {
+    Container(mobile_ui, "Mobile App", "React Native", "Atualizações\nProgresso\nFotos")
+}
+
+Deployment_Node(aws_cloud, "☁️ AWS Cloud (ou similar)") {
+
+    Deployment_Node(load_balancer, "⚖️ Load Balancer", "AWS ALB") {
+        note right: HTTPS\nSSL/TLS\nHealthCheck
+    }
+
+    Deployment_Node(app_cluster, "🔷 Application Cluster", "ECS/Kubernetes") {
+        Deployment_Node(app1, "API Instance 1", "Node.js", "") {
+            Container(api_1, "API", "Express", "Port 3000")
+        }
+        Deployment_Node(app2, "API Instance 2", "Node.js", "") {
+            Container(api_2, "API", "Express", "Port 3000")
+        }
+        Deployment_Node(app3, "API Instance N", "Node.js", "") {
+            Container(api_n, "API", "Express", "Port 3000")
+        }
+    }
+
+    Deployment_Node(cache_node, "💾 Cache Layer", "Redis") {
+        ContainerDb(redis, "Redis Instance", "In-Memory", "Sessões\nCache\nRate Limit\nQueues")
+    }
+
+    Deployment_Node(db_node, "🗄️ Database Layer", "RDS/EC2") {
+        ContainerDb(postgres, "PostgreSQL Instance", "ACID Database", "14.5\nPrimary\nReplication ready")
+        Deployment_Node(db_backup, "Backup", "S3", "") {
+            ContainerDb(db_snapshot, "Daily Snapshots", "S3", "Backup incremental\nRetention: 30 dias")
+        }
+    }
+
+    Deployment_Node(storage_node, "📁 File Storage", "S3 Bucket") {
+        ContainerDb(s3_storage, "Object Storage", "AWS S3", "Fotos de diagnóstico\nComprovantes\nRecibos\nCDN: CloudFront")
+    }
+
+    Deployment_Node(job_queue, "📋 Job Queue", "Redis + Bull") {
+        ContainerDb(bull, "Bull Queue", "Redis-based", "Email jobs\nSMS jobs\nPDF generation\nRetry logic")
+    }
+}
+
+Deployment_Node(external_services, "🌐 Terceiros") {
+    Container(stripe_api, "💳 Stripe API", "Payment", "HTTPS\nWebhooks\nSandbox + Prod")
+    Container(sendgrid, "📧 SendGrid", "SMTP", "Email service\nTemplate engine")
+    Container(twilio, "📱 Twilio", "SMS/Voice", "SMS service\nWebhooks")
+    Container(datadog, "📊 Datadog", "Monitoring", "Metrics\nLogs\nAPM\nAlerts")
+}
+
+Rel(web_ui, load_balancer, "HTTPS", "Dashboard request")
+Rel(mobile_ui, load_balancer, "HTTPS", "API requests")
+
+Rel(load_balancer, api_1, "HTTP", "Route traffic")
+Rel(load_balancer, api_2, "HTTP", "Route traffic")
+Rel(load_balancer, api_n, "HTTP", "Route traffic")
+
+Rel(api_1, redis, "TCP", "Session/cache")
+Rel(api_2, redis, "TCP", "Session/cache")
+Rel(api_n, redis, "TCP", "Session/cache")
+
+Rel(api_1, postgres, "SQL", "Queries")
+Rel(api_2, postgres, "SQL", "Queries")
+Rel(api_n, postgres, "SQL", "Queries")
+
+Rel(api_1, s3_storage, "HTTP", "Upload/download")
+Rel(api_2, s3_storage, "HTTP", "Upload/download")
+
+Rel(api_1, bull, "Redis", "Enqueue jobs")
+Rel(api_2, bull, "Redis", "Enqueue jobs")
+
+Rel(bull, sendgrid, "SMTP", "Email")
+Rel(bull, twilio, "HTTPS", "SMS")
+
+Rel(api_1, stripe_api, "HTTPS", "Process payment")
+Rel(api_2, stripe_api, "HTTPS", "Process payment")
+
+Rel(postgres, db_backup, "Snapshot", "Daily backup")
+
+Rel(api_1, datadog, "StatsD/logs", "Metrics")
+Rel(api_2, datadog, "StatsD/logs", "Metrics")
+
+note bottom of load_balancer: Auto-scaling\nMin: 2 instâncias\nMax: 10 instâncias\nCPU: 70% threshold
+
+note bottom of postgres: Multi-AZ\nConnection pool: 20\nRead replica opcional
+
+note bottom of redis: Persistence: AOF\nEviction: allkeys-lru\nBackup diário
+
+SHOW_LEGEND()
+@enduml

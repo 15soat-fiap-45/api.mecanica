@@ -1,0 +1,102 @@
+@startuml Fluxo: Registrar Cliente
+!define AUML https://plantuml.com/picto/
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Sequence.puml
+
+actor Rec as "👤 Recepcionista"
+participant API as "API"
+participant Service as "ClientService"
+participant Repo as "ClientRepository"
+participant DB as "🗄️ PostgreSQL"
+participant Cache as "💾 Redis"
+participant Email as "📧 Email Service"
+
+== 1️⃣ Recepcionista Envia Dados ==
+
+Rec ->> API: POST /clients\n{name, email, cpf, phone, password}
+activate API
+
+== 2️⃣ API Recebe e Valida ==
+
+API ->> API: Autenticação JWT ✓\nAutorização ✓\nValidação Joi ✓
+note right of API: Verifica se request é válido\ne se usuário é recepcionista
+
+API ->> Service: createClient(data)
+activate Service
+
+== 3️⃣ ClientService Executa Lógica ==
+
+Service ->> Service: validateData()\n✓ CPF format\n✓ Email format\n✓ Telefone format\n✓ Password strength
+note right of Service: Validações de negócio
+
+Service ->> Cache: get(client:email:{email})
+activate Cache
+Cache -->> Service: null (not exists)
+deactivate Cache
+
+Service ->> Repo: findByEmail(email)
+activate Repo
+
+== 4️⃣ ClientRepository Consulta BD ==
+
+Repo ->> DB: SELECT * FROM clients\nWHERE email = $1
+activate DB
+DB -->> Repo: null (cliente não existe)
+deactivate DB
+
+Repo -->> Service: null
+deactivate Repo
+
+note right of Service: Email único ✓
+
+Service ->> Service: hashPassword(password)\nbcrypt 12 rounds\n~250ms
+
+== 5️⃣ ClientRepository Persiste ==
+
+Service ->> Repo: save(clientData)
+activate Repo
+
+Repo ->> DB: INSERT INTO clients\n(name, email, cpf, phone,\npassword_hash, created_at)\nVALUES (...)
+activate DB
+DB -->> Repo: ✓ client_id: 123\nRETURNING *
+deactivate DB
+
+== 6️⃣ Cache Atualizado ==
+
+Repo ->> Cache: set(client:email:{email}, {...})
+activate Cache
+Cache -->> Repo: OK
+deactivate Cache
+
+Repo -->> Service: Client{id: 123, ...}
+deactivate Repo
+
+== 7️⃣ Email de Confirmação ==
+
+Service ->> Email: send(email, 'client-registered')
+activate Email
+note right of Email: Async - não bloqueia request\nEmail fica em fila (Bull)
+Email -->> Service: ✓ queued
+deactivate Email
+
+== 8️⃣ Resposta Final ==
+
+Service -->> API: Client{id: 123, name, email, ...}
+deactivate Service
+
+API ->> API: formatResponse(client)
+
+API -->> Rec: 201 Created\n{client data + createdAt}
+deactivate API
+
+Rec -->> Rec: ✓ Cliente registrado com sucesso!
+
+note over Email: 📧 Email é enviado background\naté 30s depois da resposta
+
+== Fluxo de Erro (Email inválido) ==
+
+Note over Service: ❌ Se findByEmail retorna\ncliente existente:
+
+Service -->> API: Error 409 Conflict\n"Email já cadastrado"
+API -->> Rec: 409 Conflict\n"Cliente já existe"
+
+@enduml
