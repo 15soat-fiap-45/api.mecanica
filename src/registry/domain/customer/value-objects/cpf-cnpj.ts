@@ -1,10 +1,11 @@
 // document.vo.ts
 
+import type { Identifier } from '../../../shared/domain/entity-id.js';
 import { InvalidDocumentException } from '../exceptions/InvalidDocumentException.js';
 
 export type DocumentType = 'CPF' | 'CNPJ';
 
-export class CpfCnpj {
+export class CpfCnpj implements Identifier {
     private readonly _value: string; // apenas dígitos
     private readonly _type: DocumentType;
 
@@ -93,8 +94,8 @@ export class CpfCnpj {
             : `**.${this._value.slice(2, 5)}.${this._value.slice(5, 8)}/****-**`;
     }
 
-    equals(other?: CpfCnpj | null): boolean {
-        return !!other && other._value === this._value;
+    equals(other?: Identifier | CpfCnpj | null): boolean {
+        return !!other && other.toString() === this._value;
     }
 
     toString(): string {
