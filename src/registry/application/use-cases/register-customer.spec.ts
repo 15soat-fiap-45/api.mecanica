@@ -25,6 +25,7 @@ describe('RegisterCustomer Use Case', () => {
 
     const makeEventBus = (): EventBus => ({
         publish: vi.fn().mockResolvedValue(undefined),
+        subscribe: vi.fn(),
     });
 
     it('should register a new customer successfully and save to repository', async () => {
