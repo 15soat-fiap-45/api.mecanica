@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { PartSupplyRepository } from '../../domain/part-supply/part-supply.repository.js';
 import type { PartSupply } from '../../domain/part-supply/part-supply.js';
-import { InvalidPartCodeException } from '../../domain/part-supply/value-objects/part-code.js';
+import { InvalidPartCodeException } from '../../../shared/domain/part-code.js';
 import type { EventBus } from '../../../shared/application/event-bus.js';
 import {
     RegisterPartSupply,

@@ -82,9 +82,47 @@ describe('ServiceOrder Aggregate Root', () => {
         );
     });
 
+    it('should reject part codes that are invalid in the Stock context', () => {
+        const os = ServiceOrder.create(makeProps());
+
+        // too short, spaces and accents are all rejected by PartCode
+        expect(() => os.addSupply('ab', 1)).toThrow(InvalidSupplyItemException);
+        expect(() => os.addSupply('A B', 1)).toThrow(
+            InvalidSupplyItemException,
+        );
+        expect(() => os.addSupply('ÓLEO-1', 1)).toThrow(
+            InvalidSupplyItemException,
+        );
+        expect(os.items).toHaveLength(0);
+    });
+
+    it('should not add supplies to a COMPLETED or CANCELLED order', () => {
+        const completed = ServiceOrder.create(makeProps());
+        completed.approve();
+        completed.startExecution();
+        completed.finish();
+        completed.pullEvents();
+
+        expect(() => completed.addSupply('PAST-FREIO-01', 2)).toThrow(
+            InvalidServiceOrderStatusException,
+        );
+        expect(completed.items).toHaveLength(0);
+        expect(completed.pullEvents()).toHaveLength(0);
+
+        const cancelled = ServiceOrder.create(makeProps({ id: 'os-2' }));
+        cancelled.cancel();
+        cancelled.pullEvents();
+
+        expect(() => cancelled.addSupply('PAST-FREIO-01', 2)).toThrow(
+            InvalidServiceOrderStatusException,
+        );
+        expect(cancelled.items).toHaveLength(0);
+    });
+
     it('should mark a supply as used and record SupplyUsed', () => {
         const os = ServiceOrder.create(makeProps());
         os.addSupply('PAST-FREIO-01', 2);
+        os.approve();
         os.pullEvents();
 
         os.markSupplyUsed('past-freio-01');
@@ -99,8 +137,19 @@ describe('ServiceOrder Aggregate Root', () => {
         });
     });
 
+    it('should not mark supplies as used before approval', () => {
+        const os = ServiceOrder.create(makeProps());
+        os.addSupply('PAST-FREIO-01', 2);
+
+        expect(() => os.markSupplyUsed('PAST-FREIO-01')).toThrow(
+            InvalidServiceOrderStatusException,
+        );
+        expect(os.items[0]?.used).toBe(false);
+    });
+
     it('should throw SupplyItemNotFoundException when item does not exist', () => {
         const os = ServiceOrder.create(makeProps());
+        os.approve();
 
         expect(() => os.markSupplyUsed('PAST-FREIO-01')).toThrow(
             SupplyItemNotFoundException,
@@ -110,6 +159,7 @@ describe('ServiceOrder Aggregate Root', () => {
     it('should throw SupplyItemAlreadyUsedException when marking the same item twice', () => {
         const os = ServiceOrder.create(makeProps());
         os.addSupply('PAST-FREIO-01', 2);
+        os.approve();
         os.markSupplyUsed('PAST-FREIO-01');
 
         expect(() => os.markSupplyUsed('PAST-FREIO-01')).toThrow(
@@ -150,6 +200,28 @@ describe('ServiceOrder Aggregate Root', () => {
         const os = ServiceOrder.create(makeProps());
         os.approve();
         expect(() => os.approve()).toThrow(InvalidServiceOrderStatusException);
+    });
+
+    it('should cancel a service order and record ServiceOrderCancelled', () => {
+        const os = ServiceOrder.create(makeProps());
+        os.pullEvents();
+
+        os.cancel();
+
+        expect(os.status.value).toBe('CANCELLED');
+        const events = os.pullEvents();
+        expect(events).toHaveLength(1);
+        expect(events[0]?.eventName).toBe('service-order.cancelled');
+        expect(events[0]?.aggregateId).toBe('os-1');
+    });
+
+    it('should not cancel a completed service order', () => {
+        const os = ServiceOrder.create(makeProps());
+        os.approve();
+        os.startExecution();
+        os.finish();
+
+        expect(() => os.cancel()).toThrow(InvalidServiceOrderStatusException);
     });
 
     it('should compare service orders by identity using AggregateRoot.equals()', () => {

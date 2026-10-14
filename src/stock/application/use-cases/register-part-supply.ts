@@ -1,6 +1,6 @@
 import type { PartSupplyRepository } from '../../domain/part-supply/part-supply.repository.js';
 import { PartSupply } from '../../domain/part-supply/part-supply.js';
-import { PartCode } from '../../domain/part-supply/value-objects/part-code.js';
+import { PartCode } from '../../../shared/domain/part-code.js';
 import { UnitOfMeasure } from '../../domain/part-supply/value-objects/unit-of-measure.js';
 import type { EventBus } from '../../../shared/application/event-bus.js';
 import type { UseCase } from '../../../shared/application/use-case.js';

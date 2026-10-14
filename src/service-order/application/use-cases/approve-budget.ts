@@ -16,7 +16,7 @@ export interface ApproveBudgetInput {
 export interface ApproveBudgetOutput {
     id: string;
     serviceOrderId: string;
-    total: number;
+    totalCents: number;
     status: string;
 }
 
@@ -46,7 +46,7 @@ export class ApproveBudget implements UseCase<
         return {
             id: budget.id.value,
             serviceOrderId: budget.serviceOrderId,
-            total: budget.total,
+            totalCents: budget.totalCents,
             status: budget.status.value,
         };
     }

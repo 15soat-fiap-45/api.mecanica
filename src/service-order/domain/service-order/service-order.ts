@@ -7,6 +7,8 @@ import { ServiceOrderRegistered } from './events/service-order-registered.js';
 import { AdditionalSuppliesIncluded } from './events/additional-supplies-included.js';
 import { SupplyUsed } from './events/supply-used.js';
 import { ServiceOrderFinished } from './events/service-order-finished.js';
+import { ServiceOrderCancelled } from './events/service-order-cancelled.js';
+import { InvalidServiceOrderStatusException } from './value-objects/service-order-status.js';
 
 export class SupplyItemAlreadyAddedException extends DomainException {
     constructor(message = 'Supply item with this part code already added') {
@@ -84,6 +86,15 @@ export class ServiceOrder extends AggregateRoot<ServiceOrderId> {
     }
 
     addSupply(partCode: string, quantity: number): void {
+        if (
+            this._status.value === 'COMPLETED' ||
+            this._status.value === 'CANCELLED'
+        ) {
+            throw new InvalidServiceOrderStatusException(
+                `Cannot add supplies to a ${this._status.value} service order`,
+            );
+        }
+
         const item = SupplyItem.create({ partCode, quantity });
 
         if (this._items.some((existing) => existing.equals(item))) {
@@ -100,6 +111,13 @@ export class ServiceOrder extends AggregateRoot<ServiceOrderId> {
     }
 
     markSupplyUsed(partCode: string): void {
+        const allowedStatuses = ['APPROVED', 'IN_PROGRESS', 'PAUSED'];
+        if (!allowedStatuses.includes(this._status.value)) {
+            throw new InvalidServiceOrderStatusException(
+                `Cannot mark a supply as used on a ${this._status.value} service order`,
+            );
+        }
+
         const normalized = partCode.trim().toUpperCase();
         const item = this._items.find((i) => i.partCode === normalized);
         if (!item) {
@@ -128,6 +146,15 @@ export class ServiceOrder extends AggregateRoot<ServiceOrderId> {
         this._status = this._status.transitionTo('COMPLETED');
         this.record(
             new ServiceOrderFinished({
+                aggregateId: this.id.value,
+            }),
+        );
+    }
+
+    cancel(): void {
+        this._status = this._status.transitionTo('CANCELLED');
+        this.record(
+            new ServiceOrderCancelled({
                 aggregateId: this.id.value,
             }),
         );

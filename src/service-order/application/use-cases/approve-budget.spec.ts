@@ -12,7 +12,7 @@ describe('ApproveBudget Use Case', () => {
         Budget.create({
             id: 'orc-1',
             serviceOrderId: 'os-1',
-            total: 450.9,
+            totalCents: 45090,
         });
 
     const makeRepository = (
@@ -39,7 +39,7 @@ describe('ApproveBudget Use Case', () => {
         expect(result).toEqual({
             id: 'orc-1',
             serviceOrderId: 'os-1',
-            total: 450.9,
+            totalCents: 45090,
             status: 'APPROVED',
         });
         expect(repository.save).toHaveBeenCalledTimes(1);
@@ -49,7 +49,7 @@ describe('ApproveBudget Use Case', () => {
                     eventName: 'service-order.budget-approved',
                     aggregateId: 'orc-1',
                     serviceOrderId: 'os-1',
-                    total: 450.9,
+                    totalCents: 45090,
                 }),
             ]),
         );

@@ -10,7 +10,7 @@ describe('MoveServiceOrderToApproved Handler', () => {
         new BudgetApproved({
             aggregateId: 'orc-1',
             serviceOrderId: 'os-1',
-            total: 450.9,
+            totalCents: 45090,
         });
 
     const makeRepository = (
@@ -49,6 +49,24 @@ describe('MoveServiceOrderToApproved Handler', () => {
         expect(serviceOrder.status.value).toBe('APPROVED');
         // save only on the first delivery
         expect(repository.save).toHaveBeenCalledTimes(1);
+    });
+
+    it('should skip an order that already moved past APPROVED instead of throwing', async () => {
+        const serviceOrder = ServiceOrder.register({
+            id: 'os-1',
+            description: 'Troca de pastilhas',
+        });
+        serviceOrder.approve();
+        serviceOrder.startExecution();
+        const repository = makeRepository(serviceOrder);
+        const handler = new MoveServiceOrderToApproved(repository);
+
+        // A second budget approved while the repair is already in progress
+        // (or a late redelivery) must not break the handler.
+        await handler.handle(makeEvent());
+
+        expect(serviceOrder.status.value).toBe('IN_PROGRESS');
+        expect(repository.save).not.toHaveBeenCalled();
     });
 
     it('should throw ServiceOrderNotFoundError when the order does not exist', async () => {
