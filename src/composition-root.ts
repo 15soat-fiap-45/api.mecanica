@@ -1,83 +1,80 @@
 import type { EventBus } from './shared/application/event-bus.js';
-import type { PecaInsumoRepository } from './estoque/domain/peca-insumo/peca-insumo.repository.js';
-import type { ReservaInsumoRepository } from './estoque/domain/reserva-insumo/reserva-insumo.repository.js';
-import { CadastrarPecaInsumo } from './estoque/application/use-cases/cadastrar-peca-insumo.js';
-import { RegistrarEntradaEmEstoque } from './estoque/application/use-cases/registrar-entrada-em-estoque.js';
-import { ReservarInsumo } from './estoque/application/use-cases/reservar-insumo.js';
-import { DarBaixaNoEstoque } from './estoque/application/use-cases/dar-baixa-no-estoque.js';
-import { VerificarDisponibilidade } from './estoque/application/handlers/verificar-disponibilidade.js';
-import type { InsumosAdicionaisIncluidos } from './estoque/application/handlers/verificar-disponibilidade.js';
-import { DarBaixaNosInsumosReservados } from './estoque/application/handlers/dar-baixa-nos-insumos-reservados.js';
-import type { OsFinalizada } from './estoque/application/handlers/dar-baixa-nos-insumos-reservados.js';
+import type { PartSupplyRepository } from './stock/domain/part-supply/part-supply.repository.js';
+import type { SupplyReservationRepository } from './stock/domain/supply-reservation/supply-reservation.repository.js';
+import { RegisterPartSupply } from './stock/application/use-cases/register-part-supply.js';
+import { RegisterStockEntry } from './stock/application/use-cases/register-stock-entry.js';
+import { ReserveSupply } from './stock/application/use-cases/reserve-supply.js';
+import { WriteOffStock } from './stock/application/use-cases/write-off-stock.js';
+import { CheckAvailability } from './stock/application/handlers/check-availability.js';
+import type { AdditionalSuppliesIncluded } from './stock/application/handlers/check-availability.js';
+import { WriteOffReservedSupplies } from './stock/application/handlers/write-off-reserved-supplies.js';
+import type { ServiceOrderFinished } from './stock/application/handlers/write-off-reserved-supplies.js';
 
-export interface EstoqueDependencies {
-    pecaInsumoRepository: PecaInsumoRepository;
-    reservaInsumoRepository: ReservaInsumoRepository;
+export interface StockDependencies {
+    partSupplyRepository: PartSupplyRepository;
+    reservationRepository: SupplyReservationRepository;
 }
 
 /**
- * Composition root do Estoque: instancia os casos de uso e liga cada
- * handler ao seu evento no barramento.
+ * Composition root for the Stock context: instantiates the use cases and
+ * wires each handler to its event on the bus.
  *
- * - Contratos dos eventos da OS são declarados no próprio Estoque
- *   (ver handlers), sem importar classes do contexto de Ordem de Serviço.
- * - Uma transação por handler: a consistência entre contextos é eventual.
- * - Idempotência garantida nos casos de uso (chave OS + insumo).
+ * - The service order event contracts are declared inside Stock itself
+ *   (see the handlers), without importing classes from the Service Order
+ *   context.
+ * - One transaction per handler: consistency between contexts is eventual.
+ * - Idempotency is enforced by the use cases (service order + supply key).
  */
-export function compositionRoot(eventBus: EventBus, deps: EstoqueDependencies) {
-    // Casos de uso
-    const cadastrarPecaInsumo = new CadastrarPecaInsumo(
-        deps.pecaInsumoRepository,
+export function compositionRoot(eventBus: EventBus, deps: StockDependencies) {
+    // Use cases
+    const registerPartSupply = new RegisterPartSupply(
+        deps.partSupplyRepository,
         eventBus,
     );
-    const registrarEntradaEmEstoque = new RegistrarEntradaEmEstoque(
-        deps.pecaInsumoRepository,
+    const registerStockEntry = new RegisterStockEntry(
+        deps.partSupplyRepository,
         eventBus,
     );
-    const reservarInsumo = new ReservarInsumo(
-        deps.pecaInsumoRepository,
-        deps.reservaInsumoRepository,
+    const reserveSupply = new ReserveSupply(
+        deps.partSupplyRepository,
+        deps.reservationRepository,
         eventBus,
     );
-    const darBaixaNoEstoque = new DarBaixaNoEstoque(
-        deps.reservaInsumoRepository,
+    const writeOffStock = new WriteOffStock(deps.reservationRepository);
+
+    // Handlers for events from other contexts
+    const checkAvailability = new CheckAvailability(reserveSupply, eventBus);
+    const writeOffReservedSupplies = new WriteOffReservedSupplies(
+        writeOffStock,
     );
 
-    // Handlers de eventos de outros contextos
-    const verificarDisponibilidade = new VerificarDisponibilidade(
-        reservarInsumo,
-        eventBus,
+    eventBus.subscribe<AdditionalSuppliesIncluded>(
+        'service-order.additional-supplies-included',
+        (event) => checkAvailability.handle(event),
     );
-    const darBaixaNosInsumosReservados = new DarBaixaNosInsumosReservados(
-        darBaixaNoEstoque,
-    );
-
-    eventBus.subscribe<InsumosAdicionaisIncluidos>(
-        'ordem-servico.insumos-adicionais-incluidos',
-        (event) => verificarDisponibilidade.handle(event),
-    );
-    eventBus.subscribe<OsFinalizada>('ordem-servico.os-finalizada', (event) =>
-        darBaixaNosInsumosReservados.handle(event),
+    eventBus.subscribe<ServiceOrderFinished>(
+        'service-order.finished',
+        (event) => writeOffReservedSupplies.handle(event),
     );
 
     return {
-        cadastrarPecaInsumo,
-        registrarEntradaEmEstoque,
-        reservarInsumo,
-        darBaixaNoEstoque,
+        registerPartSupply,
+        registerStockEntry,
+        reserveSupply,
+        writeOffStock,
     };
 }
 
-// Exemplo de uso (na inicialização da aplicação):
+// Usage example (at application startup):
 //
 // const useCases = compositionRoot(eventBus, {
-//     pecaInsumoRepository,
-//     reservaInsumoRepository,
+//     partSupplyRepository,
+//     reservationRepository,
 // });
 //
-// await useCases.cadastrarPecaInsumo.execute({
-//     descricao: 'Pastilha de freio dianteira',
-//     codigoPeca: 'PAST-FREIO-01',
-//     quantidade: 10,
-//     unidadeMedida: 'UNIDADE',
+// await useCases.registerPartSupply.execute({
+//     description: 'Front brake pad',
+//     partCode: 'PAST-FREIO-01',
+//     quantity: 10,
+//     unitOfMeasure: 'UNIT',
 // });
