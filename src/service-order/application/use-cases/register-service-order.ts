@@ -1,0 +1,46 @@
+import type { ServiceOrderRepository } from '../../domain/service-order/service-order.repository.js';
+import { ServiceOrder } from '../../domain/service-order/service-order.js';
+import type { EventBus } from '../../../shared/application/event-bus.js';
+import type { UseCase } from '../../../shared/application/use-case.js';
+
+export interface RegisterServiceOrderInput {
+    id?: string | undefined;
+    description: string;
+}
+
+export interface RegisterServiceOrderOutput {
+    id: string;
+    description: string;
+    status: string;
+}
+
+export class RegisterServiceOrder implements UseCase<
+    RegisterServiceOrderInput,
+    RegisterServiceOrderOutput
+> {
+    constructor(
+        private readonly serviceOrderRepository: ServiceOrderRepository,
+        private readonly eventBus?: EventBus,
+    ) {}
+
+    async execute(
+        input: RegisterServiceOrderInput,
+    ): Promise<RegisterServiceOrderOutput> {
+        const serviceOrder = ServiceOrder.register({
+            id: input.id,
+            description: input.description,
+        });
+
+        await this.serviceOrderRepository.save(serviceOrder);
+
+        if (this.eventBus) {
+            await this.eventBus.publish(serviceOrder.pullEvents());
+        }
+
+        return {
+            id: serviceOrder.id.value,
+            description: serviceOrder.description,
+            status: serviceOrder.status.value,
+        };
+    }
+}

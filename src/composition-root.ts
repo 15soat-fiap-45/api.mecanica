@@ -10,10 +10,27 @@ import type { AdditionalSuppliesIncluded } from './stock/application/handlers/ch
 import { WriteOffReservedSupplies } from './stock/application/handlers/write-off-reserved-supplies.js';
 import type { ServiceOrderFinished } from './stock/application/handlers/write-off-reserved-supplies.js';
 
+import type { ServiceOrderRepository } from './service-order/domain/service-order/service-order.repository.js';
+import type { BudgetRepository } from './service-order/domain/budget/budget.repository.js';
+import { RegisterServiceOrder } from './service-order/application/use-cases/register-service-order.js';
+import { AddSupplyToServiceOrder } from './service-order/application/use-cases/add-supply-to-service-order.js';
+import { ApproveBudget } from './service-order/application/use-cases/approve-budget.js';
+import { RegisterSupplyUsage } from './service-order/application/use-cases/register-supply-usage.js';
+import { MoveServiceOrderToApproved } from './service-order/application/handlers/move-service-order-to-approved.js';
+import type { BudgetApproved } from './service-order/domain/budget/events/budget-approved.js';
+
 export interface StockDependencies {
     partSupplyRepository: PartSupplyRepository;
     reservationRepository: SupplyReservationRepository;
 }
+
+export interface ServiceOrderDependencies {
+    serviceOrderRepository: ServiceOrderRepository;
+    budgetRepository: BudgetRepository;
+}
+
+export type ApplicationDependencies = StockDependencies &
+    ServiceOrderDependencies;
 
 /**
  * Composition root for the Stock context: instantiates the use cases and
@@ -25,7 +42,10 @@ export interface StockDependencies {
  * - One transaction per handler: consistency between contexts is eventual.
  * - Idempotency is enforced by the use cases (service order + supply key).
  */
-export function compositionRoot(eventBus: EventBus, deps: StockDependencies) {
+export function compositionRoot(
+    eventBus: EventBus,
+    deps: ApplicationDependencies,
+) {
     // Use cases
     const registerPartSupply = new RegisterPartSupply(
         deps.partSupplyRepository,
@@ -57,11 +77,39 @@ export function compositionRoot(eventBus: EventBus, deps: StockDependencies) {
         (event) => writeOffReservedSupplies.handle(event),
     );
 
+    // Service order use cases
+    const registerServiceOrder = new RegisterServiceOrder(
+        deps.serviceOrderRepository,
+        eventBus,
+    );
+    const addSupplyToServiceOrder = new AddSupplyToServiceOrder(
+        deps.serviceOrderRepository,
+        eventBus,
+    );
+    const approveBudget = new ApproveBudget(deps.budgetRepository, eventBus);
+    const registerSupplyUsage = new RegisterSupplyUsage(
+        deps.serviceOrderRepository,
+        eventBus,
+    );
+
+    // Policies
+    const moveServiceOrderToApproved = new MoveServiceOrderToApproved(
+        deps.serviceOrderRepository,
+    );
+    eventBus.subscribe<BudgetApproved>(
+        'service-order.budget-approved',
+        (event) => moveServiceOrderToApproved.handle(event),
+    );
+
     return {
         registerPartSupply,
         registerStockEntry,
         reserveSupply,
         writeOffStock,
+        registerServiceOrder,
+        addSupplyToServiceOrder,
+        approveBudget,
+        registerSupplyUsage,
     };
 }
 
@@ -70,6 +118,8 @@ export function compositionRoot(eventBus: EventBus, deps: StockDependencies) {
 // const useCases = compositionRoot(eventBus, {
 //     partSupplyRepository,
 //     reservationRepository,
+//     serviceOrderRepository,
+//     budgetRepository,
 // });
 //
 // await useCases.registerPartSupply.execute({
@@ -77,4 +127,8 @@ export function compositionRoot(eventBus: EventBus, deps: StockDependencies) {
 //     partCode: 'PAST-FREIO-01',
 //     quantity: 10,
 //     unitOfMeasure: 'UNIT',
+// });
+//
+// await useCases.registerServiceOrder.execute({
+//     description: 'Brake pads and fluid replacement',
 // });
