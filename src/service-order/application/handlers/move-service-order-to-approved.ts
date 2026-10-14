@@ -10,8 +10,10 @@ import { ServiceOrderNotFoundError } from '../use-cases/add-supply-to-service-or
  * domain event type directly. Runs in its own transaction: consistency
  * between the Budget and ServiceOrder aggregates is eventual.
  *
- * Idempotent: an already approved service order is skipped, so the event
- * may be delivered twice with no side effects.
+ * Idempotent: a service order that can no longer move to APPROVED
+ * (already APPROVED, IN_PROGRESS, COMPLETED...) is skipped, so the event
+ * may be delivered twice or after the order moved on — with no side
+ * effects and no exception from inside a handler.
  */
 export class MoveServiceOrderToApproved {
     constructor(
@@ -26,7 +28,7 @@ export class MoveServiceOrderToApproved {
             throw new ServiceOrderNotFoundError();
         }
 
-        if (serviceOrder.status.value === 'APPROVED') {
+        if (!serviceOrder.status.canTransitionTo('APPROVED')) {
             return;
         }
 

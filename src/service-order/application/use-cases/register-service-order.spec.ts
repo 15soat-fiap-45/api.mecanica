@@ -5,7 +5,6 @@ import { RegisterServiceOrder } from './register-service-order.js';
 
 describe('RegisterServiceOrder Use Case', () => {
     const validInput = {
-        id: 'os-1',
         description: 'Troca de pastilhas e fluido de freio',
     };
 
@@ -26,31 +25,31 @@ describe('RegisterServiceOrder Use Case', () => {
 
         const result = await useCase.execute(validInput);
 
-        expect(result).toEqual({
-            id: 'os-1',
-            description: 'Troca de pastilhas e fluido de freio',
-            status: 'PENDING',
-        });
+        expect(result.id).toBeTruthy();
+        expect(result.description).toBe('Troca de pastilhas e fluido de freio');
+        expect(result.status).toBe('PENDING');
         expect(repository.save).toHaveBeenCalledTimes(1);
         expect(eventBus.publish).toHaveBeenCalledTimes(1);
         expect(eventBus.publish).toHaveBeenCalledWith(
             expect.arrayContaining([
                 expect.objectContaining({
                     eventName: 'service-order.registered',
-                    aggregateId: 'os-1',
+                    aggregateId: result.id,
                 }),
             ]),
         );
     });
 
-    it('should generate an id when none is provided', async () => {
+    it('should always generate the id (a caller-chosen id could overwrite an existing order on retry)', async () => {
         const repository = makeRepository();
         const useCase = new RegisterServiceOrder(repository);
 
-        const result = await useCase.execute({ description: 'Alinhamento' });
+        const first = await useCase.execute(validInput);
+        const second = await useCase.execute(validInput);
 
-        expect(result.id).toBeTruthy();
-        expect(result.status).toBe('PENDING');
-        expect(repository.save).toHaveBeenCalledTimes(1);
+        expect(first.id).toBeTruthy();
+        expect(second.id).toBeTruthy();
+        expect(first.id).not.toBe(second.id);
+        expect(repository.save).toHaveBeenCalledTimes(2);
     });
 });

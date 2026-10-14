@@ -1,5 +1,5 @@
 import type { PartSupplyRepository } from '../../domain/part-supply/part-supply.repository.js';
-import { PartCode } from '../../domain/part-supply/value-objects/part-code.js';
+import { PartCode } from '../../../shared/domain/part-code.js';
 import type { EventBus } from '../../../shared/application/event-bus.js';
 import type { UseCase } from '../../../shared/application/use-case.js';
 import { ApplicationException } from '../../../shared/application/application-exception.js';

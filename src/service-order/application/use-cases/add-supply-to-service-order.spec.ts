@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { ServiceOrderRepository } from '../../domain/service-order/service-order.repository.js';
 import { ServiceOrder } from '../../domain/service-order/service-order.js';
 import { SupplyItemAlreadyAddedException } from '../../domain/service-order/service-order.js';
+import { InvalidServiceOrderStatusException } from '../../domain/service-order/value-objects/service-order-status.js';
 import type { EventBus } from '../../../shared/application/event-bus.js';
 import {
     AddSupplyToServiceOrder,
@@ -64,6 +65,20 @@ describe('AddSupplyToServiceOrder Use Case', () => {
 
         await expect(useCase.execute(validInput)).rejects.toThrow(
             ServiceOrderNotFoundError,
+        );
+        expect(repository.save).not.toHaveBeenCalled();
+    });
+
+    it('should throw InvalidServiceOrderStatusException when the order is completed', async () => {
+        const serviceOrder = makeServiceOrder();
+        serviceOrder.approve();
+        serviceOrder.startExecution();
+        serviceOrder.finish();
+        const repository = makeRepository(serviceOrder);
+        const useCase = new AddSupplyToServiceOrder(repository);
+
+        await expect(useCase.execute(validInput)).rejects.toThrow(
+            InvalidServiceOrderStatusException,
         );
         expect(repository.save).not.toHaveBeenCalled();
     });

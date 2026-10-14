@@ -1,4 +1,5 @@
 import { DomainException } from '../../../shared/domain/domain-exception.js';
+import { PartCode } from '../../../shared/domain/part-code.js';
 
 export class InvalidSupplyItemException extends DomainException {
     constructor(message: string) {
@@ -36,8 +37,12 @@ export class SupplyItem {
     }
 
     static create(props: SupplyItemProps): SupplyItem {
-        if (!props.partCode || !props.partCode.trim()) {
-            throw new InvalidSupplyItemException('Part code cannot be empty');
+        // Same rule as the Stock context (shared PartCode): a code the
+        // Stock context cannot store would crash the reservation flow
+        // later.
+        const partCode = PartCode.parse(props.partCode);
+        if (!partCode.ok) {
+            throw new InvalidSupplyItemException(partCode.error);
         }
         if (
             typeof props.quantity !== 'number' ||
@@ -49,7 +54,7 @@ export class SupplyItem {
             );
         }
         return new SupplyItem({
-            partCode: props.partCode.trim().toUpperCase(),
+            partCode: partCode.value.value,
             quantity: props.quantity,
             used: props.used,
         });

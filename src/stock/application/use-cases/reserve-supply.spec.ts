@@ -3,7 +3,7 @@ import type { PartSupplyRepository } from '../../domain/part-supply/part-supply.
 import type { SupplyReservationRepository } from '../../domain/supply-reservation/supply-reservation.repository.js';
 import { SupplyReservation } from '../../domain/supply-reservation/supply-reservation.js';
 import { PartSupply } from '../../domain/part-supply/part-supply.js';
-import { PartCode } from '../../domain/part-supply/value-objects/part-code.js';
+import { PartCode } from '../../../shared/domain/part-code.js';
 import { InsufficientQuantityException } from '../../domain/part-supply/value-objects/quantity.js';
 import { UnitOfMeasure } from '../../domain/part-supply/value-objects/unit-of-measure.js';
 import type { EventBus } from '../../../shared/application/event-bus.js';
@@ -117,6 +117,58 @@ describe('ReserveSupply Use Case', () => {
         expect(reservationRepository.save).not.toHaveBeenCalled();
         // stock is not deducted again
         expect(part.quantity.value).toBe(7);
+    });
+
+    it('should reserve again when the previous reservation for the same order + supply was cancelled', async () => {
+        const part = makePart();
+        const cancelledReservation = SupplyReservation.create({
+            id: 'res-1',
+            partSupplyId: 'pec-1',
+            serviceOrderId: 'os-1',
+            quantity: 3,
+        });
+        cancelledReservation.cancel();
+        const partRepository = makePartRepository(part);
+        const reservationRepository =
+            makeReservationRepository(cancelledReservation);
+        const useCase = new ReserveSupply(
+            partRepository,
+            reservationRepository,
+        );
+
+        const result = await useCase.execute(validInput);
+
+        // a CANCELLED reservation must not count as "already reserved":
+        // a new reservation is created and the stock is deducted
+        expect(result.id).not.toBe('res-1');
+        expect(result.status).toBe('PENDING');
+        expect(part.quantity.value).toBe(7);
+        expect(reservationRepository.save).toHaveBeenCalledTimes(1);
+    });
+
+    it('should reserve again when the previous reservation for the same order + supply was consumed', async () => {
+        const part = makePart();
+        const consumedReservation = SupplyReservation.create({
+            id: 'res-1',
+            partSupplyId: 'pec-1',
+            serviceOrderId: 'os-1',
+            quantity: 3,
+        });
+        consumedReservation.confirm();
+        consumedReservation.consume();
+        const partRepository = makePartRepository(part);
+        const reservationRepository =
+            makeReservationRepository(consumedReservation);
+        const useCase = new ReserveSupply(
+            partRepository,
+            reservationRepository,
+        );
+
+        const result = await useCase.execute(validInput);
+
+        expect(result.id).not.toBe('res-1');
+        expect(part.quantity.value).toBe(7);
+        expect(reservationRepository.save).toHaveBeenCalledTimes(1);
     });
 
     it('should throw PartSupplyNotFoundError when part does not exist', async () => {

@@ -14,30 +14,41 @@ export class InvalidBudgetException extends DomainException {
 export interface BudgetProps {
     id?: BudgetId | string | undefined;
     serviceOrderId: string;
-    total: number;
+    totalCents: number;
     status?: BudgetStatus | undefined;
     version?: number | undefined;
 }
 
+/**
+ * Money is stored as integer cents: 0.1 + 0.2 !== 0.3 with floats, so
+ * prices never travel the system as floating-point numbers.
+ */
 export class Budget extends AggregateRoot<BudgetId> {
     readonly serviceOrderId: string;
-    readonly total: number;
+    readonly totalCents: number;
     private _status: BudgetStatus;
 
     constructor(
         id: BudgetId | string,
         serviceOrderId: string,
-        total: number,
+        totalCents: number,
         status: BudgetStatus,
         version = 0,
     ) {
         const budgetId = id instanceof BudgetId ? id : new BudgetId(id);
         super(budgetId, version);
-        if (typeof total !== 'number' || Number.isNaN(total) || total < 0) {
-            throw new InvalidBudgetException('Budget total cannot be negative');
+        if (
+            typeof totalCents !== 'number' ||
+            Number.isNaN(totalCents) ||
+            !Number.isInteger(totalCents) ||
+            totalCents < 0
+        ) {
+            throw new InvalidBudgetException(
+                'Budget total must be a non-negative integer number of cents',
+            );
         }
         this.serviceOrderId = serviceOrderId;
-        this.total = total;
+        this.totalCents = totalCents;
         this._status = status;
     }
 
@@ -51,7 +62,7 @@ export class Budget extends AggregateRoot<BudgetId> {
         return new Budget(
             id,
             props.serviceOrderId,
-            props.total,
+            props.totalCents,
             props.status ?? BudgetStatus.pending(),
             props.version ?? 0,
         );
@@ -63,7 +74,7 @@ export class Budget extends AggregateRoot<BudgetId> {
             new BudgetApproved({
                 aggregateId: this.id.value,
                 serviceOrderId: this.serviceOrderId,
-                total: this.total,
+                totalCents: this.totalCents,
             }),
         );
     }

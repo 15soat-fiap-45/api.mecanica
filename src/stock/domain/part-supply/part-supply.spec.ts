@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { PartSupply } from './part-supply.js';
 import { PartSupplyId } from './part-supply-id.js';
-import { PartCode } from './value-objects/part-code.js';
+import { PartCode } from '../../../shared/domain/part-code.js';
 import { InsufficientQuantityException } from './value-objects/quantity.js';
 import { UnitOfMeasure } from './value-objects/unit-of-measure.js';
 

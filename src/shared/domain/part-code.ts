@@ -1,5 +1,5 @@
-import { DomainException } from '../../../../shared/domain/domain-exception.js';
-import type { Identifier } from '../../../../shared/domain/entity-id.js';
+import { DomainException } from './domain-exception.js';
+import type { Identifier } from './entity-id.js';
 
 export class InvalidPartCodeException extends DomainException {
     constructor(message: string) {
@@ -8,6 +8,11 @@ export class InvalidPartCodeException extends DomainException {
     }
 }
 
+/**
+ * Part/supply code, shared by the Stock and Service Order contexts:
+ * both must agree on what a valid code looks like, otherwise a code
+ * accepted by one context would crash the other.
+ */
 export class PartCode implements Identifier {
     private static readonly CODE_REGEX = /^[A-Z0-9][A-Z0-9-]{2,49}$/;
 

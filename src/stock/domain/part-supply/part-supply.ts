@@ -2,7 +2,7 @@ import { AggregateRoot } from '../../../shared/domain/aggregate-root.js';
 import { PartSupplyId } from './part-supply-id.js';
 import { PartSupplyRegistered } from './events/part-supply-registered.js';
 import { StockUpdated } from './events/stock-updated.js';
-import type { PartCode } from './value-objects/part-code.js';
+import type { PartCode } from '../../../shared/domain/part-code.js';
 import { Quantity } from './value-objects/quantity.js';
 import type { UnitOfMeasure } from './value-objects/unit-of-measure.js';
 

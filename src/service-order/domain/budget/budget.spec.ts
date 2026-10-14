@@ -7,7 +7,7 @@ describe('Budget Aggregate Root', () => {
     const makeProps = (overrides = {}) => ({
         id: 'orc-1',
         serviceOrderId: 'os-1',
-        total: 450.9,
+        totalCents: 45090,
         ...overrides,
     });
 
@@ -24,15 +24,19 @@ describe('Budget Aggregate Root', () => {
     it('should start with PENDING status by default', () => {
         const budget = Budget.create(makeProps());
         expect(budget.status.value).toBe('PENDING');
-        expect(budget.total).toBe(450.9);
+        expect(budget.totalCents).toBe(45090);
         expect(budget.serviceOrderId).toBe('os-1');
     });
 
     it('should throw InvalidBudgetException for negative or invalid totals', () => {
-        expect(() => Budget.create(makeProps({ total: -1 }))).toThrow(
+        expect(() => Budget.create(makeProps({ totalCents: -1 }))).toThrow(
             InvalidBudgetException,
         );
-        expect(() => Budget.create(makeProps({ total: Number.NaN }))).toThrow(
+        expect(() =>
+            Budget.create(makeProps({ totalCents: Number.NaN })),
+        ).toThrow(InvalidBudgetException);
+        // money is integer cents: floats are rejected (0.1 + 0.2 !== 0.3)
+        expect(() => Budget.create(makeProps({ totalCents: 450.9 }))).toThrow(
             InvalidBudgetException,
         );
     });
@@ -49,7 +53,7 @@ describe('Budget Aggregate Root', () => {
         expect(events[0]).toMatchObject({
             aggregateId: 'orc-1',
             serviceOrderId: 'os-1',
-            total: 450.9,
+            totalCents: 45090,
         });
 
         expect(budget.pullEvents()).toHaveLength(0);
@@ -76,7 +80,7 @@ describe('Budget Aggregate Root', () => {
 
     it('should compare budgets by identity using AggregateRoot.equals()', () => {
         const budget1 = Budget.create(makeProps());
-        const budget2 = Budget.create(makeProps({ total: 999 }));
+        const budget2 = Budget.create(makeProps({ totalCents: 99900 }));
         const budget3 = Budget.create(makeProps({ id: 'orc-99' }));
 
         expect(budget1.equals(budget2)).toBe(true);

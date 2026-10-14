@@ -20,6 +20,7 @@ describe('RegisterSupplyUsage Use Case', () => {
             description: 'Troca de pastilhas',
         });
         serviceOrder.addSupply('PAST-FREIO-01', 2);
+        serviceOrder.approve();
         serviceOrder.pullEvents();
         return serviceOrder;
     };
