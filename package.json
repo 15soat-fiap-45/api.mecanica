@@ -13,6 +13,11 @@
         "lint": "eslint .",
         "format": "prettier . --write",
         "format:check": "prettier . --check",
+        "db:generate": "drizzle-kit generate",
+        "db:migrate": "drizzle-kit migrate",
+        "db:push": "drizzle-kit push",
+        "db:studio": "drizzle-kit studio",
+        "db:test": "tsx src/infra/database/test-connection.ts",
         "test": "vitest run",
         "test:coverage": "vitest run --coverage --coverage.reporter=lcov --coverage.reporter=text",
         "typecheck": "tsc --noEmit"
@@ -33,6 +38,7 @@
     "dependencies": {
         "@fastify/swagger": "^9.9.1",
         "@fastify/swagger-ui": "^6.1.1",
+        "dotenv": "^18.0.9",
         "drizzle-orm": "^0.45.3",
         "fastify": "^5.12.5",
         "fastify-type-provider-zod": "^7.0.0",
