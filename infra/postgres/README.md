@@ -50,6 +50,40 @@ String de conexão:
 postgresql://<POSTGRES_USER>:<POSTGRES_PASSWORD>@localhost:<POSTGRES_PORT>/<POSTGRES_DB>
 ```
 
+## Drizzle ORM
+
+O projeto usa `drizzle-orm` com o driver `pg`. A conexão da aplicação está
+disponível em `src/infra/database/connection.ts`:
+
+```ts
+import { db } from './infra/database/connection.js';
+```
+
+O arquivo `.env` desta pasta é carregado automaticamente durante o
+desenvolvimento. Também é possível definir `DATABASE_URL`, que tem prioridade
+sobre as variáveis individuais do PostgreSQL.
+
+Depois de iniciar o banco, os comandos disponíveis na raiz do projeto são:
+
+```bash
+# Gerar uma migração a partir do schema TypeScript
+npm run db:generate
+
+# Aplicar migrações versionadas
+npm run db:migrate
+
+# Sincronizar o schema diretamente (recomendado apenas no desenvolvimento)
+npm run db:push
+
+# Abrir o Drizzle Studio
+npm run db:studio
+```
+
+O schema inicial do Drizzle está em `src/infra/database/schema.ts`. As tabelas
+adicionais do modelo relacional devem ser incluídas nesse arquivo antes de
+gerar novas migrações. O script `init/01-schema.sql` continua responsável por
+provisionar o banco em instalações novas via Docker.
+
 Exemplo:
 
 ```text
