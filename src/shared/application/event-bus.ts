@@ -9,5 +9,5 @@ export interface EventBus {
     subscribe<TEvent extends DomainEvent>(
         eventName: string,
         handler: EventHandler<TEvent>,
-    ): void;
+    ): () => void;
 }
