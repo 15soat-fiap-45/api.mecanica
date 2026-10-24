@@ -1,16 +1,19 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { VehicleRepository } from '../../domain/vehicle/vehicle.repository.js';
+import type { CustomerRepository } from '../../domain/customer/customer.repository.js';
 import type { Vehicle } from '../../domain/vehicle/vehicle.js';
 import { InvalidPlateException } from '../../domain/vehicle/value-objects/plate.js';
 import type { EventBus } from '../../../shared/application/event-bus.js';
 import {
     RegisterVehicle,
+    CustomerNotFoundForVehicleError,
     VehicleAlreadyExistsError,
 } from './register-vehicle.js';
 
 describe('RegisterVehicle Use Case', () => {
     const validVehicleInput = {
         id: 'veh-1',
+        customerId: '52998224725',
         model: 'Civic',
         year: 2022,
         brand: 'Honda',
@@ -32,15 +35,28 @@ describe('RegisterVehicle Use Case', () => {
         subscribe: vi.fn(),
     });
 
+    const makeCustomerRepository = (
+        existing: object | null = {},
+    ): CustomerRepository => ({
+        findByCpfCnpj: vi.fn().mockResolvedValue(existing),
+        save: vi.fn().mockResolvedValue(undefined),
+    });
+
     it('should register a new vehicle successfully and publish domain event', async () => {
         const repository = makeRepository();
+        const customerRepository = makeCustomerRepository();
         const eventBus = makeEventBus();
-        const useCase = new RegisterVehicle(repository, eventBus);
+        const useCase = new RegisterVehicle(
+            repository,
+            customerRepository,
+            eventBus,
+        );
 
         const result = await useCase.execute(validVehicleInput);
 
         expect(result).toEqual({
             id: 'veh-1',
+            customerId: '52998224725',
             model: 'Civic',
             year: 2022,
             brand: 'Honda',
@@ -54,6 +70,7 @@ describe('RegisterVehicle Use Case', () => {
                 expect.objectContaining({
                     eventName: 'registry.vehicle-registered',
                     aggregateId: 'veh-1',
+                    customerId: '52998224725',
                     model: 'Civic',
                     plate: 'ABC1234',
                 }),
@@ -63,7 +80,10 @@ describe('RegisterVehicle Use Case', () => {
 
     it('should throw VehicleAlreadyExistsError when vehicle plate already exists', async () => {
         const repository = makeRepository({} as Vehicle);
-        const useCase = new RegisterVehicle(repository);
+        const useCase = new RegisterVehicle(
+            repository,
+            makeCustomerRepository(),
+        );
 
         await expect(useCase.execute(validVehicleInput)).rejects.toThrow(
             VehicleAlreadyExistsError,
@@ -73,7 +93,10 @@ describe('RegisterVehicle Use Case', () => {
 
     it('should throw VehicleAlreadyExistsError when vehicle ID already exists', async () => {
         const repository = makeRepository(null, {} as Vehicle);
-        const useCase = new RegisterVehicle(repository);
+        const useCase = new RegisterVehicle(
+            repository,
+            makeCustomerRepository(),
+        );
 
         await expect(useCase.execute(validVehicleInput)).rejects.toThrow(
             VehicleAlreadyExistsError,
@@ -83,7 +106,10 @@ describe('RegisterVehicle Use Case', () => {
 
     it('should throw InvalidPlateException when plate format is invalid', async () => {
         const repository = makeRepository();
-        const useCase = new RegisterVehicle(repository);
+        const useCase = new RegisterVehicle(
+            repository,
+            makeCustomerRepository(),
+        );
 
         await expect(
             useCase.execute({
@@ -91,6 +117,19 @@ describe('RegisterVehicle Use Case', () => {
                 plate: 'INVALID-PLATE',
             }),
         ).rejects.toThrow(InvalidPlateException);
+        expect(repository.save).not.toHaveBeenCalled();
+    });
+
+    it('should throw when the customer does not exist', async () => {
+        const repository = makeRepository();
+        const useCase = new RegisterVehicle(
+            repository,
+            makeCustomerRepository(null),
+        );
+
+        await expect(useCase.execute(validVehicleInput)).rejects.toThrow(
+            CustomerNotFoundForVehicleError,
+        );
         expect(repository.save).not.toHaveBeenCalled();
     });
 });

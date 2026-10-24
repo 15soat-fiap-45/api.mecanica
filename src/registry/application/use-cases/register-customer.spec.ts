@@ -75,4 +75,35 @@ describe('RegisterCustomer Use Case', () => {
         ).rejects.toThrow(InvalidDocumentException);
         expect(repository.save).not.toHaveBeenCalled();
     });
+
+    it('should not publish the event when persistence fails', async () => {
+        const repository = makeRepository();
+        const save = vi.mocked(repository.save);
+        save.mockRejectedValueOnce(new Error('database unavailable'));
+        const eventBus = makeEventBus();
+        const useCase = new RegisterCustomer(repository, eventBus);
+
+        await expect(useCase.execute(validCustomerInput)).rejects.toThrow(
+            'database unavailable',
+        );
+
+        expect(eventBus.publish).not.toHaveBeenCalled();
+    });
+
+    it('should save before publishing the event', async () => {
+        const repository = makeRepository();
+        const eventBus = makeEventBus();
+        const order: string[] = [];
+        vi.mocked(repository.save).mockImplementationOnce(async () => {
+            order.push('save');
+        });
+        vi.mocked(eventBus.publish).mockImplementationOnce(async () => {
+            order.push('publish');
+        });
+        const useCase = new RegisterCustomer(repository, eventBus);
+
+        await useCase.execute(validCustomerInput);
+
+        expect(order).toEqual(['save', 'publish']);
+    });
 });

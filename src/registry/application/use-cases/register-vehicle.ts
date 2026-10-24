@@ -1,4 +1,6 @@
 import type { VehicleRepository } from '../../domain/vehicle/vehicle.repository.js';
+import type { CustomerRepository } from '../../domain/customer/customer.repository.js';
+import { CpfCnpj } from '../../domain/customer/value-objects/cpf-cnpj.js';
 import { Vehicle } from '../../domain/vehicle/vehicle.js';
 import { Plate } from '../../domain/vehicle/value-objects/plate.js';
 import type { EventBus } from '../../../shared/application/event-bus.js';
@@ -11,8 +13,15 @@ export class VehicleAlreadyExistsError extends ApplicationException {
     }
 }
 
+export class CustomerNotFoundForVehicleError extends ApplicationException {
+    constructor() {
+        super('Customer not found for vehicle.');
+    }
+}
+
 export interface RegisterVehicleInput {
     id?: string | undefined;
+    customerId: string;
     model: string;
     year: number;
     brand: string;
@@ -22,6 +31,7 @@ export interface RegisterVehicleInput {
 
 export interface RegisterVehicleOutput {
     id: string;
+    customerId: string;
     model: string;
     year: number;
     brand: string;
@@ -35,10 +45,17 @@ export class RegisterVehicle implements UseCase<
 > {
     constructor(
         private readonly vehicleRepository: VehicleRepository,
+        private readonly customerRepository: CustomerRepository,
         private readonly eventBus?: EventBus,
     ) {}
 
     async execute(input: RegisterVehicleInput): Promise<RegisterVehicleOutput> {
+        const customerId = CpfCnpj.create(input.customerId);
+        const customer = await this.customerRepository.findByCpfCnpj(customerId);
+        if (!customer) {
+            throw new CustomerNotFoundForVehicleError();
+        }
+
         const plateVo = Plate.create(input.plate);
 
         const existingByPlate =
@@ -62,6 +79,7 @@ export class RegisterVehicle implements UseCase<
 
         const vehicle = Vehicle.register({
             id: input.id,
+            customerId,
             model: input.model,
             year: input.year,
             brand: input.brand,
@@ -77,6 +95,7 @@ export class RegisterVehicle implements UseCase<
 
         return {
             id: vehicle.id.value,
+            customerId: vehicle.customerId.value,
             model: vehicle.model,
             year: vehicle.year,
             brand: vehicle.brand,
