@@ -36,9 +36,25 @@ Na primeira execução, com o volume de dados vazio, o Docker executa automatica
 
 ```text
 init/01-schema.sql
+init/02-service-order.sql
 ```
 
 Esse script cria o modelo relacional da oficina.
+
+O segundo script cria o schema `service_order`, usado pelos agregados atuais
+de OS e orçamento: `orders`, `supply_items` e `budgets`. Ele mantém as tabelas
+legadas em `public` intactas. Os agregados usam UUIDs, status em inglês e códigos
+de peça; por isso não são gravados nas tabelas legadas `ordem_servico` e
+`orcamento`, que têm outro contrato. Não há sincronização entre os dois modelos.
+
+Para um banco já inicializado, aplique o script incremental a partir desta pasta:
+
+```bash
+docker compose exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1' < init/02-service-order.sql
+```
+
+O script usa `IF NOT EXISTS` e pode ser reaplicado. Não é necessário recriar o
+volume. A execução desse script em banco real deve preceder o uso das rotas de OS.
 
 Importante: os scripts em `/docker-entrypoint-initdb.d/` são executados apenas na primeira inicialização do PostgreSQL. Alterações posteriores no script não serão aplicadas automaticamente em um banco já criado.
 

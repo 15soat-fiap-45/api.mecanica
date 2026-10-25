@@ -16,19 +16,19 @@ O documento oficial `Fase 1 - Tech Challenge.pdf` não está presente na árvore
 
 ## Estado atual
 
-| Capacidade | Estado | Evidência / observação |
-|---|---|---|
-| Cadastrar cliente | **Implementado, mas não validado via banco** | `src/registry/application/use-cases/register-customer.ts` e rota `POST /customers` |
-| Consultar cliente por CPF/CNPJ | **Implementado, mas não validado via banco** | `find-customer-by-document.ts` e `GET /customers/:cpfCnpj` |
-| Cadastrar veículo | **Implementado, mas não validado via banco** | `register-vehicle.ts` e `POST /vehicles` |
-| Consultar veículo por placa | **Implementado, mas não validado via banco** | `find-vehicle-by-plate.ts` e `GET /vehicles/:plate` |
-| Validação de CPF/CNPJ, e-mail, telefone e placa | **Implementado** | Value objects em `src/registry/domain/**/value-objects` |
-| Ordens de serviço no domínio | **Parcialmente implementado** | Agregado, casos de uso e testes existem; não há rotas HTTP ou persistência concreta identificada para OS |
-| Orçamento e aprovação/rejeição | **Parcialmente implementado** | Agregado `Budget`, casos de uso e evento de aprovação existem; não há API publicada para o fluxo |
-| Estoque e reservas | **Parcialmente implementado** | Agregados, casos de uso, handlers e testes existem; não há endpoints nem repositórios PostgreSQL correspondentes |
-| CRUD completo de clientes, veículos, serviços e peças | **Pendente / parcial** | Foram encontradas operações de criação e consulta de clientes/veículos; atualização e exclusão não estão expostas nas rotas atuais |
-| Autenticação JWT e autorização administrativa | **Pendente** | Nenhum plugin, middleware ou caso de uso JWT identificado |
-| Dockerfile da aplicação e Docker Compose completo | **Pendente** | Existe Compose para PostgreSQL e SonarQube, mas não para a aplicação |
+| Capacidade                                            | Estado                                           | Evidência / observação                                                                                                             |
+| ----------------------------------------------------- | ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------- |
+| Cadastrar cliente                                     | **Implementado, mas não validado via banco**     | `src/registry/application/use-cases/register-customer.ts` e rota `POST /customers`                                                 |
+| Consultar cliente por CPF/CNPJ                        | **Implementado, mas não validado via banco**     | `find-customer-by-document.ts` e `GET /customers/:cpfCnpj`                                                                         |
+| Cadastrar veículo                                     | **Implementado, mas não validado via banco**     | `register-vehicle.ts` e `POST /vehicles`                                                                                           |
+| Consultar veículo por placa                           | **Implementado, mas não validado via banco**     | `find-vehicle-by-plate.ts` e `GET /vehicles/:plate`                                                                                |
+| Validação de CPF/CNPJ, e-mail, telefone e placa       | **Implementado**                                 | Value objects em `src/registry/domain/**/value-objects`                                                                            |
+| Ordens de serviço no domínio                          | **Implementado para os casos de uso existentes** | Repositório Drizzle e rotas de cadastro, inclusão/uso de insumos e cancelamento; persistência real ainda não validada              |
+| Orçamento e aprovação/rejeição                        | **Parcialmente implementado**                    | Repositório Drizzle e rota de aprovação com evento que aprova a OS; criação e rejeição ainda não têm caso de uso HTTP              |
+| Estoque e reservas                                    | **Parcialmente implementado**                    | Agregados, casos de uso, handlers e testes existem; não há endpoints nem repositórios PostgreSQL correspondentes                   |
+| CRUD completo de clientes, veículos, serviços e peças | **Pendente / parcial**                           | Foram encontradas operações de criação e consulta de clientes/veículos; atualização e exclusão não estão expostas nas rotas atuais |
+| Autenticação JWT e autorização administrativa         | **Pendente**                                     | Nenhum plugin, middleware ou caso de uso JWT identificado                                                                          |
+| Dockerfile da aplicação e Docker Compose completo     | **Pendente**                                     | Existe Compose para PostgreSQL e SonarQube, mas não para a aplicação                                                               |
 
 ## Arquitetura e DDD
 
@@ -114,7 +114,7 @@ O banco identificado no projeto é o **PostgreSQL**. A escolha está refletida e
 
 Há duas representações que ainda precisam ser alinhadas:
 
-- `src/infra/database/schema.ts` contém tabelas Drizzle para cliente, veículo e serviço.
+- `src/infra/database/schema.ts` contém tabelas Drizzle para cliente, veículo e serviço, além do schema `service_order` para OS, itens e orçamento.
 - `infra/postgres/init/01-schema.sql` contém um modelo mais amplo, incluindo peças, usuários, ordens, orçamento, estoque e histórico de status.
 
 O script SQL inicial é executado automaticamente apenas quando o volume do PostgreSQL é criado pela primeira vez. Os scripts disponíveis são:
@@ -127,7 +127,7 @@ npm run db:studio
 npm run db:test
 ```
 
-Não há diretório de migrações versionadas na árvore analisada. A persistência concreta identificada está concentrada nos repositórios Drizzle de cliente e veículo; os repositórios dos contextos de ordem e estoque são apenas contratos de domínio no estado atual.
+Os repositórios Drizzle de OS e orçamento implementam os contratos existentes, com controle otimista de versão. A OS e seus itens são persistidos em uma transação. O script incremental `infra/postgres/init/02-service-order.sql` provisiona o schema do contexto sem alterar o modelo legado em `public`. Para um volume existente, aplique esse script conforme o [README do PostgreSQL](infra/postgres/README.md). Os repositórios de estoque ainda são contratos de domínio; não há diretório de migrações gerenciadas pelo Drizzle.
 
 ## Execução local
 
@@ -167,16 +167,43 @@ Não existe `Dockerfile` da aplicação nem `docker-compose.yml` na raiz orquest
 
 O Fastify registra Swagger e Swagger UI em `/docs`. A especificação OpenAPI é gerada a partir das rotas registradas.
 
-| Método | Rota | Finalidade | Autenticação |
-|---|---|---|---|
-| `GET` | `/health` | Verifica a aplicação e executa `SELECT 1` no banco | Não |
-| `POST` | `/customers` | Cadastra cliente | Não |
-| `GET` | `/customers/:cpfCnpj` | Consulta cliente por CPF/CNPJ | Não |
-| `POST` | `/vehicles` | Cadastra veículo vinculado a cliente | Não |
-| `GET` | `/vehicles/:plate` | Consulta veículo por placa | Não |
-| `GET` | `/docs` | Interface Swagger UI | Não |
+| Método | Rota                                                       | Finalidade                                         | Autenticação |
+| ------ | ---------------------------------------------------------- | -------------------------------------------------- | ------------ |
+| `GET`  | `/health`                                                  | Verifica a aplicação e executa `SELECT 1` no banco | Não          |
+| `POST` | `/customers`                                               | Cadastra cliente                                   | Não          |
+| `GET`  | `/customers/:cpfCnpj`                                      | Consulta cliente por CPF/CNPJ                      | Não          |
+| `POST` | `/vehicles`                                                | Cadastra veículo vinculado a cliente               | Não          |
+| `GET`  | `/vehicles/:plate`                                         | Consulta veículo por placa                         | Não          |
+| `POST` | `/service-orders`                                          | Cadastra OS (`description`)                        | Não          |
+| `POST` | `/service-orders/:serviceOrderId/supplies`                 | Inclui insumo (`partCode`, `quantity`)             | Não          |
+| `POST` | `/service-orders/:serviceOrderId/supplies/:partCode/usage` | Registra uso do insumo                             | Não          |
+| `POST` | `/service-orders/:serviceOrderId/cancel`                   | Cancela OS                                         | Não          |
+| `POST` | `/budgets/:budgetId/approve`                               | Aprova orçamento existente                         | Não          |
+| `GET`  | `/docs`                                                    | Interface Swagger UI                               | Não          |
 
-As rotas de ordem de serviço, orçamento, serviços, peças, estoque, usuários e autenticação ainda não estão registradas em adaptadores HTTP identificáveis. A validação de payload usa Zod; erros de validação retornam HTTP 400 e exceções de aplicação/domínio são convertidas pelo error handler central em `src/app.ts`.
+As rotas de serviços, peças, estoque, usuários e autenticação ainda não estão registradas em adaptadores HTTP identificáveis. A validação de payload usa Zod; erros de validação retornam HTTP 400 e exceções de aplicação/domínio são convertidas pelo error handler central em `src/app.ts`.
+
+Os controllers de OS delegam aos cinco casos de uso existentes, compostos com
+`DrizzleServiceOrderRepository`, `DrizzleBudgetRepository` e a mesma instância de
+`InMemoryEventBus` usada no cadastro. Os eventos `service-order.registered`,
+`service-order.additional-supplies-included`, `service-order.supply-used`,
+`service-order.cancelled` e `service-order.budget-approved` são publicados após
+persistência. O handler de aprovação do orçamento altera a OS para `APPROVED`.
+Conflitos de versão retornam HTTP 409.
+
+O orçamento precisa existir antes da aprovação: o projeto ainda não tem caso de
+uso para criá-lo por HTTP. Também não há caso de uso HTTP para iniciar/finalizar
+OS. O composition root geral mantém as assinaturas dos handlers de estoque,
+mas a inicialização atual sobe cadastro e OS; o consumo pelo estoque depende da
+integração desse contexto com repositórios concretos.
+
+Exemplo de cadastro de OS:
+
+```bash
+curl -X POST http://localhost:3000/service-orders \
+  -H 'Content-Type: application/json' \
+  -d '{"description":"Troca de pastilhas de freio"}'
+```
 
 Não foi identificado mecanismo JWT, autorização por perfil ou proteção específica para dados sensíveis.
 
@@ -226,9 +253,9 @@ docs/adr/                          # decisões arquiteturais
 
 - O Event Bus é in-process/in-memory; não há durabilidade, retry, DLQ ou replay.
 - A consistência entre contextos é eventual e os handlers são preparados para idempotência em cenários específicos.
-- A API HTTP cobre apenas o contexto de cadastro e health check.
+- A API HTTP cobre cadastro, os cinco casos de uso existentes de OS/orçamento e health check; faltam criação de orçamento e início/finalização de OS.
 - O modelo SQL inicial e o schema Drizzle ainda não representam o mesmo conjunto de tabelas.
-- Não foram encontrados endpoints de atualização/exclusão, autenticação JWT, autorização ou fluxo público de aprovação/rejeição de orçamento.
+- Não foram encontrados endpoints de atualização/exclusão, autenticação JWT, autorização ou fluxo público de criação/rejeição de orçamento.
 - Não há Dockerfile da API nem Compose completo da aplicação.
 
 ## Links e informações da entrega
