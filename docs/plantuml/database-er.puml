@@ -1,188 +1,55 @@
-@startuml Modelo E-R - Banco de Dados
-!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Deployment.puml
+@startuml Modelo E-R - Schema Drizzle Atual
+hide circle
+skinparam linetype ortho
 
-entity "clients" as clients {
-    *id: UUID <<pk>>
+entity "cliente" as cliente {
+    * cliente_id : VARCHAR(14) <<PK>>
     --
-    name: VARCHAR(100)
-    email: VARCHAR(100) <<unique>>
-    cpf: VARCHAR(14) <<unique>>
-    phone: VARCHAR(20)
-    password_hash: VARCHAR(255)
-    status: ENUM (CREATED, ACTIVE, SUSPENDED, DELETED)
-    created_at: TIMESTAMP
-    updated_at: TIMESTAMP
+    nome : VARCHAR(100)
+    telefone : VARCHAR(11)
+    email : VARCHAR(100)
+    version : INTEGER
 }
 
-entity "vehicles" as vehicles {
-    *id: UUID <<pk>>
+entity "veiculo" as veiculo {
+    * veiculo_id : VARCHAR(36) <<PK>>
     --
-    client_id: UUID <<fk>>
-    plate: VARCHAR(10) <<unique>>
-    model: VARCHAR(100)
-    year: INTEGER
-    brand: VARCHAR(50)
-    color: VARCHAR(50)
-    mileage: INTEGER
-    created_at: TIMESTAMP
+    placa : VARCHAR(7) <<UNIQUE>>
+    modelo : VARCHAR(30)
+    ano : INTEGER
+    marca : VARCHAR(16)
+    cor : VARCHAR(15)
+    version : INTEGER
+    cliente_id : VARCHAR(14) <<FK>>
 }
 
-entity "service_orders" as orders {
-    *id: UUID <<pk>>
+entity "servico" as servico {
+    * servico_id : BIGINT <<PK, identity>>
     --
-    client_id: UUID <<fk>>
-    vehicle_id: UUID <<fk>>
-    service_type: ENUM
-    description: TEXT
-    status: ENUM (PENDING, SCHEDULED, IN_PROGRESS, PAUSED, COMPLETED, AWAITING_PAYMENT, PAID, DELIVERED, CANCELLED)
-    priority: ENUM (LOW, NORMAL, HIGH, URGENT)
-    estimated_price: DECIMAL(10,2)
-    actual_price: DECIMAL(10,2)
-    scheduled_date: TIMESTAMP
-    started_at: TIMESTAMP
-    completed_at: TIMESTAMP
-    created_by: UUID <<fk>>
-    created_at: TIMESTAMP
-    updated_at: TIMESTAMP
+    titulo : VARCHAR(20)
+    descricao : VARCHAR(200) nullable
+    valor : BIGINT
 }
 
-entity "service_items" as service_items {
-    *id: UUID <<pk>>
-    --
-    service_order_id: UUID <<fk>>
-    description: VARCHAR(255)
-    quantity: INTEGER
-    unit_price: DECIMAL(10,2)
-    total_price: DECIMAL(10,2)
-}
+cliente ||--o{ veiculo : possui
 
-entity "payments" as payments {
-    *id: UUID <<pk>>
-    --
-    service_order_id: UUID <<fk>>
-    client_id: UUID <<fk>>
-    amount: DECIMAL(10,2)
-    payment_method: ENUM (CREDIT_CARD, DEBIT_CARD, PIX, BOLETO, CASH)
-    status: ENUM (PENDING, PROCESSING, AUTHORIZED, CAPTURED, COMPLETED, DECLINED, REFUNDED)
-    stripe_transaction_id: VARCHAR(255) <<unique>>
-    receipt_url: VARCHAR(500)
-    paid_at: TIMESTAMP
-    created_at: TIMESTAMP
-}
-
-entity "payment_receipts" as receipts {
-    *id: UUID <<pk>>
-    --
-    payment_id: UUID <<fk>>
-    file_path: VARCHAR(500)
-    file_size: INTEGER
-    mime_type: VARCHAR(50)
-    s3_key: VARCHAR(255)
-    created_at: TIMESTAMP
-}
-
-entity "service_photos" as photos {
-    *id: UUID <<pk>>
-    --
-    service_order_id: UUID <<fk>>
-    file_path: VARCHAR(500)
-    file_size: INTEGER
-    uploaded_by: UUID <<fk>>
-    photo_type: ENUM (DIAGNOSIS, PROGRESS, COMPLETED)
-    s3_key: VARCHAR(255)
-    created_at: TIMESTAMP
-}
-
-entity "users" as users {
-    *id: UUID <<pk>>
-    --
-    email: VARCHAR(100) <<unique>>
-    password_hash: VARCHAR(255)
-    role: ENUM (ADMIN, MANAGER, RECEPTIONIST, MECHANIC)
-    status: ENUM (ACTIVE, INACTIVE, SUSPENDED)
-    last_login: TIMESTAMP
-    created_at: TIMESTAMP
-    updated_at: TIMESTAMP
-}
-
-entity "audit_logs" as audit {
-    *id: UUID <<pk>>
-    --
-    user_id: UUID <<fk>>
-    entity_type: VARCHAR(50)
-    entity_id: UUID
-    action: ENUM (CREATE, UPDATE, DELETE, VIEW)
-    old_values: JSONB
-    new_values: JSONB
-    ip_address: VARCHAR(45)
-    created_at: TIMESTAMP
-}
-
-entity "service_prices" as prices {
-    *id: UUID <<pk>>
-    --
-    service_type: VARCHAR(50) <<unique>>
-    base_price: DECIMAL(10,2)
-    description: TEXT
-    active: BOOLEAN
-    created_at: TIMESTAMP
-}
-
-' Relacionamentos
-clients ||--o{ vehicles: "tem"
-clients ||--o{ orders: "solicita"
-clients ||--o{ payments: "realiza"
-vehicles ||--o{ orders: "em"
-orders ||--o{ service_items: "contém"
-orders ||--o{ payments: "gera"
-orders ||--o{ photos: "tem"
-payments ||--o{ receipts: "tem"
-users ||--o{ orders: "cria"
-users ||--o{ photos: "envia"
-users ||--o{ audit: "executa"
-prices ||--o{ orders: "define_preço"
-
-note right of clients
-    Clientes do sistema
-    - Fornecedores de veículos
-    - Email e CPF únicos
-    - Status controla acesso
+note right of cliente
+    Tabela definida em
+    src/infra/database/schema.ts.
+    Cliente é identificado por CPF/CNPJ.
 end note
 
-note right of vehicles
-    Veículos dos clientes
-    - Placa única por sistema
-    - Histórico de manutenção
-    - Mileage atualizado
+note right of veiculo
+    cliente_id referencia cliente.cliente_id.
+    Usada pelo repositório Drizzle de veículos.
 end note
 
-note right of orders
-    Ordens de serviço
-    - Estado machine com transições
-    - Rastreamento completo
-    - Preço estimado vs real
+note bottom of servico
+    Está no schema Drizzle e no SQL inicial,
+    mas não há repositório ou rota de serviço
+    identificada no estado atual.
 end note
 
-note right of payments
-    Pagamentos integrados
-    - Stripe transaction tracking
-    - Múltiplos métodos
-    - Webhook confirmação
-end note
-
-note right of users
-    Usuários internos
-    - Roles baseado em permissões
-    - Audit trail completo
-    - Last login tracking
-end note
-
-note right of audit
-    Log de auditoria
-    - Rastreamento completo
-    - Conformidade LGPD
-    - IP logging
-end note
-
-SHOW_LEGEND()
+note "Limite do diagrama: o schema Drizzle atual contém somente estas três tabelas.\nO SQL inicial do PostgreSQL também declara tabelas de OS/estoque, mas elas ainda não estão mapeadas pelos adaptadores da aplicação." as scope
+scope .. cliente
 @enduml

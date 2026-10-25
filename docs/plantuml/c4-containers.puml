@@ -1,47 +1,34 @@
-@startuml C4 Containers - API Mecânica
+@startuml C4 Containers - API Oficina Mecanica
 !include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
-
+LAYOUT_LEFT_RIGHT()
 SHOW_PERSON_OUTLINE()
 
-Person(cliente, "👤 Cliente", "Fornecedor do veículo")
-Person(recepcionista, "💼 Recepcionista", "Operador do sistema")
-Person(mecanico, "🔧 Mecânico", "Executor dos serviços")
-Person(gerente, "👨‍💼 Gerente", "Gestor/Administrator")
+Person(client, "Consumidor HTTP", "Chama a API por HTTP/JSON")
 
-System_Boundary(api_mecanica, "API Mecânica") {
-    Container(web_app, "🖥️ Web Application", "React / TypeScript", "Interface desktop e dashboard admin\nAcessada por recepcionistas e gerentes")
-    Container(mobile_app, "📱 Mobile Application", "React Native", "App nativa para mecânicos\nAtualizações em tempo real")
-
-    Container(api, "API Server", "Node.js / Express", "Lógica de negócio\nEndpoints REST\nOrquestração de serviços")
-    Container(cache, "Cache Layer", "Redis", "Sessões de usuário\nDados frequentes\nRate limiting")
-
-    Container(db, "📊 Database", "PostgreSQL", "Dados principais\nClientes, veículos, serviços\nTransações ACID")
-    Container(storage, "📁 File Storage", "S3 / Minio", "Fotos de diagnóstico\nComprovantes de pagamento\nRecibos de serviço")
+System_Boundary(system, "API Oficina Mecanica") {
+    Container(api, "Processo da API", "Node.js / TypeScript / Fastify", "Servidor, Swagger, health check e error handler")
+    Container(registry_http, "Adaptador HTTP Registry", "Fastify + Zod", "POST/GET /customers e /vehicles")
+    Container(application, "Camada de aplicação", "Casos de uso", "Registry; e casos de uso de Service Order e Stock")
+    Container(domain, "Domínio modular", "DDD", "Registry, Service Order, Budget, Part Supply e Supply Reservation")
+    Container(event_bus, "Event Bus", "InMemoryEventBus", "Eventos no mesmo processo; sem durabilidade, retry ou DLQ")
+    Container(drizzle, "Persistência Registry", "Drizzle ORM", "Repositórios concretos de cliente e veículo")
 }
+System_Ext(postgres, "PostgreSQL", "Banco local/provisionado pelo Compose")
 
-System_Ext(email_service, "📧 Email Service", "SMTP Provider\nSendGrid / AWS SES")
-System_Ext(sms_service, "📱 SMS Service", "Twilio / AWS SNS")
-System_Ext(payment_service, "💳 Payment Service", "Stripe / PayPal")
+Rel(client, registry_http, "HTTP/JSON")
+Rel(registry_http, application, "Valida e executa casos de uso")
+Rel(application, domain, "Cria agregados, VOs e eventos")
+Rel(application, drizzle, "Usa contratos de repositório")
+Rel(drizzle, postgres, "SQL")
+Rel(application, event_bus, "Publica eventos de domínio")
+Rel(event_bus, application, "Handlers internos de OS/Stock")
+Rel(api, registry_http, "Registra rotas")
+Rel(api, event_bus, "Cria Event Bus no bootstrap")
+Rel(api, postgres, "Health check SELECT 1")
 
-' Fluxo dos usuários
-Rel(cliente, web_app, "HTTPS", "Acessa como cliente")
-Rel(recepcionista, web_app, "HTTPS", "Gerencia dados")
-Rel(mecanico, mobile_app, "HTTPS", "Atualiza progresso")
-Rel(gerente, web_app, "HTTPS", "Visualiza relatórios")
-
-' Fluxo interno
-Rel(web_app, api, "REST / JSON", "HTTP requests")
-Rel(mobile_app, api, "REST / JSON", "HTTP requests")
-
-Rel(api, cache, "", "Lê/escreve cache")
-Rel(api, db, "SQL", "Persiste dados")
-Rel(api, storage, "Multipart", "Upload/download arquivos")
-
-Rel(api, email_service, "SMTP", "Envia emails")
-Rel(api, sms_service, "SMS API", "Envia SMS")
-Rel(api, payment_service, "HTTPS", "Processa pagamentos")
-
-Rel_Back(cache, api, "", "Retorna dados")
-
+note right of application
+    Service Order e Stock não possuem rotas HTTP
+    nem repositórios PostgreSQL concretos no estado atual.
+end note
 SHOW_LEGEND()
 @enduml

@@ -1,132 +1,61 @@
-@startuml Estados de Recursos
+@startuml Estados do Domínio Atual
+hide empty description
 
-== CLIENTE - Ciclo de Vida ==
-
-state ClientStates {
-    [*] --> Created: POST /clients
-
-    Created --> Active: Email verificado\n(opcional)
-    Created --> Inactive: Não ativa
-
-    Active --> Suspended: Não paga\ndevidas
-    Active --> Inactive: Desativa
-    Active --> Deleted: Solicita\ndeleção
-
-    Suspended --> Active: Paga\ndívidas
-    Suspended --> Deleted: Solicita\ndeleção
-
-    Inactive --> Active: Ativa conta
-    Inactive --> Deleted: Solicita\ndeleção
-
-    Deleted --> [*]
-}
-
-Created: Pode agendar serviços\nEmail enviado
-Active: Status normal\nPode usar sistema
-Suspended: Não pode agendar\nAguardando pagamento
-Inactive: Desativado\nMas não deletado
-Deleted: Soft delete\nDados preservados (compliant)
-
----
-
-== ORDEM DE SERVIÇO - Ciclo de Vida ==
-
-state OrderStates {
-    [*] --> PENDING: POST /service-orders
-
-    PENDING --> SCHEDULED: Agendado
-    PENDING --> IN_PROGRESS: Mecânico começa
-    PENDING --> CANCELLED: Cliente cancela
-
-    SCHEDULED --> IN_PROGRESS: Mecânico chega
-    SCHEDULED --> CANCELLED: Cancelado
-
-    IN_PROGRESS --> PAUSED: Aguarda peça
-    IN_PROGRESS --> COMPLETED: Serviço concluído
-    IN_PROGRESS --> CANCELLED: Cancelado
-
-    PAUSED --> IN_PROGRESS: Peça chegou
-    PAUSED --> CANCELLED: Cancelado
-
-    COMPLETED --> AWAITING_PAYMENT: Serviço pronto
-    COMPLETED --> CANCELLED: Cancelado
-
-    AWAITING_PAYMENT --> PAID: Pagamento recebido
-    AWAITING_PAYMENT --> CANCELLED: Cancelado
-
-    PAID --> DELIVERED: Cliente pegou veículo
-
-    DELIVERED --> [*]
+state "ServiceOrder" as SO {
+    [*] --> PENDING
+    PENDING --> APPROVED
+    PENDING --> CANCELLED
+    APPROVED --> IN_PROGRESS
+    APPROVED --> CANCELLED
+    IN_PROGRESS --> PAUSED
+    IN_PROGRESS --> COMPLETED
+    IN_PROGRESS --> CANCELLED
+    PAUSED --> IN_PROGRESS
+    PAUSED --> CANCELLED
+    COMPLETED --> [*]
     CANCELLED --> [*]
 }
 
-PENDING: Criada\nAguardando agendamento
-SCHEDULED: Data/hora definida\nCliente notificado
-IN_PROGRESS: Mecânico trabalhando\nStatus em tempo real
-PAUSED: Aguardando peça\nOu decisão do cliente
-COMPLETED: Serviço pronto\nAguardando pagamento
-AWAITING_PAYMENT: Fatura gerada\nAguardando confirmação
-PAID: Pagamento ok\nPronto para entrega
-DELIVERED: Veículo entregue\nFim do ciclo
-
----
-
-== TRANSIÇÃO DE PAGAMENTO ==
-
-state PaymentStates {
-    [*] --> PENDING: ORDER_COMPLETED
-
-    PENDING --> PROCESSING: POST /payments
-
-    PROCESSING --> AUTHORIZED: Stripe autoriza
-    PROCESSING --> DECLINED: Cartão recusado
-
-    AUTHORIZED --> CAPTURED: Captura automática
-
-    CAPTURED --> COMPLETED: Notificação webhook
-    COMPLETED --> REFUNDED: Cliente requer
-
-    DECLINED --> [*]
-    REFUNDED --> [*]
-    COMPLETED --> [*]
+state "Budget" as BUDGET {
+    [*] --> B_PENDING
+    B_PENDING --> B_APPROVED
+    B_PENDING --> B_REJECTED
+    B_APPROVED --> [*]
+    B_REJECTED --> [*]
 }
 
-PENDING: Aguardando pagamento
-PROCESSING: Enviando para gateway
-AUTHORIZED: Stripe autorizou
-CAPTURED: Dinheiro capturado
-COMPLETED: Transação concluída
-DECLINED: Cartão recusado
-REFUNDED: Reembolso processado
+state "SupplyReservation" as RESERVATION {
+    [*] --> R_PENDING
+    R_PENDING --> R_CONFIRMED
+    R_PENDING --> R_CANCELLED
+    R_CONFIRMED --> R_CONSUMED
+    R_CONFIRMED --> R_CANCELLED
+    R_CANCELLED --> [*]
+    R_CONSUMED --> [*]
+}
 
----
+state "PartSupply" as SUPPLY {
+    [*] --> REGISTERED
+    REGISTERED --> REGISTERED : entrada/saída de quantidade
+}
 
-== Transições Importantes ==
-
-note right of Created
-    Cliente criado mas não ativo
-    Email de confirmação enviado
+note right of SO
+    Valores definidos em
+    service-order-status.ts.
 end note
 
-note right of Active
-    Pode agendar serviços
-    Pode fazer pagamentos
-    Status normal
+note right of BUDGET
+    Valores: PENDING, APPROVED, REJECTED.
+    A aprovação publica service-order.budget-approved.
 end note
 
-note right of PENDING
-    Estado inicial da ordem
-    Não iniciada
+note right of RESERVATION
+    Valores: PENDING, CONFIRMED,
+    CANCELLED, CONSUMED.
 end note
 
-note right of IN_PROGRESS
-    Mecânico trabalhando
-    Progresso atualizado via mobile
+note bottom of SUPPLY
+    Não há máquina de estados de cliente,
+    pagamento ou entrega implementada.
 end note
-
-note right of AWAITING_PAYMENT
-    Serviço completo
-    Aguardando confirmação do pagamento
-end note
-
 @enduml
