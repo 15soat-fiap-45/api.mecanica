@@ -77,6 +77,30 @@ describe('LogIn', () => {
         expect(verify).toHaveBeenCalledOnce();
     });
 
+    it('retries dummy hash generation after a rejection', async () => {
+        const hashError = new Error('hash unavailable');
+        const hash = vi
+            .fn<PasswordHasher['hash']>()
+            .mockRejectedValueOnce(hashError)
+            .mockResolvedValueOnce('hashed:NotARealAccountPassword');
+        const login = new LogIn(repository, { ...hasher, hash }, jwt);
+        users.clear();
+
+        await expect(
+            login.execute({
+                email: 'missing@example.com',
+                password: 'Incorrect123',
+            }),
+        ).rejects.toBe(hashError);
+        await expect(
+            login.execute({
+                email: 'missing@example.com',
+                password: 'Incorrect123',
+            }),
+        ).rejects.toThrow(InvalidCredentials);
+        expect(hash).toHaveBeenCalledTimes(2);
+    });
+
     it('requires first access when a pending user supplies the temporary password', async () => {
         users.clear();
         await saveUser('PENDING_FIRST_ACCESS');

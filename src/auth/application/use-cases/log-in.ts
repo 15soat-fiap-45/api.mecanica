@@ -7,7 +7,7 @@ import type { PasswordHasher } from '../../domain/services/password-hasher.js';
 import type { UserRepository } from '../../domain/user/user-repository.js';
 
 export class LogIn {
-    private dummyHash?: Promise<string>;
+    private dummyHash: Promise<string> | undefined;
 
     constructor(
         private readonly repository: UserRepository,
@@ -19,9 +19,16 @@ export class LogIn {
         const parsed = Email.parse(input.email);
         if (!parsed.ok) throw new InvalidCredentials();
 
-        const dummyHash = await (this.dummyHash ??= this.hasher.hash(
-            'NotARealAccountPassword',
-        ));
+        if (!this.dummyHash) {
+            const hashPromise = this.hasher.hash('NotARealAccountPassword');
+            const retryableHash = hashPromise.catch((error: unknown) => {
+                if (this.dummyHash === retryableHash)
+                    this.dummyHash = undefined;
+                throw error;
+            });
+            this.dummyHash = retryableHash;
+        }
+        const dummyHash = await this.dummyHash;
         const user = await this.repository.findByEmail(parsed.value);
         if (!user) {
             await this.hasher.verify(input.password, dummyHash);

@@ -75,8 +75,7 @@ else Requisição válida
 end
 
 note over API,DB
-    O controller define a rota, mas buildApp() ainda não a registra:
-    no servidor iniciado por src/index.ts, POST /users retorna 404.
+    Rota registrada no bootstrap por buildApp({registry, auth}).
     A senha temporária é devolvida em claro somente na resposta.
 end note
 @enduml
@@ -144,8 +143,7 @@ else Dentro do limite
 end
 
 note over API,DB
-    O controller define a rota, mas buildApp() ainda não a registra:
-    no servidor iniciado por src/index.ts, POST /auth/login retorna 404.
+    Rota registrada no bootstrap por buildApp({registry, auth}).
     Primeiro acesso usa POST /auth/first-access (fluxo separado).
 end note
 @enduml

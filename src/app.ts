@@ -8,9 +8,11 @@ import { ApplicationException } from './shared/application/application-exception
 import { DomainException } from './shared/domain/domain-exception.js';
 import { registerRegistryRoutes } from './registry/infra/http/registry-routes.js';
 import type { RegistryUseCases } from './registry/composition-root.js';
+import type { AuthController } from './auth/infra/http/auth-controller.js';
 
 export interface AppDependencies {
     registry?: RegistryUseCases;
+    auth?: AuthController;
 }
 
 export function buildApp(deps: AppDependencies = {}) {
@@ -58,7 +60,15 @@ export function buildApp(deps: AppDependencies = {}) {
         }
 
         request.log.error(error);
-        return reply.code(500).send({
+        const fastifyStatusCode = fastifyError.statusCode;
+        const statusCode =
+            typeof fastifyStatusCode === 'number' &&
+            Number.isInteger(fastifyStatusCode) &&
+            fastifyStatusCode >= 400 &&
+            fastifyStatusCode < 500
+                ? fastifyStatusCode
+                : 500;
+        return reply.code(statusCode).send({
             error: 'InternalServerError',
             message: 'Internal server error.',
         });
@@ -85,6 +95,7 @@ export function buildApp(deps: AppDependencies = {}) {
             registerRegistryRoutes(registryApp, deps.registry!);
         });
     }
+    if (deps.auth) deps.auth.register(app);
 
     return app;
 }
