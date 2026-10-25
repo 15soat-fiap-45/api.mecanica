@@ -31,7 +31,7 @@ export function buildApp(deps: AppDependencies = {}) {
 
     app.setErrorHandler((error, request, reply) => {
         const fastifyError = error as FastifyError;
-        if (fastifyError.validation) {
+        if (fastifyError.validation || fastifyError.statusCode === 400) {
             return reply.code(400).send({
                 error: 'ValidationError',
                 message: 'Request validation failed.',

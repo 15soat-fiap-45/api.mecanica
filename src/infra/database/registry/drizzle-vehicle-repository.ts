@@ -6,17 +6,27 @@ import { Plate } from '../../../registry/domain/vehicle/value-objects/plate.js';
 import { db } from '../connection.js';
 import { veiculo } from '../schema.js';
 import { vehicleFromRow, vehicleToRow } from './registry-mappers.js';
+import {
+    isUniqueConstraintViolation,
+    RegistryAlreadyExistsError,
+} from './registry-persistence-errors.js';
 
 export class DrizzleVehicleRepository implements VehicleRepository {
     constructor(private readonly database: typeof db = db) {}
 
     async save(vehicle: Vehicle): Promise<void> {
-        await this.database.insert(veiculo).values(vehicleToRow(vehicle));
+        try {
+            await this.database.insert(veiculo).values(vehicleToRow(vehicle));
+        } catch (error) {
+            if (isUniqueConstraintViolation(error)) {
+                throw new RegistryAlreadyExistsError('vehicle');
+            }
+            throw error;
+        }
     }
 
     async findById(id: VehicleId | string): Promise<Vehicle | null> {
-        const vehicleId =
-            typeof id === 'string' ? VehicleId.create(id) : id;
+        const vehicleId = typeof id === 'string' ? VehicleId.create(id) : id;
         const rows = await this.database
             .select()
             .from(veiculo)

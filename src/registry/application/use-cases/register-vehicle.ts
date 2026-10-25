@@ -51,7 +51,8 @@ export class RegisterVehicle implements UseCase<
 
     async execute(input: RegisterVehicleInput): Promise<RegisterVehicleOutput> {
         const customerId = CpfCnpj.create(input.customerId);
-        const customer = await this.customerRepository.findByCpfCnpj(customerId);
+        const customer =
+            await this.customerRepository.findByCpfCnpj(customerId);
         if (!customer) {
             throw new CustomerNotFoundForVehicleError();
         }

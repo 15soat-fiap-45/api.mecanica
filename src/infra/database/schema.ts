@@ -1,9 +1,4 @@
-import {
-    bigint,
-    integer,
-    pgTable,
-    varchar,
-} from 'drizzle-orm/pg-core';
+import { bigint, integer, pgTable, varchar } from 'drizzle-orm/pg-core';
 
 export const cliente = pgTable('cliente', {
     clienteId: varchar('cliente_id', { length: 14 }).primaryKey(),

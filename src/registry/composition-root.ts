@@ -29,10 +29,7 @@ export interface RegistryDependencies {
 }
 
 export interface RegistryUseCases {
-    registerCustomer: UseCase<
-        RegisterCustomerInput,
-        RegisterCustomerOutput
-    >;
+    registerCustomer: UseCase<RegisterCustomerInput, RegisterCustomerOutput>;
     findCustomerByDocument: UseCase<
         FindCustomerByDocumentInput,
         FindCustomerByDocumentOutput
@@ -60,9 +57,7 @@ export function registryCompositionRoot(
         deps.customerRepository,
         eventBus,
     );
-    const findVehicleByPlate = new FindVehicleByPlate(
-        deps.vehicleRepository,
-    );
+    const findVehicleByPlate = new FindVehicleByPlate(deps.vehicleRepository);
 
     return {
         registerCustomer,
