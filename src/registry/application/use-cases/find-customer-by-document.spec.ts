@@ -3,7 +3,7 @@ import type { CustomerRepository } from '../../domain/customer/customer.reposito
 import { Customer } from '../../domain/customer/customer.js';
 import { InvalidDocumentException } from '../../domain/customer/exceptions/InvalidDocumentException.js';
 import { CpfCnpj } from '../../domain/customer/value-objects/cpf-cnpj.js';
-import { Email } from '../../domain/customer/value-objects/email.js';
+import { Email } from '../../../shared/domain/email.js';
 import { Telephone } from '../../domain/customer/value-objects/telephone.js';
 import {
     CustomerNotFoundError,

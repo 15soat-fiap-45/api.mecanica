@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { InvalidEmailException } from '../exceptions/InvalidEmailException.js';
+import { InvalidEmailException } from './invalid-email-exception.js';
 import { Email } from './email.js';
 
 const VALID_EMAIL = 'user@example.com';

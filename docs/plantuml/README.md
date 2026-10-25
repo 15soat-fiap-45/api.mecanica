@@ -10,6 +10,7 @@ Os diagramas desta pasta descrevem o estado confirmado no código atual. A imple
 - `database-er.puml`: tabelas do schema Drizzle atual.
 - `deployment.puml`: execução atual com processo Node.js e PostgreSQL.
 - `flows/client-registration.puml`: fluxo real de `POST /customers`.
+- `flows/auth-service.puml`: pré-cadastro e login registrados pelo controller Auth.
 - `flows/service-order.puml`: fluxo interno de OS/estoque via eventos.
 - `flows/states.puml`: estados implementados para OS, orçamento, reserva e estoque.
 
@@ -17,18 +18,20 @@ Os diagramas desta pasta descrevem o estado confirmado no código atual. A imple
 
 - `GET /health`
 - `GET /docs`
+- `POST /auth/first-access`
+- `POST /auth/login`
+- `POST /users`
 - `POST /customers`
 - `GET /customers/:cpfCnpj`
 - `POST /vehicles`
 - `GET /vehicles/:plate`
 
-Não há, no estado atual, autenticação JWT, Redis, S3, pagamentos, e-mail/SMS ou endpoints HTTP de ordem de serviço/estoque.
+As rotas Auth usam JWT para pré-cadastro, mas não protegem as rotas Registry. Não há Redis, S3, pagamentos, e-mail/SMS ou endpoints HTTP de ordem de serviço/estoque.
 
 ## Banco
 
-`src/infra/database/schema.ts` mapeia `cliente`, `veiculo` e `servico`. O SQL inicial em `infra/postgres/init/01-schema.sql` declara tabelas adicionais, mas elas ainda não possuem correspondência completa nos adaptadores Drizzle; por isso não são representadas como persistência ativa no ER.
+`src/infra/database/schema.ts` mapeia `auth_users`, `cliente`, `veiculo` e `servico`. O SQL inicial em `infra/postgres/init/01-schema.sql` declara tabelas adicionais, mas elas ainda não possuem correspondência completa nos adaptadores Drizzle; por isso não são representadas como persistência ativa no ER.
 
 ## Validação
 
 Para visualizar, use a extensão PlantUML do VS Code ou a CLI PlantUML. Os includes C4 apontam para o repositório oficial do C4-PlantUML.
-

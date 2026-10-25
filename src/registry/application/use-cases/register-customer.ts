@@ -1,7 +1,7 @@
 import type { CustomerRepository } from '../../domain/customer/customer.repository.js';
 import { Customer } from '../../domain/customer/customer.js';
 import { CpfCnpj } from '../../domain/customer/value-objects/cpf-cnpj.js';
-import { Email } from '../../domain/customer/value-objects/email.js';
+import { Email } from '../../../shared/domain/email.js';
 import { Telephone } from '../../domain/customer/value-objects/telephone.js';
 import type { EventBus } from '../../../shared/application/event-bus.js';
 import type { UseCase } from '../../../shared/application/use-case.js';
