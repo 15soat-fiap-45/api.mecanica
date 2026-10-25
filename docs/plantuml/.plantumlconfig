@@ -1,0 +1,14 @@
+@startsalt
+{
+    {
+        Configuração PlantUML | Descrição
+        ===
+        SCALE | 1.0 (alterar para zoom)
+        THEME | default (ou outros temas disponíveis)
+        MARGIN | 10 (margem em pixels)
+        PADDING | 5 (padding interno)
+        HANDWRITTEN | false (true para estilo hand-drawn)
+        MONOCHROME | false (true para preto e branco)
+    }
+}
+@endsalt

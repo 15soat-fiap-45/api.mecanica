@@ -1,0 +1,36 @@
+@startuml Deployment - Estado Atual
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Deployment.puml
+LAYOUT_LEFT_RIGHT()
+
+Deployment_Node(client, "Cliente da API", "Browser, curl ou outro consumidor HTTP") {
+    Container(client_tool, "Cliente HTTP", "HTTP/JSON", "Chama os endpoints publicados")
+}
+
+Deployment_Node(host, "Host de execução", "Node.js") {
+    Container(api_process, "API process", "Fastify / TypeScript", "src/index.ts; padrão HOST=0.0.0.0 e PORT=3000")
+    ContainerDb(drizzle, "Drizzle ORM", "node-postgres", "Repositórios Registry e health check")
+}
+
+Deployment_Node(database_runtime, "PostgreSQL", "Docker Compose ou servidor PostgreSQL") {
+    ContainerDb(postgres, "Database", "PostgreSQL", "Tabelas mapeadas: cliente, veiculo e servico")
+}
+
+Rel(client_tool, api_process, "HTTP/JSON", "Health, Swagger, customers e vehicles")
+Rel(api_process, drizzle, "usa")
+Rel(drizzle, postgres, "TCP/SQL")
+Rel(api_process, postgres, "SELECT 1 no health check")
+
+note right of api_process
+    Não há no repositório atual:
+    - Dockerfile da API
+    - cluster/load balancer
+    - Redis, S3 ou fila
+    - serviços externos de pagamento/email/SMS
+end note
+
+note right of postgres
+    infra/postgres/docker-compose.yml provisiona
+    o banco. O Compose não orquestra a API.
+end note
+SHOW_LEGEND()
+@enduml
