@@ -14,19 +14,22 @@
 CREATE TABLE cliente (
     cliente_id VARCHAR(14) PRIMARY KEY,  -- CPF/CNPJ
     nome       VARCHAR(100) NOT NULL,
-    telefone   NUMERIC(11),
-    email      VARCHAR(100)
+    telefone   VARCHAR(11) NOT NULL,
+    email      VARCHAR(100) NOT NULL,
+    version    INTEGER NOT NULL DEFAULT 0
 );
 
 -- ---------------------------------------------------------
 -- VEICULO
 -- ---------------------------------------------------------
 CREATE TABLE veiculo (
-    veiculo_id VARCHAR(7) PRIMARY KEY,  -- Placa
+    veiculo_id VARCHAR(36) PRIMARY KEY, -- UUID técnico
+    placa      VARCHAR(7) NOT NULL UNIQUE,
     modelo     VARCHAR(30) NOT NULL,
-    ano        NUMERIC(4),
-    marca      VARCHAR(16),
-    cor        VARCHAR(15),
+    ano        INTEGER NOT NULL,
+    marca      VARCHAR(16) NOT NULL,
+    cor        VARCHAR(15) NOT NULL,
+    version    INTEGER NOT NULL DEFAULT 0,
     cliente_id VARCHAR(14) NOT NULL,
     CONSTRAINT fk_veiculo_cliente
         FOREIGN KEY (cliente_id)
@@ -96,7 +99,7 @@ CREATE TABLE usuario (
 CREATE TABLE ordem_servico (
     os_id                BIGSERIAL PRIMARY KEY,
     cliente_id           VARCHAR(14) NOT NULL,
-    veiculo_id           VARCHAR(7) NOT NULL,
+    veiculo_id           VARCHAR(36) NOT NULL,
     descricao            TEXT,  -- reclamação do usuário
     status               VARCHAR(30) NOT NULL DEFAULT 'RECEBIDA'
         CHECK (status IN (

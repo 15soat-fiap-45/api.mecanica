@@ -14,12 +14,14 @@ Com um event bus, o domínio publica fatos (`DomainEvent`) sem saber quem os con
 ### 1. Event bus nativo em TypeScript (in-process)
 
 **Prós**
+
 - Zero infraestrutura: sem broker, sem custo, sem operação.
 - Debug simples (mesmo processo, mesmo stack trace) e testes sem containers.
 - Tipagem de ponta a ponta com TypeScript.
 - Deploy único, coerente com um monolito modular.
 
 **Contras**
+
 - Sem durabilidade: se o processo cair, eventos em andamento são perdidos.
 - Sem retry, DLQ ou replay.
 - Não funciona com múltiplas instâncias: o evento só chega aos handlers da instância que publicou.
@@ -28,11 +30,13 @@ Com um event bus, o domínio publica fatos (`DomainEvent`) sem saber quem os con
 ### 2. Broker externo (RabbitMQ / Kafka / SQS-SNS)
 
 **Prós**
+
 - Durabilidade, retry, DLQ e entrega entre instâncias e serviços.
 - Escala independente dos consumidores.
 - Kafka oferece log persistente e replay; RabbitMQ, roteamento flexível; SQS/SNS, operação gerenciada.
 
 **Contras**
+
 - Custo de infraestrutura e operação (Kafka é o mais pesado; SQS/SNS gera lock-in na AWS).
 - Consistência eventual obrigatória; ambiente local e testes mais complexos.
 - Exige serialização e versionamento de schema desde o início.
@@ -79,11 +83,13 @@ interface EventBus {
 ## Consequências
 
 **Positivas**
+
 - Entrega rápida, sem infraestrutura nova.
 - Domínios desacoplados desde já.
 - Migração para broker concentrada em uma nova implementação de `EventBus`, desde que as regras acima sejam seguidas.
 
 **Negativas / riscos aceitos**
+
 - **Eventos perdidos em caso de falha:** um handler que falha é apenas logado, sem retry nem DLQ, e um crash do processo perde eventos em andamento.
 - Uma falha silenciosa em handler pode deixar domínios inconsistentes entre si; depende de monitoramento dos logs.
 - Não suporta múltiplas instâncias da aplicação consumindo o mesmo evento.
@@ -91,6 +97,7 @@ interface EventBus {
 - `eventName` é `string` livre: o compilador não impede assinar um evento com handler de payload diferente.
 
 **Mitigações**
+
 - Para fluxos que exijam garantia de entrega antes da migração, usar **Transactional Outbox** (persistir o evento na mesma transação do dado e despachar depois).
 - Alertar sobre a mensagem `event handler failed` nos logs.
 - Se a tipagem se tornar um problema, introduzir um `EventMap` (`nome → tipo do evento`) na interface.

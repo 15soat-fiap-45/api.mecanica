@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { VehicleRepository } from '../../domain/vehicle/vehicle.repository.js';
 import { Vehicle } from '../../domain/vehicle/vehicle.js';
+import { CpfCnpj } from '../../domain/customer/value-objects/cpf-cnpj.js';
 import {
     InvalidPlateException,
     Plate,
@@ -14,6 +15,7 @@ describe('FindVehicleByPlate Use Case', () => {
     const validPlate = 'ABC-1234';
     const mockVehicle = new Vehicle(
         'veh-1',
+        CpfCnpj.create('52998224725'),
         'Civic',
         2022,
         'Honda',
@@ -33,6 +35,7 @@ describe('FindVehicleByPlate Use Case', () => {
 
         expect(result).toEqual({
             id: 'veh-1',
+            customerId: '52998224725',
             model: 'Civic',
             year: 2022,
             brand: 'Honda',

@@ -1,0 +1,36 @@
+@startuml Fluxo: Casos de Uso de Ordem e Estoque
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Sequence.puml
+autonumber
+
+participant Caller as "Chamador interno"
+participant UseCase as "Service Order use case"
+participant OrderRepo as "ServiceOrderRepository"
+participant Bus as "InMemoryEventBus"
+participant StockHandler as "Stock handler"
+participant StockRepo as "PartSupply / Reservation repository"
+
+Caller -> UseCase: execute(...)
+UseCase -> OrderRepo: find/save ServiceOrder ou Budget
+OrderRepo --> UseCase: agregado (fake/implementação injetada)
+UseCase -> Bus: publish evento de domínio
+
+alt additional-supplies-included
+    Bus -> StockHandler: CheckAvailability
+    StockHandler -> StockRepo: reserva insumos disponíveis
+else service-order.finished
+    Bus -> StockHandler: WriteOffReservedSupplies
+    StockHandler -> StockRepo: confirma e consome reservas
+else service-order.cancelled
+    Bus -> StockHandler: ReleaseReservedSupplies
+    StockHandler -> StockRepo: cancela reservas e devolve quantidade
+else service-order.supply-used
+    Bus -> StockHandler: ConsumeUsedSupply
+    StockHandler -> StockRepo: consome reserva da peça utilizada
+end
+
+note over Caller,StockRepo
+    Não existe endpoint HTTP de ordem de serviço ou estoque no estado atual.
+    O composition-root conecta os handlers ao Event Bus em memória.
+    Repositórios concretos PostgreSQL desses contextos ainda não foram identificados.
+end note
+@enduml

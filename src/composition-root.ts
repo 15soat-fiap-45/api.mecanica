@@ -17,6 +17,9 @@ import type { SupplyUsed } from './stock/application/handlers/consume-used-suppl
 
 import type { ServiceOrderRepository } from './service-order/domain/service-order/service-order.repository.js';
 import type { BudgetRepository } from './service-order/domain/budget/budget.repository.js';
+import type { CustomerRepository } from './registry/domain/customer/customer.repository.js';
+import type { VehicleRepository } from './registry/domain/vehicle/vehicle.repository.js';
+import { registryCompositionRoot } from './registry/composition-root.js';
 import { RegisterServiceOrder } from './service-order/application/use-cases/register-service-order.js';
 import { AddSupplyToServiceOrder } from './service-order/application/use-cases/add-supply-to-service-order.js';
 import { ApproveBudget } from './service-order/application/use-cases/approve-budget.js';
@@ -35,8 +38,14 @@ export interface ServiceOrderDependencies {
     budgetRepository: BudgetRepository;
 }
 
+export interface RegistryDependencies {
+    customerRepository: CustomerRepository;
+    vehicleRepository: VehicleRepository;
+}
+
 export type ApplicationDependencies = StockDependencies &
-    ServiceOrderDependencies;
+    ServiceOrderDependencies &
+    RegistryDependencies;
 
 /**
  * Composition root for the Stock context: instantiates the use cases and
@@ -52,6 +61,11 @@ export function compositionRoot(
     eventBus: EventBus,
     deps: ApplicationDependencies,
 ) {
+    const registry = registryCompositionRoot(eventBus, {
+        customerRepository: deps.customerRepository,
+        vehicleRepository: deps.vehicleRepository,
+    });
+
     // Use cases
     const registerPartSupply = new RegisterPartSupply(
         deps.partSupplyRepository,
@@ -131,6 +145,7 @@ export function compositionRoot(
     );
 
     return {
+        ...registry,
         registerPartSupply,
         registerStockEntry,
         reserveSupply,

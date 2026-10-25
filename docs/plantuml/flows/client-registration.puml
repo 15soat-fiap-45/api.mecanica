@@ -1,0 +1,42 @@
+@startuml Fluxo: Registrar Cliente
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Sequence.puml
+autonumber
+
+actor Client as "Consumidor HTTP"
+participant API as "Fastify"
+participant Route as "registry-routes"
+participant UseCase as "RegisterCustomer"
+participant Repo as "CustomerRepository"
+participant DB as "Drizzle / PostgreSQL"
+participant Bus as "InMemoryEventBus"
+
+Client -> API: POST /customers\n{cpfCnpj, name, email, tel}
+API -> Route: valida body com Zod
+Route -> UseCase: execute(input)
+UseCase -> Repo: findByCpfCnpj(CpfCnpj)
+Repo -> DB: SELECT cliente por cliente_id
+DB --> Repo: cliente existente ou null
+
+alt CPF/CNPJ já cadastrado
+    Repo --> UseCase: cliente existente
+    UseCase --> Route: CustomerAlreadyExistsError
+    Route --> API: erro de aplicação
+    API --> Client: 409 CustomerAlreadyExistsError
+else Novo cliente
+    UseCase -> UseCase: cria CpfCnpj, Email e Telephone
+    UseCase -> UseCase: Customer.register()
+    UseCase -> Repo: save(Customer)
+    Repo -> DB: INSERT INTO cliente
+    DB --> Repo: sucesso
+    UseCase -> Bus: publish(CustomerRegistered)
+    Bus --> UseCase: concluído
+    UseCase --> Route: {cpfCnpj, name, email, tel}
+    Route --> API: 201 Created
+    API --> Client: resposta JSON
+end
+
+note over API,DB
+    Não há JWT, senha, cache, e-mail ou fila neste fluxo.
+    Validação Zod inválida retorna 400.
+end note
+@enduml
