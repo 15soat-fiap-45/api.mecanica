@@ -1,22 +1,25 @@
 import { describe, expect, it } from 'vitest';
 import { Email } from '../../../shared/domain/email.js';
 import { PermissionDenied } from '../../domain/exceptions/permission-denied.js';
+import { UserWithoutPermission } from '../../domain/exceptions/user-without-permission.js';
+import { FirstAccessNotAllowed } from '../exceptions/first-access-not-allowed.js';
+import { InvalidCredentials } from '../exceptions/invalid-credentials.js';
+import { PasswordReuse } from '../exceptions/password-reuse.js';
+import { UserAlreadyExistsError } from '../exceptions/user-already-exists.js';
 import type { PasswordHasher } from '../../domain/services/password-hasher.js';
 import { User } from '../../domain/user/user.js';
 import type { UserRepository } from '../../domain/user/user-repository.js';
 import { Role } from '../../domain/user/value-objects/role.js';
 import { InvalidPasswordException } from '../../domain/user/value-objects/password.js';
 import { FirstAccess } from './first-access.js';
-import {
-    PreRegisterUser,
-    UserAlreadyExistsError,
-} from './pre-register-user.js';
+import { PreRegisterUser } from './pre-register-user.js';
 
 describe('First access', () => {
     const hasher: PasswordHasher = {
         hash: async (value) => `hashed:${value}`,
         verify: async (value, hash) => hash === `hashed:${value}`,
     };
+    const generator = { generate: () => 'TempPass123' };
     const users = new Map<string, User>();
     const repository: UserRepository = {
         findByEmail: async (email) => users.get(email.value) ?? null,
@@ -24,16 +27,87 @@ describe('First access', () => {
             users.set(user.email.value, user);
         },
     };
+    const manager = new User(
+        Email.create('manager@example.com'),
+        'manager-hash',
+        Role.create('GERENTE'),
+        'ACTIVE',
+    );
+
+    it.each([
+        [null, PermissionDenied],
+        [
+            new User(
+                manager.email,
+                manager.password,
+                manager.role,
+                'PENDING_FIRST_ACCESS',
+            ),
+            PermissionDenied,
+        ],
+        [
+            new User(
+                manager.email,
+                manager.password,
+                manager.role,
+                'DEACTIVATED',
+            ),
+            PermissionDenied,
+        ],
+        [
+            new User(
+                Email.create('attendant@example.com'),
+                'attendant-hash',
+                Role.create('ATENDENTE'),
+                'ACTIVE',
+            ),
+            UserWithoutPermission,
+        ],
+        [
+            new User(
+                Email.create('mechanic@example.com'),
+                'mechanic-hash',
+                Role.create('MECANICO'),
+                'ACTIVE',
+            ),
+            UserWithoutPermission,
+        ],
+        [
+            new User(
+                Email.create('stock@example.com'),
+                'stock-hash',
+                Role.create('ESTOQUISTA'),
+                'ACTIVE',
+            ),
+            UserWithoutPermission,
+        ],
+    ] as const)(
+        'denies pre-registration by a user who is not an active manager',
+        async (actor, error) => {
+            users.clear();
+            await expect(
+                new PreRegisterUser(repository, hasher, generator).execute(
+                    { email: 'new@example.com', role: 'MECANICO' },
+                    actor,
+                ),
+            ).rejects.toThrow(error);
+            expect(users.size).toBe(0);
+        },
+    );
 
     it('pre-registers with a random temporary password and stores only its hash', async () => {
         users.clear();
         const temporaryPassword = await new PreRegisterUser(
             repository,
             hasher,
-        ).execute({
-            email: '  PERSON@EXAMPLE.COM ',
-            role: 'MECANICO',
-        });
+            generator,
+        ).execute(
+            {
+                email: '  PERSON@EXAMPLE.COM ',
+                role: 'MECANICO',
+            },
+            manager,
+        );
         const saved = await repository.findByEmail(
             Email.create('person@example.com'),
         );
@@ -44,10 +118,13 @@ describe('First access', () => {
             true,
         );
         await expect(
-            new PreRegisterUser(repository, hasher).execute({
-                email: 'person@example.com',
-                role: 'GERENTE',
-            }),
+            new PreRegisterUser(repository, hasher, generator).execute(
+                {
+                    email: 'person@example.com',
+                    role: 'GERENTE',
+                },
+                manager,
+            ),
         ).rejects.toThrow(UserAlreadyExistsError);
         expect(saved?.role.value).toBe('MECANICO');
     });
@@ -57,10 +134,14 @@ describe('First access', () => {
         const temporaryPassword = await new PreRegisterUser(
             repository,
             hasher,
-        ).execute({
-            email: 'person@example.com',
-            role: 'ATENDENTE',
-        });
+            generator,
+        ).execute(
+            {
+                email: 'person@example.com',
+                role: 'ATENDENTE',
+            },
+            manager,
+        );
         const reset = new FirstAccess(repository, hasher);
         await reset.execute({
             email: 'person@example.com',
@@ -78,7 +159,14 @@ describe('First access', () => {
                 temporaryPassword,
                 newPassword: 'OtherPass123',
             }),
-        ).rejects.toThrow(PermissionDenied);
+        ).rejects.toThrow(InvalidCredentials);
+        await expect(
+            reset.execute({
+                email: 'person@example.com',
+                temporaryPassword: 'NewPass123',
+                newPassword: 'OtherPass123',
+            }),
+        ).rejects.toThrow(FirstAccessNotAllowed);
     });
 
     it('does not change state for wrong credentials, invalid new password or deactivated users', async () => {
@@ -97,7 +185,7 @@ describe('First access', () => {
                 temporaryPassword: 'WrongPass123',
                 newPassword: 'NewPass123',
             }),
-        ).rejects.toThrow(PermissionDenied);
+        ).rejects.toThrow(InvalidCredentials);
         await expect(
             reset.execute({
                 email: 'person@example.com',
@@ -120,14 +208,14 @@ describe('First access', () => {
                 temporaryPassword: 'TempPass123',
                 newPassword: 'NewPass123',
             }),
-        ).rejects.toThrow(PermissionDenied);
+        ).rejects.toThrow(FirstAccessNotAllowed);
         await expect(
             reset.execute({
                 email: 'missing@example.com',
                 temporaryPassword: 'TempPass123',
                 newPassword: 'NewPass123',
             }),
-        ).rejects.toThrow(PermissionDenied);
+        ).rejects.toThrow(InvalidCredentials);
     });
 
     it('does not activate the loaded user if persistence fails', async () => {
@@ -176,7 +264,7 @@ describe('First access', () => {
                 temporaryPassword: 'TempPass123',
                 newPassword: 'TempPass123',
             }),
-        ).rejects.toThrow(InvalidPasswordException);
+        ).rejects.toThrow(PasswordReuse);
         expect(user.status).toBe('PENDING_FIRST_ACCESS');
     });
 });
