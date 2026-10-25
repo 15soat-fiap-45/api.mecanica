@@ -15,6 +15,7 @@ export interface FindVehicleByPlateInput {
 
 export interface FindVehicleByPlateOutput {
     id: string;
+    customerId: string;
     model: string;
     year: number;
     brand: string;
@@ -40,6 +41,7 @@ export class FindVehicleByPlate implements UseCase<
 
         return {
             id: vehicle.id.value,
+            customerId: vehicle.customerId.value,
             model: vehicle.model,
             year: vehicle.year,
             brand: vehicle.brand,
