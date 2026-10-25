@@ -1,4 +1,25 @@
-import { bigint, numeric, pgTable, varchar } from 'drizzle-orm/pg-core';
+import {
+    bigint,
+    numeric,
+    pgEnum,
+    pgTable,
+    text,
+    uuid,
+    varchar,
+} from 'drizzle-orm/pg-core';
+import { USER_STATUSES } from '../../auth/domain/user/user.js';
+import { ROLES } from '../../auth/domain/user/value-objects/role.js';
+
+export const authRole = pgEnum('auth_role', [...ROLES]);
+export const authStatus = pgEnum('auth_user_status', [...USER_STATUSES]);
+
+export const authUsers = pgTable('auth_users', {
+    id: uuid('id').primaryKey().defaultRandom(),
+    email: varchar('email', { length: 320 }).notNull().unique(),
+    passwordHash: text('password_hash').notNull(),
+    role: authRole('role').notNull(),
+    status: authStatus('status').notNull(),
+});
 
 export const cliente = pgTable('cliente', {
     clienteId: varchar('cliente_id', { length: 14 }).primaryKey(),
