@@ -2,9 +2,13 @@ import { buildApp } from './app.js';
 import { registryCompositionRoot } from './registry/composition-root.js';
 import { DrizzleCustomerRepository } from './infra/database/registry/drizzle-customer-repository.js';
 import { DrizzleVehicleRepository } from './infra/database/registry/drizzle-vehicle-repository.js';
-import { InMemoryEventBus } from './shared/infra/in-memory-event-bus.js';
+import { InMemoryEventBus } from './shared/application/in-memory-event-bus.js';
 
-const eventBus = new InMemoryEventBus();
+const eventBus = new InMemoryEventBus({
+    error: (context, message) => {
+        console.error(message, context);
+    },
+});
 const registry = registryCompositionRoot(eventBus, {
     customerRepository: new DrizzleCustomerRepository(),
     vehicleRepository: new DrizzleVehicleRepository(),
