@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { Email } from '../../../shared/domain/email.js';
 import { PermissionDenied } from '../../domain/exceptions/permission-denied.js';
 import type { TokenService } from '../token-service.js';
@@ -63,6 +63,19 @@ describe('LogIn', () => {
             );
         },
     );
+
+    it('verifies a password even when the email does not exist', async () => {
+        const verify = vi.fn(hasher.verify);
+        const login = new LogIn(repository, { ...hasher, verify }, jwt);
+        users.clear();
+        await expect(
+            login.execute({
+                email: 'missing@example.com',
+                password: 'Incorrect123',
+            }),
+        ).rejects.toThrow(InvalidCredentials);
+        expect(verify).toHaveBeenCalledOnce();
+    });
 
     it('requires first access when a pending user supplies the temporary password', async () => {
         users.clear();

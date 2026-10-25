@@ -1,3 +1,4 @@
+import rateLimit from '@fastify/rate-limit';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { FirstAccessNotAllowed } from '../../application/exceptions/first-access-not-allowed.js';
 import { FirstAccessRequired } from '../../application/exceptions/first-access-required.js';
@@ -14,6 +15,10 @@ import { ApplicationException } from '../../../shared/application/application-ex
 import { DomainException } from '../../../shared/domain/domain-exception.js';
 import { firstAccessBody, loginBody, registerBody } from './auth-schema.js';
 
+const credentialLimit = {
+    config: { rateLimit: { max: 5, timeWindow: '1 minute' } },
+};
+
 export class AuthController {
     constructor(
         private readonly firstAccess: FirstAccess,
@@ -23,51 +28,60 @@ export class AuthController {
     ) {}
 
     register(app: FastifyInstance): void {
-        app.post('/auth/first-access', async (request, reply) => {
-            const parsed = firstAccessBody.safeParse(request.body);
-            if (!parsed.success)
-                return reply.code(400).send({ message: 'Invalid request' });
-            try {
-                await this.firstAccess.execute(parsed.data);
-                return reply.code(204).send();
-            } catch (error) {
-                return this.handleError(error, reply);
-            }
-        });
-        app.post('/auth/login', async (request, reply) => {
-            reply.header('Cache-Control', 'no-store');
-            const parsed = loginBody.safeParse(request.body);
-            if (!parsed.success)
-                return reply.code(400).send({ message: 'Invalid request' });
-            try {
-                const token = await this.logIn.execute(parsed.data);
-                return reply.send({ token });
-            } catch (error) {
-                return this.handleError(error, reply);
-            }
-        });
-        app.post('/users', async (request, reply) => {
-            reply.header('Cache-Control', 'no-store');
-            const match = /^Bearer (\S+)$/.exec(
-                request.headers.authorization ?? '',
+        app.register(rateLimit, { global: false });
+        app.after(() => {
+            app.post(
+                '/auth/first-access',
+                credentialLimit,
+                async (request, reply) => {
+                    const parsed = firstAccessBody.safeParse(request.body);
+                    if (!parsed.success)
+                        return reply
+                            .code(400)
+                            .send({ message: 'Invalid request' });
+                    try {
+                        await this.firstAccess.execute(parsed.data);
+                        return reply.code(204).send();
+                    } catch (error) {
+                        return this.handleError(error, reply);
+                    }
+                },
             );
-            if (!match)
-                return reply
-                    .code(401)
-                    .send({ message: 'Authentication required' });
-            const parsed = registerBody.safeParse(request.body);
-            if (!parsed.success)
-                return reply.code(400).send({ message: 'Invalid request' });
-            try {
-                const actor = await this.resolveUser.execute(match[1]!);
-                const temporaryPassword = await this.preRegister.execute(
-                    parsed.data,
-                    actor,
+            app.post('/auth/login', credentialLimit, async (request, reply) => {
+                reply.header('Cache-Control', 'no-store');
+                const parsed = loginBody.safeParse(request.body);
+                if (!parsed.success)
+                    return reply.code(400).send({ message: 'Invalid request' });
+                try {
+                    const token = await this.logIn.execute(parsed.data);
+                    return reply.send({ token });
+                } catch (error) {
+                    return this.handleError(error, reply);
+                }
+            });
+            app.post('/users', async (request, reply) => {
+                reply.header('Cache-Control', 'no-store');
+                const match = /^Bearer (\S+)$/.exec(
+                    request.headers.authorization ?? '',
                 );
-                return reply.code(201).send({ temporaryPassword });
-            } catch (error) {
-                return this.handleError(error, reply);
-            }
+                if (!match)
+                    return reply
+                        .code(401)
+                        .send({ message: 'Authentication required' });
+                const parsed = registerBody.safeParse(request.body);
+                if (!parsed.success)
+                    return reply.code(400).send({ message: 'Invalid request' });
+                try {
+                    const actor = await this.resolveUser.execute(match[1]!);
+                    const temporaryPassword = await this.preRegister.execute(
+                        parsed.data,
+                        actor,
+                    );
+                    return reply.code(201).send({ temporaryPassword });
+                } catch (error) {
+                    return this.handleError(error, reply);
+                }
+            });
         });
     }
 

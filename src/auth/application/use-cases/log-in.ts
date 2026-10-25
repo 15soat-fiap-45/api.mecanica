@@ -7,6 +7,8 @@ import type { PasswordHasher } from '../../domain/services/password-hasher.js';
 import type { UserRepository } from '../../domain/user/user-repository.js';
 
 export class LogIn {
+    private dummyHash?: Promise<string>;
+
     constructor(
         private readonly repository: UserRepository,
         private readonly hasher: PasswordHasher,
@@ -17,11 +19,15 @@ export class LogIn {
         const parsed = Email.parse(input.email);
         if (!parsed.ok) throw new InvalidCredentials();
 
+        const dummyHash = await (this.dummyHash ??= this.hasher.hash(
+            'NotARealAccountPassword',
+        ));
         const user = await this.repository.findByEmail(parsed.value);
-        if (
-            !user ||
-            !(await this.hasher.verify(input.password, user.password))
-        ) {
+        if (!user) {
+            await this.hasher.verify(input.password, dummyHash);
+            throw new InvalidCredentials();
+        }
+        if (!(await this.hasher.verify(input.password, user.password))) {
             throw new InvalidCredentials();
         }
         if (user.status === 'PENDING_FIRST_ACCESS') {

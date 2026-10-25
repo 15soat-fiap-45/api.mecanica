@@ -199,4 +199,28 @@ describe('AuthController', () => {
             ).statusCode,
         ).toBe(400);
     });
+
+    it.each(['/auth/login', '/auth/first-access'])(
+        'limits repeated credential attempts on %s',
+        async (url) => {
+            const { app } = setup();
+            const payload =
+                url === '/auth/login'
+                    ? { email: 'missing@example.com', password: 'wrong' }
+                    : {
+                          email: 'missing@example.com',
+                          temporaryPassword: 'wrong',
+                          newPassword: 'NewPass123',
+                      };
+            for (let attempt = 0; attempt < 5; attempt++) {
+                expect(
+                    (await app.inject({ method: 'POST', url, payload }))
+                        .statusCode,
+                ).toBe(401);
+            }
+            expect(
+                (await app.inject({ method: 'POST', url, payload })).statusCode,
+            ).toBe(429);
+        },
+    );
 });
