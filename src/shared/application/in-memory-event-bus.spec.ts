@@ -104,4 +104,17 @@ describe('InMemoryEventBus', () => {
 
         expect(handler).not.toHaveBeenCalled();
     });
+
+    it('unsubscribes only its registration and is idempotent', async () => {
+        const { bus } = makeBus();
+        const handler = vi.fn();
+        const unsubscribeFirst = bus.subscribe('a', handler);
+        bus.subscribe('a', handler);
+
+        unsubscribeFirst();
+        unsubscribeFirst();
+        await bus.publish(makeEvent('a'));
+
+        expect(handler).toHaveBeenCalledTimes(1);
+    });
 });
