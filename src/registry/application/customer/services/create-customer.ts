@@ -1,6 +1,6 @@
 import { Customer } from '../../../domain/customer/customer.js';
 import { CpfCnpj } from '../../../domain/customer/value-objects/cpf-cnpj.js';
-import { Email } from '../../../domain/customer/value-objects/email.js';
+import { Email } from '../../../../shared/domain/email.js';
 import { Telephone } from '../../../domain/customer/value-objects/telephone.js';
 import type { CreateCustomerDTO } from '../dto/create-customer-dto.js';
 import { CustomerAlreadyExistsError } from '../exceptions/customer-already-exists-error.js';
