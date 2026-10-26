@@ -98,8 +98,28 @@ describe('Drizzle ServiceOrderRepository', () => {
 
     it('rehydrates a consistent order snapshot with used items and no pending events', async () => {
         const { database, query } = databaseWith(() => [
-            ['os-1', 'Freios', 'IN_PROGRESS', 4, 'os-1', 'PAST-01', 2, true],
-            ['os-1', 'Freios', 'IN_PROGRESS', 4, 'os-1', 'FLUID-01', 1, false],
+            [
+                'os-1',
+                'Freios',
+                'vehicle-1',
+                'IN_PROGRESS',
+                4,
+                'os-1',
+                'PAST-01',
+                2,
+                true,
+            ],
+            [
+                'os-1',
+                'Freios',
+                'vehicle-1',
+                'IN_PROGRESS',
+                4,
+                'os-1',
+                'FLUID-01',
+                1,
+                false,
+            ],
         ]);
         const order = await new DrizzleServiceOrderRepository(
             database,
@@ -108,6 +128,7 @@ describe('Drizzle ServiceOrderRepository', () => {
         expect(query.mock.calls[0]?.[1]).toEqual(['os-1']);
         expect(order?.status.value).toBe('IN_PROGRESS');
         expect(order?.version).toBe(4);
+        expect(order?.vehicleId).toBe('vehicle-1');
         expect(
             order?.items.map((item) => ({
                 partCode: item.partCode,
@@ -122,7 +143,7 @@ describe('Drizzle ServiceOrderRepository', () => {
 
     it('rehydrates orders without items', async () => {
         const { database } = databaseWith(() => [
-            ['os-1', 'Freios', 'PENDING', 1, null, null, null, null],
+            ['os-1', 'Freios', null, 'PENDING', 1, null, null, null, null],
         ]);
         const order = await new DrizzleServiceOrderRepository(
             database,

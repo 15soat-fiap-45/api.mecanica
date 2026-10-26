@@ -224,6 +224,26 @@ describe('ServiceOrder Aggregate Root', () => {
         expect(() => os.cancel()).toThrow(InvalidServiceOrderStatusException);
     });
 
+    it('rejects only an order awaiting approval', () => {
+        const os = ServiceOrder.create(makeProps());
+        expect(() => os.reject()).toThrow(InvalidServiceOrderStatusException);
+        os.awaitApproval('budget-1');
+        os.reject();
+        expect(os.status.value).toBe('REJECTED');
+        expect(() => os.approve()).toThrow(InvalidServiceOrderStatusException);
+    });
+
+    it('delivers only a completed order', () => {
+        const os = ServiceOrder.create(makeProps());
+        expect(() => os.deliver()).toThrow(InvalidServiceOrderStatusException);
+        os.approve();
+        os.startExecution();
+        os.finish();
+        os.deliver();
+        expect(os.status.value).toBe('DELIVERED');
+        expect(() => os.deliver()).toThrow(InvalidServiceOrderStatusException);
+    });
+
     it('should compare service orders by identity using AggregateRoot.equals()', () => {
         const os1 = ServiceOrder.create(makeProps());
         const os2 = ServiceOrder.create(

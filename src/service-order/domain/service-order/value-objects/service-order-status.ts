@@ -9,21 +9,27 @@ export class InvalidServiceOrderStatusException extends DomainException {
 
 export type ServiceOrderStatusType =
     | 'PENDING'
+    | 'AWAITING_APPROVAL'
+    | 'REJECTED'
     | 'APPROVED'
     | 'IN_PROGRESS'
     | 'PAUSED'
     | 'COMPLETED'
+    | 'DELIVERED'
     | 'CANCELLED';
 
 const TRANSITIONS: Record<
     ServiceOrderStatusType,
     readonly ServiceOrderStatusType[]
 > = {
-    PENDING: ['APPROVED', 'CANCELLED'],
+    PENDING: ['AWAITING_APPROVAL', 'APPROVED', 'CANCELLED'],
+    AWAITING_APPROVAL: ['APPROVED', 'REJECTED', 'CANCELLED'],
+    REJECTED: [],
     APPROVED: ['IN_PROGRESS', 'CANCELLED'],
     IN_PROGRESS: ['PAUSED', 'COMPLETED', 'CANCELLED'],
     PAUSED: ['IN_PROGRESS', 'CANCELLED'],
-    COMPLETED: [],
+    COMPLETED: ['DELIVERED'],
+    DELIVERED: [],
     CANCELLED: [],
 };
 
@@ -64,7 +70,7 @@ export class ServiceOrderStatus {
         if (!(normalized in TRANSITIONS)) {
             return {
                 ok: false,
-                error: 'Invalid service order status. Accepted values: PENDING, APPROVED, IN_PROGRESS, PAUSED, COMPLETED, CANCELLED',
+                error: 'Invalid service order status. Accepted values: PENDING, AWAITING_APPROVAL, REJECTED, APPROVED, IN_PROGRESS, PAUSED, COMPLETED, DELIVERED, CANCELLED',
             };
         }
 

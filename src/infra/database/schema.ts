@@ -8,6 +8,8 @@ import {
     pgTable,
     primaryKey,
     text,
+    timestamp,
+    uniqueIndex,
     varchar,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
@@ -50,13 +52,14 @@ export const serviceOrders = serviceOrderSchema.table(
     {
         id: varchar('id', { length: 36 }).primaryKey(),
         description: text('description').notNull(),
+        vehicleId: varchar('vehicle_id', { length: 36 }),
         status: varchar('status', { length: 20 }).notNull().default('PENDING'),
         version: integer('version').notNull().default(0),
     },
     (table) => [
         check(
             'orders_status_check',
-            sql`${table.status} IN ('PENDING', 'APPROVED', 'IN_PROGRESS', 'PAUSED', 'COMPLETED', 'CANCELLED')`,
+            sql`${table.status} IN ('PENDING', 'AWAITING_APPROVAL', 'REJECTED', 'APPROVED', 'IN_PROGRESS', 'PAUSED', 'COMPLETED', 'DELIVERED', 'CANCELLED')`,
         ),
     ],
 );
@@ -94,6 +97,84 @@ export const budgets = serviceOrderSchema.table(
         check(
             'budgets_status_check',
             sql`${table.status} IN ('PENDING', 'APPROVED', 'REJECTED')`,
+        ),
+    ],
+);
+
+export const approvalRequests = serviceOrderSchema.table(
+    'approval_requests',
+    {
+        id: varchar('id', { length: 36 }).primaryKey(),
+        orderId: varchar('order_id', { length: 36 })
+            .notNull()
+            .references(() => serviceOrders.id, { onDelete: 'cascade' }),
+        budgetId: varchar('budget_id', { length: 36 })
+            .notNull()
+            .references(() => budgets.id, { onDelete: 'cascade' }),
+        budgetVersion: varchar('budget_version', { length: 64 }).notNull(),
+        tokenHash: varchar('token_hash', { length: 64 }).notNull().unique(),
+        createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+        expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+        usedAt: timestamp('used_at', { withTimezone: true }),
+        revokedAt: timestamp('revoked_at', { withTimezone: true }),
+        sentAt: timestamp('sent_at', { withTimezone: true }),
+        decision: varchar('decision', { length: 8 }),
+        rejectionReason: text('rejection_reason'),
+    },
+    (table) => [
+        uniqueIndex('approval_requests_active_order_idx')
+            .on(table.orderId)
+            .where(sql`${table.usedAt} IS NULL AND ${table.revokedAt} IS NULL`),
+        check(
+            'approval_decision_check',
+            sql`${table.decision} IS NULL OR ${table.decision} IN ('approved', 'rejected')`,
+        ),
+    ],
+);
+
+export const catalogServices = serviceOrderSchema.table(
+    'services',
+    {
+        id: bigint('id', { mode: 'number' })
+            .generatedByDefaultAsIdentity()
+            .primaryKey(),
+        title: varchar('title', { length: 20 }).notNull(),
+        description: varchar('description', { length: 200 }),
+        valueCents: bigint('value_cents', { mode: 'number' }).notNull(),
+    },
+    (table) => [
+        check('services_value_cents_check', sql`${table.valueCents} >= 0`),
+    ],
+);
+
+export const serviceParts = serviceOrderSchema.table(
+    'service_parts',
+    {
+        serviceId: bigint('service_id', { mode: 'number' })
+            .notNull()
+            .references(() => catalogServices.id),
+        partId: bigint('part_id', { mode: 'number' }).notNull(),
+    },
+    (table) => [primaryKey({ columns: [table.serviceId, table.partId] })],
+);
+
+export const orderServices = serviceOrderSchema.table(
+    'order_services',
+    {
+        orderId: varchar('order_id', { length: 36 })
+            .notNull()
+            .references(() => serviceOrders.id, { onDelete: 'cascade' }),
+        serviceId: bigint('service_id', { mode: 'number' })
+            .notNull()
+            .references(() => catalogServices.id),
+        title: varchar('title', { length: 20 }).notNull(),
+        valueCents: bigint('value_cents', { mode: 'number' }).notNull(),
+    },
+    (table) => [
+        primaryKey({ columns: [table.orderId, table.serviceId] }),
+        check(
+            'order_services_value_cents_check',
+            sql`${table.valueCents} >= 0`,
         ),
     ],
 );

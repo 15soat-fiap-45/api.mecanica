@@ -2,6 +2,17 @@ import type { EventBus } from '../shared/application/event-bus.js';
 import type { UseCase } from '../shared/application/use-case.js';
 import type { ServiceOrderRepository } from './domain/service-order/service-order.repository.js';
 import type { BudgetRepository } from './domain/budget/budget.repository.js';
+import type { ApprovalRequestRepository } from './domain/approval/approval-request.repository.js';
+import type { EmailSender } from './application/ports/email-sender.js';
+import type { VehicleContactLookup } from './application/ports/vehicle-contact.js';
+import { OrderAwaitingApproval } from './domain/service-order/events/order-awaiting-approval.js';
+import { SendBudgetApprovalEmail } from './application/handlers/send-budget-approval-email.js';
+import { AwaitBudgetApproval } from './application/use-cases/await-budget-approval.js';
+import { DecideBudgetApproval } from './application/use-cases/decide-budget-approval.js';
+import type { ServiceCatalog } from './application/ports/service-catalog.js';
+import { ChangeServiceOrderStatus } from './application/use-cases/change-service-order-status.js';
+import { SendVehicleReadyEmail } from './application/handlers/send-vehicle-ready-email.js';
+import type { ServiceOrderFinished } from './domain/service-order/events/service-order-finished.js';
 import type { BudgetApproved } from './domain/budget/events/budget-approved.js';
 import { MoveServiceOrderToApproved } from './application/handlers/move-service-order-to-approved.js';
 import {
@@ -14,11 +25,7 @@ import {
     type AddSupplyToServiceOrderInput,
     type AddSupplyToServiceOrderOutput,
 } from './application/use-cases/add-supply-to-service-order.js';
-import {
-    ApproveBudget,
-    type ApproveBudgetInput,
-    type ApproveBudgetOutput,
-} from './application/use-cases/approve-budget.js';
+import { ServiceOrderNotFoundError } from './application/use-cases/add-supply-to-service-order.js';
 import {
     RegisterSupplyUsage,
     type RegisterSupplyUsageInput,
@@ -33,6 +40,12 @@ import {
 export interface ServiceOrderDependencies {
     serviceOrderRepository: ServiceOrderRepository;
     budgetRepository: BudgetRepository;
+    approvalRequestRepository: ApprovalRequestRepository;
+    vehicleContacts: VehicleContactLookup;
+    emailSender: EmailSender;
+    frontendUrl: string;
+    approvalTokenTtlMinutes: number;
+    serviceCatalog: ServiceCatalog;
 }
 
 export interface ServiceOrderUseCases {
@@ -44,7 +57,27 @@ export interface ServiceOrderUseCases {
         AddSupplyToServiceOrderInput,
         AddSupplyToServiceOrderOutput
     >;
-    approveBudget: UseCase<ApproveBudgetInput, ApproveBudgetOutput>;
+    awaitBudgetApproval: AwaitBudgetApproval;
+    startExecution: ChangeServiceOrderStatus;
+    finishServiceOrder: ChangeServiceOrderStatus;
+    deliverServiceOrder: ChangeServiceOrderStatus;
+    serviceCatalog: ServiceCatalog;
+    findServiceOrder: {
+        execute(input: { serviceOrderId: string }): Promise<{
+            id: string;
+            vehicleId: string | null;
+            description: string;
+            status: string;
+            services: Awaited<ReturnType<ServiceCatalog['forOrder']>>;
+        }>;
+    };
+    decideBudgetApproval: DecideBudgetApproval;
+    resendBudgetApproval: {
+        execute(input: {
+            serviceOrderId: string;
+            budgetId: string;
+        }): Promise<void>;
+    };
     registerSupplyUsage: UseCase<
         RegisterSupplyUsageInput,
         RegisterSupplyUsageOutput
@@ -66,17 +99,92 @@ export function serviceOrderCompositionRoot(
         'service-order.budget-approved',
         (event) => moveServiceOrderToApproved.handle(event),
     );
+    const sendBudgetApprovalEmail = new SendBudgetApprovalEmail(
+        deps.approvalRequestRepository,
+        deps.serviceOrderRepository,
+        deps.budgetRepository,
+        deps.vehicleContacts,
+        deps.emailSender,
+        deps.frontendUrl,
+        deps.approvalTokenTtlMinutes,
+    );
+    eventBus.subscribe<OrderAwaitingApproval>(
+        'service-order.awaiting-approval',
+        (event) => sendBudgetApprovalEmail.handle(event),
+    );
+    const sendVehicleReadyEmail = new SendVehicleReadyEmail(
+        deps.serviceOrderRepository,
+        deps.vehicleContacts,
+        deps.emailSender,
+    );
+    eventBus.subscribe<ServiceOrderFinished>(
+        'service-order.finished',
+        (event) => sendVehicleReadyEmail.handle(event),
+    );
 
     return {
         registerServiceOrder: new RegisterServiceOrder(
             deps.serviceOrderRepository,
+            deps.vehicleContacts,
             eventBus,
         ),
         addSupplyToServiceOrder: new AddSupplyToServiceOrder(
             deps.serviceOrderRepository,
             eventBus,
         ),
-        approveBudget: new ApproveBudget(deps.budgetRepository, eventBus),
+        awaitBudgetApproval: new AwaitBudgetApproval(
+            deps.serviceOrderRepository,
+            deps.budgetRepository,
+            deps.serviceCatalog,
+            eventBus,
+        ),
+        serviceCatalog: deps.serviceCatalog,
+        startExecution: new ChangeServiceOrderStatus(
+            deps.serviceOrderRepository,
+            eventBus,
+            'startExecution',
+        ),
+        finishServiceOrder: new ChangeServiceOrderStatus(
+            deps.serviceOrderRepository,
+            eventBus,
+            'finish',
+        ),
+        deliverServiceOrder: new ChangeServiceOrderStatus(
+            deps.serviceOrderRepository,
+            eventBus,
+            'deliver',
+        ),
+        findServiceOrder: {
+            execute: async ({ serviceOrderId }) => {
+                const order =
+                    await deps.serviceOrderRepository.findById(serviceOrderId);
+                if (!order) throw new ServiceOrderNotFoundError();
+                return {
+                    id: order.id.value,
+                    vehicleId: order.vehicleId,
+                    description: order.description,
+                    status: order.status.value,
+                    services: await deps.serviceCatalog.forOrder(
+                        order.id.value,
+                    ),
+                };
+            },
+        },
+        decideBudgetApproval: new DecideBudgetApproval(
+            deps.approvalRequestRepository,
+            deps.serviceOrderRepository,
+            deps.budgetRepository,
+            eventBus,
+        ),
+        resendBudgetApproval: {
+            execute: async ({ serviceOrderId, budgetId }) =>
+                sendBudgetApprovalEmail.handle(
+                    new OrderAwaitingApproval({
+                        aggregateId: serviceOrderId,
+                        budgetId,
+                    }),
+                ),
+        },
         registerSupplyUsage: new RegisterSupplyUsage(
             deps.serviceOrderRepository,
             eventBus,

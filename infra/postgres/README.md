@@ -37,6 +37,8 @@ Na primeira execução, com o volume de dados vazio, o Docker executa automatica
 ```text
 init/01-schema.sql
 init/02-service-order.sql
+init/03-budget-approval.sql
+init/04-service-catalog-and-status.sql
 ```
 
 Esse script cria o modelo relacional da oficina.
@@ -55,6 +57,22 @@ docker compose exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB
 
 O script usa `IF NOT EXISTS` e pode ser reaplicado. Não é necessário recriar o
 volume. A execução desse script em banco real deve preceder o uso das rotas de OS.
+
+Para um banco com o schema `service_order` já instalado, aplique também as
+migrações incrementais da aprovação por link e do catálogo de serviços/status:
+
+```bash
+docker compose exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1' < init/03-budget-approval.sql
+docker compose exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1' < init/04-service-catalog-and-status.sql
+```
+
+O MailHog recebe mensagens SMTP na porta 1025 e disponibiliza a caixa de
+entrada em http://localhost:8025. Para iniciar a API, configure no ambiente
+`SMTP_HOST`, `SMTP_PORT`, `SMTP_FROM`, `FRONTEND_URL` e
+`APPROVAL_TOKEN_TTL_MINUTES` (inteiro positivo, em minutos). `SMTP_USER`,
+`SMTP_PASS` e `SMTP_SECURE=true` são opcionais para um provedor SMTP real.
+O frontend deve exibir a página `/orcamento/:token` e confirmar a decisão via
+`POST /budget-approvals/decide`; abrir o link não registra a decisão.
 
 Importante: os scripts em `/docker-entrypoint-initdb.d/` são executados apenas na primeira inicialização do PostgreSQL. Alterações posteriores no script não serão aplicadas automaticamente em um banco já criado.
 
