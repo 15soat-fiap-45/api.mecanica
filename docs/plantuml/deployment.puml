@@ -8,14 +8,14 @@ Deployment_Node(client, "Cliente da API", "Browser, curl ou outro consumidor HTT
 
 Deployment_Node(host, "Host de execução", "Node.js") {
     Container(api_process, "API process", "Fastify / TypeScript", "src/index.ts; padrão HOST=0.0.0.0 e PORT=3000")
-    ContainerDb(drizzle, "Drizzle ORM", "node-postgres", "Repositórios Registry e health check")
+    ContainerDb(drizzle, "Drizzle ORM", "node-postgres", "Repositórios Registry, Stock e health check")
 }
 
 Deployment_Node(database_runtime, "PostgreSQL", "Docker Compose ou servidor PostgreSQL") {
-    ContainerDb(postgres, "Database", "PostgreSQL", "Tabelas mapeadas: cliente, veiculo e servico")
+    ContainerDb(postgres, "Database", "PostgreSQL", "Tabelas mapeadas: Registry e Stock")
 }
 
-Rel(client_tool, api_process, "HTTP/JSON", "Health, Swagger, customers e vehicles")
+Rel(client_tool, api_process, "HTTP/JSON", "Health, Swagger, Registry e Stock")
 Rel(api_process, drizzle, "usa")
 Rel(drizzle, postgres, "TCP/SQL")
 Rel(api_process, postgres, "SELECT 1 no health check")

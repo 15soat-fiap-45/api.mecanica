@@ -27,6 +27,41 @@ import { RegisterSupplyUsage } from './service-order/application/use-cases/regis
 import { CancelServiceOrder } from './service-order/application/use-cases/cancel-service-order.js';
 import { MoveServiceOrderToApproved } from './service-order/application/handlers/move-service-order-to-approved.js';
 import type { BudgetApproved } from './service-order/domain/budget/events/budget-approved.js';
+import type { UseCase } from './shared/application/use-case.js';
+import type {
+    RegisterPartSupplyInput,
+    RegisterPartSupplyOutput,
+} from './stock/application/use-cases/register-part-supply.js';
+import type {
+    RegisterStockEntryInput,
+    RegisterStockEntryOutput,
+} from './stock/application/use-cases/register-stock-entry.js';
+import type {
+    ReserveSupplyInput,
+    ReserveSupplyOutput,
+} from './stock/application/use-cases/reserve-supply.js';
+import type {
+    CancelReservationInput,
+    CancelReservationOutput,
+} from './stock/application/use-cases/cancel-reservation.js';
+import type {
+    WriteOffStockInput,
+    WriteOffStockOutput,
+} from './stock/application/use-cases/write-off-stock.js';
+
+export interface StockUseCases {
+    registerPartSupply: UseCase<RegisterPartSupplyInput, RegisterPartSupplyOutput>;
+    registerStockEntry: UseCase<
+        RegisterStockEntryInput,
+        RegisterStockEntryOutput
+    >;
+    reserveSupply: UseCase<ReserveSupplyInput, ReserveSupplyOutput>;
+    writeOffStock: UseCase<WriteOffStockInput, WriteOffStockOutput>;
+    cancelReservation: UseCase<
+        CancelReservationInput,
+        CancelReservationOutput
+    >;
+}
 
 export interface StockDependencies {
     partSupplyRepository: PartSupplyRepository;
@@ -47,26 +82,10 @@ export type ApplicationDependencies = StockDependencies &
     ServiceOrderDependencies &
     RegistryDependencies;
 
-/**
- * Composition root for the Stock context: instantiates the use cases and
- * wires each handler to its event on the bus.
- *
- * - The service order event contracts are declared inside Stock itself
- *   (see the handlers), without importing classes from the Service Order
- *   context.
- * - One transaction per handler: consistency between contexts is eventual.
- * - Idempotency is enforced by the use cases (service order + supply key).
- */
-export function compositionRoot(
+export function stockCompositionRoot(
     eventBus: EventBus,
-    deps: ApplicationDependencies,
-) {
-    const registry = registryCompositionRoot(eventBus, {
-        customerRepository: deps.customerRepository,
-        vehicleRepository: deps.vehicleRepository,
-    });
-
-    // Use cases
+    deps: StockDependencies,
+): StockUseCases {
     const registerPartSupply = new RegisterPartSupply(
         deps.partSupplyRepository,
         eventBus,
@@ -87,7 +106,6 @@ export function compositionRoot(
         eventBus,
     );
 
-    // Handlers for events from other contexts
     const checkAvailability = new CheckAvailability(reserveSupply, eventBus);
     const writeOffReservedSupplies = new WriteOffReservedSupplies(
         writeOffStock,
@@ -115,6 +133,36 @@ export function compositionRoot(
     eventBus.subscribe<SupplyUsed>('service-order.supply-used', (event) =>
         consumeUsedSupply.handle(event),
     );
+
+    return {
+        registerPartSupply,
+        registerStockEntry,
+        reserveSupply,
+        writeOffStock,
+        cancelReservation,
+    };
+}
+
+/**
+ * Composition root for the Stock context: instantiates the use cases and
+ * wires each handler to its event on the bus.
+ *
+ * - The service order event contracts are declared inside Stock itself
+ *   (see the handlers), without importing classes from the Service Order
+ *   context.
+ * - One transaction per handler: consistency between contexts is eventual.
+ * - Idempotency is enforced by the use cases (service order + supply key).
+ */
+export function compositionRoot(
+    eventBus: EventBus,
+    deps: ApplicationDependencies,
+) {
+    const registry = registryCompositionRoot(eventBus, {
+        customerRepository: deps.customerRepository,
+        vehicleRepository: deps.vehicleRepository,
+    });
+
+    const stock = stockCompositionRoot(eventBus, deps);
 
     // Service order use cases
     const registerServiceOrder = new RegisterServiceOrder(
@@ -146,11 +194,7 @@ export function compositionRoot(
 
     return {
         ...registry,
-        registerPartSupply,
-        registerStockEntry,
-        reserveSupply,
-        writeOffStock,
-        cancelReservation,
+        ...stock,
         registerServiceOrder,
         addSupplyToServiceOrder,
         approveBudget,

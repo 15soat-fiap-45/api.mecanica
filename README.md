@@ -26,7 +26,7 @@ O documento oficial `Fase 1 - Tech Challenge.pdf` não está presente na árvore
 | Validação de CPF/CNPJ, e-mail, telefone e placa       | **Implementado**                             | Value objects no módulo Registry e `src/shared/domain/email.ts`                                                                    |
 | Ordens de serviço no domínio                          | **Parcialmente implementado**                | Agregado, casos de uso e testes existem; não há rotas HTTP ou persistência concreta identificada para OS                           |
 | Orçamento e aprovação/rejeição                        | **Parcialmente implementado**                | Agregado `Budget`, casos de uso e evento de aprovação existem; não há API publicada para o fluxo                                   |
-| Estoque e reservas                                    | **Parcialmente implementado**                | Agregados, casos de uso, handlers e testes existem; não há endpoints nem repositórios PostgreSQL correspondentes                   |
+| Estoque e reservas                                    | **Implementado parcialmente**                | Agregados, casos de uso, handlers, endpoints e repositories PostgreSQL existem; a migration adiciona campos de integração e `reserva_estoque` ao schema relacional |
 | CRUD completo de clientes, veículos, serviços e peças | **Pendente / parcial**                       | Foram encontradas operações de criação e consulta de clientes/veículos; atualização e exclusão não estão expostas nas rotas atuais |
 | Autenticação JWT e autorização administrativa         | **Implementado para o módulo Auth**          | `POST /auth/first-access`, `POST /auth/login` e `POST /users`; Registry ainda não exige JWT                                        |
 | Gestão de papéis e desativação por HTTP               | **Pendente**                                 | Casos de uso existem, mas não há rotas para trocar papel ou desativar usuário                                                      |
@@ -196,9 +196,14 @@ O Fastify registra Swagger e Swagger UI em `/docs`. A especificação OpenAPI é
 | `GET`  | `/customers/:cpfCnpj` | Consulta cliente por CPF/CNPJ                      | Não                  |
 | `POST` | `/vehicles`           | Cadastra veículo vinculado a cliente               | Não                  |
 | `GET`  | `/vehicles/:plate`    | Consulta veículo por placa                         | Não                  |
+| `POST` | `/stock/parts`        | Cadastra peça/insumo e saldo inicial               | Não                  |
+| `POST` | `/stock/entries`      | Registra entrada de estoque                        | Não                  |
+| `POST` | `/stock/reservations` | Reserva insumo para uma ordem de serviço           | Não                  |
+| `POST` | `/stock/reservations/:serviceOrderId/cancel` | Cancela reservas da OS | Não |
+| `POST` | `/stock/write-offs/:serviceOrderId` | Realiza baixa de reservas | Não |
 | `GET`  | `/docs`               | Interface Swagger UI                               | Não                  |
 
-As rotas de ordem de serviço, orçamento, serviços, peças, estoque, troca de papel e desativação de usuário ainda não estão registradas. As rotas Auth validam os corpos com Zod e retornam `400` para requisições inválidas, `401` para credenciais incorretas ou ausência do Bearer em `/users`, `403` para usuário sem acesso e `409` para e-mail já cadastrado. As rotas Registry continuam públicas; suas exceções são tratadas pelo error handler central em `src/app.ts`.
+As rotas de ordem de serviço, orçamento, serviços, troca de papel e desativação de usuário ainda não estão registradas. As rotas de Stock estão disponíveis e documentadas no Swagger. As rotas Auth validam os corpos com Zod e retornam `400` para requisições inválidas, `401` para credenciais incorretas ou ausência do Bearer em `/users`, `403` para usuário sem acesso e `409` para e-mail já cadastrado. As rotas Registry continuam públicas; suas exceções são tratadas pelo error handler central em `src/app.ts`.
 
 ## Testes e qualidade
 

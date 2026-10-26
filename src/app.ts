@@ -2,6 +2,7 @@ import Fastify from 'fastify';
 import { sql } from 'drizzle-orm';
 import swagger from '@fastify/swagger';
 import swaggerUi from '@fastify/swagger-ui';
+import { jsonSchemaTransform } from 'fastify-type-provider-zod';
 import type { FastifyError } from 'fastify';
 import { db, pool } from './infra/database/connection.js';
 import { ApplicationException } from './shared/application/application-exception.js';
@@ -9,10 +10,13 @@ import { DomainException } from './shared/domain/domain-exception.js';
 import { registerRegistryRoutes } from './registry/infra/http/registry-routes.js';
 import type { RegistryUseCases } from './registry/composition-root.js';
 import type { AuthController } from './auth/infra/http/auth-controller.js';
+import { registerStockRoutes } from './stock/infra/http/stock-routes.js';
+import type { StockUseCases } from './composition-root.js';
 
 export interface AppDependencies {
     registry?: RegistryUseCases;
     auth?: AuthController;
+    stock?: StockUseCases;
 }
 
 export function buildApp(deps: AppDependencies = {}) {
@@ -21,10 +25,12 @@ export function buildApp(deps: AppDependencies = {}) {
     });
 
     app.register(swagger, {
+        transform: jsonSchemaTransform,
         openapi: {
             info: {
                 title: 'Mechanical Workshop API',
-                description: 'Registry context API',
+                description:
+                    'API for registry, authentication and stock operations.',
                 version: '1.0.0',
             },
         },
@@ -96,6 +102,11 @@ export function buildApp(deps: AppDependencies = {}) {
         });
     }
     if (deps.auth) deps.auth.register(app);
+    if (deps.stock) {
+        app.register(async (stockApp) => {
+            registerStockRoutes(stockApp, deps.stock!);
+        });
+    }
 
     return app;
 }

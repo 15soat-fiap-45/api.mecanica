@@ -15,6 +15,13 @@
       "when": 1792954402994,
       "tag": "0001_use_uuid_user_ids_and_unique_emails",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1793027076659,
+      "tag": "0002_create_stock",
+      "breakpoints": true
     }
   ]
 }
