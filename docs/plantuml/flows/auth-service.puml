@@ -1,0 +1,149 @@
+@startuml Fluxo: Pré-cadastrar Usuário
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Sequence.puml
+autonumber
+
+actor Client as "Consumidor HTTP"
+participant API as "Fastify"
+participant Route as "AuthController"
+participant Auth as "ResolveAuthenticatedUser"
+participant Token as "JoseTokenService"
+participant UseCase as "PreRegisterUser"
+participant Policy as "AccessPolicy"
+participant Repo as "DrizzleUserRepository"
+participant Security as "Argon2PasswordHasher / SecurePasswordGenerator"
+participant DB as "Drizzle / PostgreSQL"
+
+Client -> API: POST /users\nAuthorization: Bearer <jwt>\n{email, role}
+API -> Route: confere Bearer e valida body com Zod
+alt Header ausente ou inválido
+    Route --> API: 401 Authentication required
+    API --> Client: 401
+else Body inválido
+    Route --> API: 400 Invalid request
+    API --> Client: 400
+else Requisição válida
+    Route -> Auth: execute(token)
+    Auth -> Token: verify(token)
+    Token --> Auth: email ou null
+    alt Token inválido
+        Auth --> Route: PermissionDenied
+        Route --> API: 403
+        API --> Client: 403
+    else Token válido
+        Auth -> Repo: findByEmail(email)
+        Repo -> DB: SELECT auth_users por email
+        DB --> Repo: usuário ou null
+        alt Usuário inexistente ou inativo
+            Repo --> Auth: null ou usuário inativo
+            Auth --> Route: PermissionDenied
+            Route --> API: 403
+            API --> Client: 403
+        else Usuário ativo
+            Repo --> Auth: User
+            Auth --> Route: actor
+            Route -> UseCase: execute({email, role}, actor)
+            UseCase -> Policy: require(actor, USUARIO_PRE_CADASTRAR)
+            alt Actor sem permissão de gerente
+                Policy --> UseCase: UserWithoutPermission
+                UseCase --> Route: UserWithoutPermission
+                Route --> API: 403
+                API --> Client: 403
+            else Gerente ativo
+                UseCase -> UseCase: valida Email e Role
+                UseCase -> Repo: findByEmail(email)
+                Repo -> DB: SELECT auth_users por email
+                DB --> Repo: usuário existente ou null
+                alt E-mail já cadastrado
+                    Repo --> UseCase: usuário existente
+                    UseCase --> Route: UserAlreadyExistsError
+                    Route --> API: 409
+                    API --> Client: 409
+                else Novo usuário
+                    Repo --> UseCase: null
+                    UseCase -> Security: gera senha temporária e hash Argon2id
+                    Security --> UseCase: senha temporária e hash
+                    UseCase -> Repo: save(User PENDING_FIRST_ACCESS)
+                    Repo -> DB: INSERT INTO auth_users
+                    DB --> Repo: sucesso
+                    UseCase --> Route: temporaryPassword
+                    Route --> API: 201 {temporaryPassword}
+                    API --> Client: resposta JSON
+                end
+            end
+        end
+    end
+end
+
+note over API,DB
+    Rota registrada no bootstrap por buildApp({registry, auth}).
+    A senha temporária é devolvida em claro somente na resposta.
+end note
+@enduml
+
+@startuml Fluxo: Login
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Sequence.puml
+autonumber
+
+actor Client as "Consumidor HTTP"
+participant API as "Fastify"
+participant Limit as "@fastify/rate-limit"
+participant Route as "AuthController"
+participant UseCase as "LogIn"
+participant Repo as "DrizzleUserRepository"
+participant DB as "Drizzle / PostgreSQL"
+participant Hasher as "Argon2PasswordHasher"
+participant Token as "JoseTokenService"
+
+Client -> API: POST /auth/login\n{email, password}
+API -> Limit: verifica limite por IP nesta rota
+alt Mais de 5 requisições por minuto
+    Limit --> API: 429
+    API --> Client: 429
+else Dentro do limite
+    API -> Route: valida body com Zod
+    alt Body inválido
+        Route --> API: 400 Invalid request
+        API --> Client: 400
+    else Body válido
+        Route -> UseCase: execute({email, password})
+        UseCase -> UseCase: valida e normaliza Email
+        alt E-mail inválido
+            UseCase --> Route: InvalidCredentials
+            Route --> API: 401
+            API --> Client: 401
+        else E-mail válido
+            UseCase -> Repo: findByEmail(email)
+            Repo -> DB: SELECT auth_users por email
+            DB --> Repo: usuário ou null
+            alt Usuário inexistente ou senha incorreta
+                Repo --> UseCase: usuário ou null
+                UseCase -> Hasher: verify(password, hash real ou fictício)
+                Hasher --> UseCase: false
+                UseCase --> Route: InvalidCredentials
+                Route --> API: 401
+                API --> Client: 401
+            else Credenciais corretas
+                Repo --> UseCase: usuário
+                UseCase -> Hasher: verify(password, hash armazenado)
+                Hasher --> UseCase: true
+                alt Primeiro acesso pendente ou usuário desativado
+                    UseCase --> Route: FirstAccessRequired ou PermissionDenied
+                    Route --> API: 403
+                    API --> Client: 403
+                else Usuário ACTIVE
+                    UseCase -> Token: sign(email)
+                    Token --> UseCase: JWT HS256 com expiração de 4h
+                    UseCase --> Route: token
+                    Route --> API: 200 {token}\nCache-Control: no-store
+                    API --> Client: resposta JSON
+                end
+            end
+        end
+    end
+end
+
+note over API,DB
+    Rota registrada no bootstrap por buildApp({registry, auth}).
+    Primeiro acesso usa POST /auth/first-access (fluxo separado).
+end note
+@enduml

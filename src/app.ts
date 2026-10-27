@@ -64,7 +64,15 @@ export function buildApp(deps: AppDependencies = {}) {
         }
 
         request.log.error(error);
-        return reply.code(500).send({
+        const fastifyStatusCode = fastifyError.statusCode;
+        const statusCode =
+            typeof fastifyStatusCode === 'number' &&
+            Number.isInteger(fastifyStatusCode) &&
+            fastifyStatusCode >= 400 &&
+            fastifyStatusCode < 500
+                ? fastifyStatusCode
+                : 500;
+        return reply.code(statusCode).send({
             error: 'InternalServerError',
             message: 'Internal server error.',
         });
@@ -91,6 +99,7 @@ export function buildApp(deps: AppDependencies = {}) {
             registerRegistryRoutes(registryApp, deps.registry!);
         });
     }
+    if (deps.auth) deps.auth.register(app);
 
     if (deps.serviceOrder) {
         app.register(async (serviceOrderApp) => {

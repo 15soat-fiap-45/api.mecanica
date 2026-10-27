@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { CustomerId } from './customer-id.js';
 import { Customer } from './customer.js';
 import { CpfCnpj } from './value-objects/cpf-cnpj.js';
-import { Email } from './value-objects/email.js';
+import { Email } from '../../../shared/domain/email.js';
 import { Telephone } from './value-objects/telephone.js';
 
 describe('Customer Aggregate Root', () => {

@@ -1,6 +1,6 @@
 import { Customer } from '../../../registry/domain/customer/customer.js';
 import { CpfCnpj } from '../../../registry/domain/customer/value-objects/cpf-cnpj.js';
-import { Email } from '../../../registry/domain/customer/value-objects/email.js';
+import { Email } from '../../../shared/domain/email.js';
 import { Telephone } from '../../../registry/domain/customer/value-objects/telephone.js';
 import { Vehicle } from '../../../registry/domain/vehicle/vehicle.js';
 import { Plate } from '../../../registry/domain/vehicle/value-objects/plate.js';

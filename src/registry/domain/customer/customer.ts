@@ -1,7 +1,7 @@
 import { AggregateRoot } from '../../../shared/domain/aggregate-root.js';
 import type { CustomerId } from './customer-id.js';
 import { CustomerRegistered } from './events/customer-registered.js';
-import type { Email } from './value-objects/email.js';
+import type { Email } from '../../../shared/domain/email.js';
 import type { Telephone } from './value-objects/telephone.js';
 
 export interface CustomerProps {

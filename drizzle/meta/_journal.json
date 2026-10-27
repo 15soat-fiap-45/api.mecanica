@@ -1,0 +1,20 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1792893588994,
+      "tag": "0000_create_auth_users",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1792954402994,
+      "tag": "0001_use_uuid_user_ids_and_unique_emails",
+      "breakpoints": true
+    }
+  ]
+}
