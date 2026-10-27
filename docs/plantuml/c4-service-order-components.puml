@@ -1,0 +1,51 @@
+@startuml service_order_c3_components
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Component.puml
+title C3 - Service Order - visao principal dos componentes no container API HTTP
+LAYOUT_LEFT_RIGHT()
+
+Person(consumer, "Consumidor HTTP", "Envia comandos de OS e orcamento")
+Container_Boundary(api, "API HTTP - processo Node.js / Fastify") {
+  Component(http, "Adaptador HTTP", "Fastify / Zod", "registerServiceOrderRoutes: valida entradas e serializa respostas das cinco rotas.")
+  Component(orders, "Casos de uso de OS", "TypeScript / Application", "RegisterServiceOrder, AddSupplyToServiceOrder, RegisterSupplyUsage e CancelServiceOrder.")
+  Component(budget, "Aprovacao de orcamento", "TypeScript / Application", "ApproveBudget: carrega, aprova, salva e publica eventos do Budget.")
+  Component(domain, "Dominio Service Order", "TypeScript / DDD", "Agregados ServiceOrder e Budget; SupplyItem, IDs, status e eventos.")
+  Component(ports, "Contratos de persistencia", "Interfaces TypeScript / Domain", "ServiceOrderRepository e BudgetRepository.")
+  Component(adapters, "Adaptadores de persistencia", "Drizzle ORM / Infrastructure", "DrizzleServiceOrderRepository e DrizzleBudgetRepository; mappers e controle otimista de versao.")
+  Component(bus, "Event Bus compartilhado", "EventBus / InMemoryEventBus", "Casos de uso dependem de EventBus; a implementacao injeta entrega sequencial no mesmo processo e isola falhas dos handlers.")
+  Component(policy, "Politica de aprovacao da OS", "MoveServiceOrderToApproved", "Consome budget-approved; aprova e salva a OS se a transicao for permitida.")
+}
+ContainerDb(database, "Banco da oficina", "PostgreSQL 17", "service_order.orders, service_order.supply_items e service_order.budgets")
+
+Rel(consumer, http, "Envia comandos", "HTTP/JSON")
+Rel(http, orders, "Executa", "execute(input)")
+Rel(http, budget, "Aprova orcamento", "execute(input)")
+Rel(orders, domain, "Invoca regras e coleta eventos", "TypeScript")
+Rel(budget, domain, "Invoca Budget.approve e coleta eventos", "TypeScript")
+Rel(orders, ports, "Carrega e salva OS", "findById / save")
+Rel(budget, ports, "Carrega e salva Budget", "findById / save")
+Rel(adapters, ports, "Implementa contratos", "TypeScript")
+Rel(adapters, database, "Le e grava com controle de versao", "SQL / pg")
+Rel(orders, bus, "Publica apos persistir", "publish(events)")
+Rel(budget, bus, "Publica service-order.budget-approved", "publish(events)")
+Rel(bus, policy, "Entrega budget-approved", "handle(event)")
+Rel(policy, domain, "Valida status e aprova OS", "approve()")
+Rel(policy, ports, "Carrega e salva OS em operacao separada", "findById / save")
+
+note bottom of http
+  src/index.ts cria adaptadores e um unico bus compartilhado.
+  serviceOrderCompositionRoot injeta dependencias e assina a politica.
+  src/app.ts registra rotas e mapeia erros HTTP.
+  Registry compartilha o processo, sem chamada direta de Service Order.
+end note
+note bottom of bus
+  Handlers de Stock existem em src/composition-root.ts,
+  mas essa composicao nao e chamada por src/index.ts.
+  Sem durabilidade, retry, DLQ ou transacao conjunta com o banco.
+end note
+note bottom of ports
+  Setas para contratos indicam dependencias de codigo.
+  Os adaptadores implementam essas interfaces.
+  Em execucao, o contrato e atendido pelo adaptador injetado.
+end note
+SHOW_LEGEND()
+@enduml

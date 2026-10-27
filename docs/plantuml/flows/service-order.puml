@@ -1,36 +1,69 @@
-@startuml Fluxo: Casos de Uso de Ordem e Estoque
-!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Sequence.puml
+@startuml service_order_budget_approval
+title Fluxo dinamico complementar - aprovacao de orcamento e OS
 autonumber
+actor "Consumidor HTTP" as Caller
+participant "Fastify / Zod" as HTTP
+participant ApproveBudget as UseCase
+participant DrizzleBudgetRepository as BudgetRepo
+participant Budget
+database "PostgreSQL" as DB
+participant InMemoryEventBus as Bus
+participant MoveServiceOrderToApproved as Handler
+participant DrizzleServiceOrderRepository as OrderRepo
+participant ServiceOrder as Order
 
-participant Caller as "Chamador interno"
-participant UseCase as "Service Order use case"
-participant OrderRepo as "ServiceOrderRepository"
-participant Bus as "InMemoryEventBus"
-participant StockHandler as "Stock handler"
-participant StockRepo as "PartSupply / Reservation repository"
+Caller -> HTTP: POST /budgets/:budgetId/approve
+HTTP -> UseCase: execute({ budgetId })
+UseCase -> BudgetRepo: findById(budgetId)
+BudgetRepo -> DB: SELECT service_order.budgets
+DB --> BudgetRepo: linha do orcamento existente
+BudgetRepo --> UseCase: Budget reconstituido
+UseCase -> Budget: approve()
+Budget -> Budget: status APPROVED; registra BudgetApproved
+UseCase -> BudgetRepo: save(budget)
+BudgetRepo -> DB: INSERT / UPDATE com verificacao de version
+DB --> BudgetRepo: gravacao confirmada
+BudgetRepo --> UseCase: save concluido; version incrementada
+UseCase -> Budget: pullEvents()
+Budget --> UseCase: BudgetApproved
+UseCase -> Bus: publish(events)
+Bus -> Handler: handle(BudgetApproved)
+Handler -> OrderRepo: findById(event.serviceOrderId)
+OrderRepo -> DB: SELECT orders LEFT JOIN supply_items
+DB --> OrderRepo: agregado persistido
+OrderRepo --> Handler: ServiceOrder ou null
 
-Caller -> UseCase: execute(...)
-UseCase -> OrderRepo: find/save ServiceOrder ou Budget
-OrderRepo --> UseCase: agregado (fake/implementação injetada)
-UseCase -> Bus: publish evento de domínio
-
-alt additional-supplies-included
-    Bus -> StockHandler: CheckAvailability
-    StockHandler -> StockRepo: reserva insumos disponíveis
-else service-order.finished
-    Bus -> StockHandler: WriteOffReservedSupplies
-    StockHandler -> StockRepo: confirma e consome reservas
-else service-order.cancelled
-    Bus -> StockHandler: ReleaseReservedSupplies
-    StockHandler -> StockRepo: cancela reservas e devolve quantidade
-else service-order.supply-used
-    Bus -> StockHandler: ConsumeUsedSupply
-    StockHandler -> StockRepo: consome reserva da peça utilizada
+alt OS existe e pode transicionar para APPROVED
+  Handler -> Order: approve()
+  Handler -> OrderRepo: save(serviceOrder)
+  OrderRepo -> DB: transacao: grava OS e itens com verificacao de version
+  alt versao atual e gravacao bem-sucedida
+    DB --> OrderRepo: COMMIT
+    OrderRepo --> Handler: save concluido; version incrementada
+    Handler --> Bus: conclui
+  else conflito de versao ou erro de persistencia
+    DB --> OrderRepo: nenhuma linha atualizada ou erro
+    OrderRepo -> DB: ROLLBACK da transacao da OS
+    OrderRepo --> Handler: ConcurrentModificationError ou erro de persistencia
+    Handler --> Bus: falha do handler
+    Bus -> Bus: registra event handler failed; sem retry
+  end
+else OS existe e nao pode transicionar para APPROVED
+  Handler --> Bus: retorna sem alterar OS (idempotencia)
+else OS nao encontrada
+  Handler --> Bus: ServiceOrderNotFoundError
+  Bus -> Bus: registra falha do handler
 end
 
-note over Caller,StockRepo
-    Não existe endpoint HTTP de ordem de serviço ou estoque no estado atual.
-    O composition-root conecta os handlers ao Event Bus em memória.
-    Repositórios concretos PostgreSQL desses contextos ainda não foram identificados.
+Bus --> UseCase: publish resolvido
+UseCase --> HTTP: dados do Budget aprovado
+HTTP --> Caller: HTTP 200
+
+note over BudgetRepo,OrderRepo
+  Caminho principal assume payload valido e orcamento PENDING existente.
+  Falhas de persistencia do caso de uso sao mapeadas pelo error handler.
+  Budget e OS sao salvos separadamente, sem transacao conjunta.
+  Qualquer falha do handler (inclusive concorrencia) e registrada pelo bus;
+  ela nao desfaz o Budget e nao impede o HTTP 200 da aprovacao.
 end note
 @enduml
