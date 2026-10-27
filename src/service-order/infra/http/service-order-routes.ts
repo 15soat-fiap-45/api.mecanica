@@ -1,6 +1,11 @@
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
-import type { FastifyInstance } from 'fastify';
+import type {
+    FastifyInstance,
+    FastifyReply,
+    FastifyRequest,
+    HookHandlerDoneFunction,
+} from 'fastify';
 import {
     serializerCompiler,
     validatorCompiler,
@@ -8,7 +13,10 @@ import {
 } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import { PartCode } from '../../../shared/domain/part-code.js';
-import { actorContext } from '../../application/ports/actor-resolver.js';
+import {
+    actorContext,
+    type ServiceOrderPermission,
+} from '../../application/ports/actor-resolver.js';
 import type { ServiceOrderUseCases } from '../../composition-root.js';
 
 function getApprovalHtml(): string {
@@ -39,20 +47,60 @@ export function registerServiceOrderRoutes(
 ): void {
     app.setValidatorCompiler(validatorCompiler);
     app.setSerializerCompiler(serializerCompiler);
-    app.addHook('preHandler', (request, _reply, done) => {
-        if (!useCases.actorResolver) {
-            actorContext.run(null, done);
-            return;
-        }
-        useCases.actorResolver
-            .resolve(request.headers.authorization)
-            .then((actorId) => actorContext.run(actorId, done), done);
-    });
+
+    const requireAuth =
+        (permission?: ServiceOrderPermission) =>
+        (
+            request: FastifyRequest,
+            reply: FastifyReply,
+            done: HookHandlerDoneFunction,
+        ) => {
+            const resolver = useCases.actorResolver;
+            if (!resolver) {
+                void reply.code(401).send({
+                    error: 'UnauthorizedError',
+                    message: 'Authentication required.',
+                });
+                return;
+            }
+            const authPromise = resolver.authenticate
+                ? resolver.authenticate(request.headers.authorization)
+                : resolver
+                      .resolve(request.headers.authorization)
+                      .then((id) => (id ? { id, can: () => true } : null));
+            authPromise.then((actor) => {
+                if (!actor) {
+                    void reply.code(401).send({
+                        error: 'UnauthorizedError',
+                        message: 'Authentication required.',
+                    });
+                    return;
+                }
+                if (permission && !actor.can(permission)) {
+                    void reply.code(403).send({
+                        error: 'ForbiddenError',
+                        message: 'Insufficient permissions.',
+                    });
+                    return;
+                }
+                actorContext.run(actor.id, done);
+            }, done);
+        };
+
+    const publicRoute = (
+        _request: FastifyRequest,
+        _reply: FastifyReply,
+        done: HookHandlerDoneFunction,
+    ) => {
+        actorContext.run(null, done);
+    };
+
     const typedApp = app.withTypeProvider<ZodTypeProvider>();
 
     typedApp.post(
         '/service-orders',
         {
+            preValidation: requireAuth('OS_CRIAR'),
             schema: {
                 tags: ['Service orders'],
                 body: z.object({
@@ -80,6 +128,7 @@ export function registerServiceOrderRoutes(
     typedApp.post(
         '/services',
         {
+            preValidation: requireAuth('OS_CRIAR'),
             schema: {
                 tags: ['Service orders'],
                 body: z.object({
@@ -115,6 +164,7 @@ export function registerServiceOrderRoutes(
     typedApp.get(
         '/services',
         {
+            preValidation: requireAuth(),
             schema: { tags: ['Service orders'] },
         },
         async () => useCases.serviceCatalog.list(),
@@ -123,6 +173,7 @@ export function registerServiceOrderRoutes(
     typedApp.post(
         '/service-orders/:serviceOrderId/services',
         {
+            preValidation: requireAuth('OS_CONCLUIR'),
             schema: {
                 tags: ['Service orders'],
                 params: orderParams,
@@ -150,6 +201,7 @@ export function registerServiceOrderRoutes(
     typedApp.get(
         '/service-orders/:serviceOrderId',
         {
+            preValidation: requireAuth(),
             schema: { tags: ['Service orders'], params: orderParams },
         },
         async (request) => useCases.findServiceOrder.execute(request.params),
@@ -158,6 +210,7 @@ export function registerServiceOrderRoutes(
     typedApp.get(
         '/service-orders/:serviceOrderId/history',
         {
+            preValidation: requireAuth(),
             schema: {
                 tags: ['Service orders'],
                 params: orderParams,
@@ -187,6 +240,7 @@ export function registerServiceOrderRoutes(
     typedApp.post(
         '/service-orders/:serviceOrderId/supplies',
         {
+            preValidation: requireAuth('ESTOQUE_BAIXAR'),
             schema: {
                 tags: ['Service orders'],
                 params: orderParams,
@@ -215,6 +269,7 @@ export function registerServiceOrderRoutes(
     typedApp.post(
         '/service-orders/:serviceOrderId/supplies/:partCode/usage',
         {
+            preValidation: requireAuth('ESTOQUE_BAIXAR'),
             schema: {
                 tags: ['Service orders'],
                 params: orderParams.extend({ partCode: partCodeSchema }),
@@ -234,6 +289,7 @@ export function registerServiceOrderRoutes(
     typedApp.post(
         '/service-orders/:serviceOrderId/cancel',
         {
+            preValidation: requireAuth('OS_CRIAR'),
             schema: {
                 tags: ['Service orders'],
                 params: orderParams,
@@ -251,6 +307,7 @@ export function registerServiceOrderRoutes(
     typedApp.post(
         '/service-orders/:serviceOrderId/awaiting-approval',
         {
+            preValidation: requireAuth('OS_CONCLUIR'),
             schema: {
                 tags: ['Service orders'],
                 params: orderParams,
@@ -264,14 +321,15 @@ export function registerServiceOrderRoutes(
         async (request) => useCases.awaitBudgetApproval.execute(request.params),
     );
 
-    for (const [path, useCase] of [
-        ['start', useCases.startExecution],
-        ['finish', useCases.finishServiceOrder],
-        ['deliver', useCases.deliverServiceOrder],
+    for (const [path, useCase, permission] of [
+        ['start', useCases.startExecution, 'OS_CONCLUIR'],
+        ['finish', useCases.finishServiceOrder, 'OS_CONCLUIR'],
+        ['deliver', useCases.deliverServiceOrder, 'OS_CRIAR'],
     ] as const) {
         typedApp.post(
             `/service-orders/:serviceOrderId/${path}`,
             {
+                preValidation: requireAuth(permission),
                 schema: {
                     tags: ['Service orders'],
                     params: orderParams,
@@ -290,6 +348,7 @@ export function registerServiceOrderRoutes(
     typedApp.post(
         '/budget-approvals/decide',
         {
+            preValidation: publicRoute,
             schema: {
                 tags: ['Budgets'],
                 body: z.object({

@@ -211,29 +211,32 @@ Não existe `Dockerfile` da aplicação nem `docker-compose.yml` na raiz orquest
 
 O Fastify registra Swagger e Swagger UI em `/docs`. A especificação OpenAPI é gerada a partir das rotas registradas.
 
-| Método | Rota                                                       | Finalidade                                                                             | Autenticação |
-| ------ | ---------------------------------------------------------- | -------------------------------------------------------------------------------------- | ------------ |
-| `GET`  | `/health`                                                  | Verifica a aplicação e executa `SELECT 1` no banco                                     | Não          |
-| `POST` | `/customers`                                               | Cadastra cliente                                                                       | Não          |
-| `GET`  | `/customers/:cpfCnpj`                                      | Consulta cliente por CPF/CNPJ                                                          | Não          |
-| `POST` | `/vehicles`                                                | Cadastra veículo vinculado a cliente                                                   | Não          |
-| `GET`  | `/vehicles/:plate`                                         | Consulta veículo por placa                                                             | Não          |
-| `POST` | `/services`                                                | Cadastra serviço no catálogo (validando `partIds` no banco)                            | Não          |
-| `GET`  | `/services`                                                | Lista serviços do catálogo                                                             | Não          |
-| `POST` | `/service-orders`                                          | Cadastra OS (`description`, `vehicleId`)                                               | Não          |
-| `GET`  | `/service-orders/:serviceOrderId`                          | Consulta OS e serviços associados                                                      | Não          |
-| `GET`  | `/service-orders/:serviceOrderId/history`                  | Consulta histórico de fases da OS (`status`, `valueCents`, `changedBy` e `recordedAt`) | Não          |
-| `POST` | `/service-orders/:serviceOrderId/services`                 | Associa serviço do catálogo à OS (`serviceId`)                                         | Não          |
-| `POST` | `/service-orders/:serviceOrderId/supplies`                 | Inclui insumo (`partCode`, `quantity`)                                                 | Não          |
-| `POST` | `/service-orders/:serviceOrderId/supplies/:partCode/usage` | Registra uso do insumo                                                                 | Não          |
-| `POST` | `/service-orders/:serviceOrderId/awaiting-approval`        | Calcula orçamento a partir dos serviços e envia link de aprovação                      | Não          |
-| `POST` | `/service-orders/:serviceOrderId/start`                    | Inicia execução da OS (`IN_PROGRESS`)                                                  | Não          |
-| `POST` | `/service-orders/:serviceOrderId/finish`                   | Finaliza execução da OS (`COMPLETED`) e notifica cliente                               | Não          |
-| `POST` | `/service-orders/:serviceOrderId/deliver`                  | Registra entrega do veículo (`DELIVERED`)                                              | Não          |
-| `POST` | `/service-orders/:serviceOrderId/cancel`                   | Cancela OS                                                                             | Não          |
-| `POST` | `/budget-approvals/decide`                                 | Confirma aprovação ou recusa do orçamento por token                                    | Não          |
-| `GET`  | `/orcamento/:token` e `/orcamento`                         | Página web de aprovação/recusa do orçamento                                            | Não          |
-| `GET`  | `/docs`                                                    | Interface Swagger UI                                                                   | Não          |
+| Método | Rota                                                       | Finalidade                                                                             | Autenticação / Permissão                         |
+| ------ | ---------------------------------------------------------- | -------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| `GET`  | `/health`                                                  | Verifica a aplicação e executa `SELECT 1` no banco                                     | Não                                              |
+| `POST` | `/auth/first-access`                                       | Troca a senha temporária no primeiro acesso                                            | Não (rate-limit: 5/min por IP)                   |
+| `POST` | `/auth/login`                                              | Autentica usuário ativo e emite JWT HS256 (4h)                                         | Não (rate-limit: 5/min por IP)                   |
+| `POST` | `/users`                                                   | Pré-cadastra usuário com senha temporária                                              | Bearer JWT (`USUARIO_PRE_CADASTRAR` — `GERENTE`) |
+| `POST` | `/customers`                                               | Cadastra cliente                                                                       | Não                                              |
+| `GET`  | `/customers/:cpfCnpj`                                      | Consulta cliente por CPF/CNPJ                                                          | Não                                              |
+| `POST` | `/vehicles`                                                | Cadastra veículo vinculado a cliente                                                   | Não                                              |
+| `GET`  | `/vehicles/:plate`                                         | Consulta veículo por placa                                                             | Não                                              |
+| `POST` | `/services`                                                | Cadastra serviço no catálogo (validando `partIds` no banco)                            | Bearer JWT (`OS_CRIAR`)                          |
+| `GET`  | `/services`                                                | Lista serviços do catálogo                                                             | Bearer JWT (qualquer papel ativo)                |
+| `POST` | `/service-orders`                                          | Cadastra OS (`description`, `vehicleId`)                                               | Bearer JWT (`OS_CRIAR`)                          |
+| `GET`  | `/service-orders/:serviceOrderId`                          | Consulta OS e serviços associados                                                      | Bearer JWT (qualquer papel ativo)                |
+| `GET`  | `/service-orders/:serviceOrderId/history`                  | Consulta histórico de fases da OS (`status`, `valueCents`, `changedBy` e `recordedAt`) | Bearer JWT (qualquer papel ativo)                |
+| `POST` | `/service-orders/:serviceOrderId/services`                 | Associa serviço do catálogo à OS (`serviceId`)                                         | Bearer JWT (`OS_CONCLUIR`)                       |
+| `POST` | `/service-orders/:serviceOrderId/supplies`                 | Inclui insumo (`partCode`, `quantity`)                                                 | Bearer JWT (`ESTOQUE_BAIXAR`)                    |
+| `POST` | `/service-orders/:serviceOrderId/supplies/:partCode/usage` | Registra uso do insumo                                                                 | Bearer JWT (`ESTOQUE_BAIXAR`)                    |
+| `POST` | `/service-orders/:serviceOrderId/awaiting-approval`        | Calcula orçamento a partir dos serviços e envia link de aprovação                      | Bearer JWT (`OS_CONCLUIR`)                       |
+| `POST` | `/service-orders/:serviceOrderId/start`                    | Inicia execução da OS (`IN_PROGRESS`)                                                  | Bearer JWT (`OS_CONCLUIR`)                       |
+| `POST` | `/service-orders/:serviceOrderId/finish`                   | Finaliza execução da OS (`COMPLETED`) e notifica cliente                               | Bearer JWT (`OS_CONCLUIR`)                       |
+| `POST` | `/service-orders/:serviceOrderId/deliver`                  | Registra entrega do veículo (`DELIVERED`)                                              | Bearer JWT (`OS_CRIAR`)                          |
+| `POST` | `/service-orders/:serviceOrderId/cancel`                   | Cancela OS                                                                             | Bearer JWT (`OS_CRIAR`)                          |
+| `POST` | `/budget-approvals/decide`                                 | Confirma aprovação ou recusa do orçamento por token                                    | Pública (link de uso único enviado por e-mail)   |
+| `GET`  | `/orcamento/:token` e `/orcamento`                         | Página web de aprovação/recusa do orçamento                                            | Pública                                          |
+| `GET`  | `/docs`                                                    | Interface Swagger UI                                                                   | Não                                              |
 
 A validação de payload usa Zod; erros de validação retornam HTTP 400 e exceções de aplicação/domínio são convertidas pelo error handler central em `src/app.ts`.
 
@@ -243,11 +246,12 @@ Exemplo de cadastro de OS:
 
 ```bash
 curl -X POST http://localhost:3000/service-orders \
+  -H 'Authorization: Bearer <jwt>' \
   -H 'Content-Type: application/json' \
   -d '{"description":"Troca de pastilhas de freio","vehicleId":"ID_DO_VEICULO"}'
 ```
 
-A resolução do usuário autenticado via header `Authorization: Bearer <jwt>` nas transições da OS é feita de forma desacoplada por `ActorResolver` e `TokenActorResolver` (compatível com `JoseTokenService` / `ResolveAuthenticatedUser` do módulo `auth`).
+A autenticação (`401 Unauthorized` para token ausente, inválido ou usuário inativo) e a verificação de permissões por papel (`403 Forbidden`) nas rotas de OS e catálogo são realizadas de forma desacoplada por `ActorResolver` (`src/service-order/application/ports/actor-resolver.ts`) e `TokenActorResolver` (`src/infra/token-actor-resolver.ts`), sem acoplamento direto entre `src/service-order/` e `src/auth/`.
 
 ## Testes e qualidade
 

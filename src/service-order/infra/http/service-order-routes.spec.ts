@@ -22,7 +22,11 @@ afterEach(async () => {
     await Promise.all(apps.splice(0).map((app) => app.close()));
 });
 
-function setup() {
+function setup(
+    options: { defaultAuthorization?: string | undefined } = {
+        defaultAuthorization: 'Bearer jwt-gerente',
+    },
+) {
     const orders = new Map<string, ServiceOrder>();
     const budgets = new Map<string, Budget>();
     const requests = new Map<string, ApprovalRequest>();
@@ -173,6 +177,12 @@ function setup() {
             events.push(event);
         });
     }
+    const tokenActors = {
+        'jwt-gerente': { id: 'gerente-1', role: 'GERENTE' as const },
+        'jwt-atendente': { id: 'atendente-1', role: 'ATENDENTE' as const },
+        'jwt-mecanico': { id: 'mecanico-1', role: 'MECANICO' as const },
+        'jwt-estoquista': { id: 'estoquista-1', role: 'ESTOQUISTA' as const },
+    };
     const serviceOrder = serviceOrderCompositionRoot(bus, {
         serviceOrderRepository,
         budgetRepository,
@@ -200,13 +210,34 @@ function setup() {
         },
         actorResolver: new TokenActorResolver({
             verify: async (token) =>
-                token === 'jwt-mecanico' ? 'mecanico-1' : null,
+                tokenActors[token as keyof typeof tokenActors] ?? null,
         }),
         emailSender,
         frontendUrl: 'https://example.com',
         approvalTokenTtlMinutes: 30,
     });
     const app = buildApp({ serviceOrder });
+    if (options.defaultAuthorization) {
+        const originalInject = app.inject.bind(app);
+        app.inject = ((opts: Parameters<typeof app.inject>[0]) => {
+            if (typeof opts === 'string') return originalInject(opts);
+            const url = opts.url ?? '';
+            const isPublic =
+                url.startsWith('/budget-approvals/') ||
+                url.startsWith('/orcamento') ||
+                url.startsWith('/docs');
+            if (isPublic || opts.headers?.authorization !== undefined) {
+                return originalInject(opts);
+            }
+            return originalInject({
+                ...opts,
+                headers: {
+                    ...opts.headers,
+                    authorization: options.defaultAuthorization,
+                },
+            });
+        }) as typeof app.inject;
+    }
     apps.push(app);
     return {
         app,
@@ -661,12 +692,13 @@ describe('Service Order HTTP integration', () => {
     });
 
     it('returns the chronological status history with inspection value and actor once quoted', async () => {
-        const { app, emails } = setup();
-        const headers = { authorization: 'Bearer jwt-mecanico' };
+        const { app, emails } = setup({ defaultAuthorization: undefined });
+        const atendenteHeaders = { authorization: 'Bearer jwt-atendente' };
+        const mecanicoHeaders = { authorization: 'Bearer jwt-mecanico' };
         const created = await app.inject({
             method: 'POST',
             url: '/service-orders',
-            headers,
+            headers: atendenteHeaders,
             payload: { description: 'Freios', vehicleId: 'vehicle-1' },
         });
         const orderId = created.json().id as string;
@@ -674,7 +706,7 @@ describe('Service Order HTTP integration', () => {
         await app.inject({
             method: 'POST',
             url: `/service-orders/${orderId}/awaiting-approval`,
-            headers,
+            headers: mecanicoHeaders,
         });
         const token = emails[0]!.text.match(
             /orcamento\/([A-Za-z0-9_-]{43})/,
@@ -687,12 +719,13 @@ describe('Service Order HTTP integration', () => {
         await app.inject({
             method: 'POST',
             url: `/service-orders/${orderId}/start`,
-            headers,
+            headers: mecanicoHeaders,
         });
 
         const history = await app.inject({
             method: 'GET',
             url: `/service-orders/${orderId}/history`,
+            headers: atendenteHeaders,
         });
         expect(history.statusCode).toBe(200);
         expect(history.json()).toEqual({
@@ -701,7 +734,7 @@ describe('Service Order HTTP integration', () => {
                 {
                     status: 'PENDING',
                     valueCents: null,
-                    changedBy: 'mecanico-1',
+                    changedBy: 'atendente-1',
                     recordedAt: expect.any(String),
                 },
                 {
@@ -728,8 +761,122 @@ describe('Service Order HTTP integration', () => {
         const missing = await app.inject({
             method: 'GET',
             url: '/service-orders/missing/history',
+            headers: atendenteHeaders,
         });
         expect(missing.statusCode).toBe(404);
+    });
+
+    it('rejects requests without token or with invalid token with 401 Unauthorized on protected routes', async () => {
+        const { app, serviceOrderRepository } = setup({
+            defaultAuthorization: undefined,
+        });
+
+        for (const [method, url] of [
+            ['POST', '/service-orders'],
+            ['POST', '/services'],
+            ['GET', '/services'],
+            ['POST', '/service-orders/os-1/services'],
+            ['GET', '/service-orders/os-1'],
+            ['GET', '/service-orders/os-1/history'],
+            ['POST', '/service-orders/os-1/supplies'],
+            ['POST', '/service-orders/os-1/supplies/PAST-01/usage'],
+            ['POST', '/service-orders/os-1/cancel'],
+            ['POST', '/service-orders/os-1/awaiting-approval'],
+            ['POST', '/service-orders/os-1/start'],
+            ['POST', '/service-orders/os-1/finish'],
+            ['POST', '/service-orders/os-1/deliver'],
+        ] as const) {
+            const withoutToken = await app.inject({ method, url });
+            expect(withoutToken.statusCode).toBe(401);
+
+            const invalidToken = await app.inject({
+                method,
+                url,
+                headers: { authorization: 'Bearer invalid-jwt' },
+            });
+            expect(invalidToken.statusCode).toBe(401);
+        }
+
+        expect(serviceOrderRepository.save).not.toHaveBeenCalled();
+    });
+
+    it('enforces role permissions with 403 Forbidden across service-order and catalog routes', async () => {
+        const { app, orders } = setup({ defaultAuthorization: undefined });
+        orders.set(
+            'os-1',
+            ServiceOrder.create({
+                id: 'os-1',
+                description: 'Freios',
+                vehicleId: 'vehicle-1',
+            }),
+        );
+
+        const forbiddenCases = [
+            ['POST', '/service-orders', 'jwt-mecanico'],
+            ['POST', '/service-orders', 'jwt-estoquista'],
+            ['POST', '/services', 'jwt-mecanico'],
+            ['POST', '/services', 'jwt-estoquista'],
+            ['POST', '/service-orders/os-1/cancel', 'jwt-mecanico'],
+            ['POST', '/service-orders/os-1/cancel', 'jwt-estoquista'],
+            ['POST', '/service-orders/os-1/deliver', 'jwt-mecanico'],
+            ['POST', '/service-orders/os-1/deliver', 'jwt-estoquista'],
+            ['POST', '/service-orders/os-1/services', 'jwt-atendente'],
+            ['POST', '/service-orders/os-1/services', 'jwt-estoquista'],
+            ['POST', '/service-orders/os-1/awaiting-approval', 'jwt-atendente'],
+            [
+                'POST',
+                '/service-orders/os-1/awaiting-approval',
+                'jwt-estoquista',
+            ],
+            ['POST', '/service-orders/os-1/start', 'jwt-atendente'],
+            ['POST', '/service-orders/os-1/start', 'jwt-estoquista'],
+            ['POST', '/service-orders/os-1/finish', 'jwt-atendente'],
+            ['POST', '/service-orders/os-1/finish', 'jwt-estoquista'],
+            ['POST', '/service-orders/os-1/supplies', 'jwt-atendente'],
+            [
+                'POST',
+                '/service-orders/os-1/supplies/PAST-01/usage',
+                'jwt-atendente',
+            ],
+        ] as const;
+
+        for (const [method, url, token] of forbiddenCases) {
+            const res = await app.inject({
+                method,
+                url,
+                headers: { authorization: `Bearer ${token}` },
+            });
+            expect(res.statusCode).toBe(403);
+        }
+
+        const estoquistaSupply = await app.inject({
+            method: 'POST',
+            url: '/service-orders/os-1/supplies',
+            headers: { authorization: 'Bearer jwt-estoquista' },
+            payload: { partCode: 'PAST-01', quantity: 1 },
+        });
+        expect(estoquistaSupply.statusCode).toBe(201);
+
+        for (const token of [
+            'jwt-atendente',
+            'jwt-mecanico',
+            'jwt-estoquista',
+            'jwt-gerente',
+        ]) {
+            const listServices = await app.inject({
+                method: 'GET',
+                url: '/services',
+                headers: { authorization: `Bearer ${token}` },
+            });
+            expect(listServices.statusCode).toBe(200);
+
+            const getOrder = await app.inject({
+                method: 'GET',
+                url: '/service-orders/os-1',
+                headers: { authorization: `Bearer ${token}` },
+            });
+            expect(getOrder.statusCode).toBe(200);
+        }
     });
 
     it('does not leave a pending budget persisted when saving the order transition fails', async () => {

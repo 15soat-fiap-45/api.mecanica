@@ -394,6 +394,7 @@ it.skipIf(!process.env.TEST_DATABASE_URL || !process.env.TEST_MAILHOG_URL)(
             const historyResponse = await app.inject({
                 method: 'GET',
                 url: `/service-orders/${orderId}/history`,
+                headers: mechanicHeaders,
             });
             expect(historyResponse.statusCode).toBe(200);
             expect(
@@ -442,6 +443,7 @@ it.skipIf(!process.env.TEST_DATABASE_URL || !process.env.TEST_MAILHOG_URL)(
                 const rejectedHistory = await app.inject({
                     method: 'GET',
                     url: `/service-orders/${rejectedId}/history`,
+                    headers: mechanicHeaders,
                 });
                 expect(rejectedHistory.statusCode).toBe(200);
                 expect(
