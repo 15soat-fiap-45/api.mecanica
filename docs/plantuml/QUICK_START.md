@@ -11,14 +11,12 @@ Ordem sugerida:
 5. `deployment.puml`
 6. fluxos em `flows/`
 
-O cadastro de cliente é o único fluxo HTTP detalhado atualmente. O diagrama de ordem de serviço representa somente os casos de uso e handlers internos, pois ainda não existem rotas HTTP para esse contexto.
+Os fluxos HTTP detalhados atualmente incluem o cadastro de cliente e os fluxos de Auth (`POST /users` e `POST /auth/login`). O diagrama de ordem de serviço representa somente os casos de uso e handlers internos, pois ainda não existem rotas HTTP para esse contexto.
 
 Para exportar com a CLI PlantUML:
 
 ```bash
-plantuml -tpng docs/plantuml/c4-context.puml
-plantuml -tpng docs/plantuml/**/*.puml
+plantuml -tpng docs/plantuml/*.puml docs/plantuml/flows/*.puml
 ```
 
 Ao alterar rotas, composição, schema Drizzle, Event Bus ou estados de domínio, revise os diagramas relacionados.
-

@@ -1,0 +1,22 @@
+@startuml service_order_c2_containers
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+title C2 - Containers da API Oficina Mecanica - foco em Service Order
+LAYOUT_LEFT_RIGHT()
+SHOW_PERSON_OUTLINE()
+
+Person(consumer, "Consumidor HTTP", "Operador ou integracao")
+System_Boundary(workshop, "API Oficina Mecanica") {
+  Container(api, "API HTTP", "Node.js / TypeScript / Fastify / Zod", "Executa Registry e Service Order no mesmo processo; expoe Swagger e health check.")
+  ContainerDb(database, "Banco da oficina", "PostgreSQL 17", "Service Order: schema service_order, tabelas orders, supply_items e budgets. Registry: public.cliente e public.veiculo.")
+}
+Rel(consumer, api, "Envia comandos de OS e aprovacao de orcamento", "HTTP/JSON")
+Rel(api, database, "Consulta e persiste agregados; verifica disponibilidade com SELECT 1", "SQL via Drizzle ORM / pg")
+
+note bottom of api
+  Modulos, camadas, repositorios e InMemoryEventBus
+  sao componentes internos deste processo.
+  Service Order nao e um microsservico.
+  Nao ha broker externo nem frontend implementado neste repositorio.
+end note
+SHOW_LEGEND()
+@enduml

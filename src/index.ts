@@ -1,4 +1,15 @@
+import { FirstAccess } from './auth/application/use-cases/first-access.js';
+import { LogIn } from './auth/application/use-cases/log-in.js';
+import { PreRegisterUser } from './auth/application/use-cases/pre-register-user.js';
+import { ResolveAuthenticatedUser } from './auth/application/use-cases/resolve-authenticated-user.js';
+import { AuthController } from './auth/infra/http/auth-controller.js';
+import { DrizzleUserRepository } from './auth/infra/persistence/drizzle-user-repository.js';
+import { Argon2PasswordHasher } from './auth/infra/security/argon2-password-hasher.js';
+import { JoseTokenService } from './auth/infra/security/jose-token-service.js';
+import { SecurePasswordGenerator } from './auth/infra/security/secure-password-generator.js';
+import { seedInitialManager } from './auth/infra/seed/seed-initial-manager.js';
 import { buildApp } from './app.js';
+import { db } from './infra/database/connection.js';
 import { registryCompositionRoot } from './registry/composition-root.js';
 import { DrizzleCustomerRepository } from './infra/database/registry/drizzle-customer-repository.js';
 import { DrizzleVehicleRepository } from './infra/database/registry/drizzle-vehicle-repository.js';
@@ -8,9 +19,29 @@ import { DrizzleServiceOrderRepository } from './infra/database/service-order/dr
 import { DrizzleBudgetRepository } from './infra/database/service-order/drizzle-budget-repository.js';
 import { DrizzleApprovalRequestRepository } from './infra/database/service-order/drizzle-approval-request-repository.js';
 import { RegistryVehicleContactLookup } from './infra/registry-vehicle-contact-lookup.js';
+import { TokenActorResolver } from './infra/token-actor-resolver.js';
 import { SmtpEmailSender } from './service-order/infra/email/smtp-email-sender.js';
 import { readEmailConfig } from './service-order/infra/email/email.config.js';
 import { DrizzleServiceCatalog } from './infra/database/service-order/drizzle-service-catalog.js';
+
+const initialManagerPassword = process.env.INITIAL_MANAGER_PASSWORD;
+if (!initialManagerPassword || initialManagerPassword.trim() === '') {
+    throw new Error(
+        'Initial manager configuration is missing. Set INITIAL_MANAGER_PASSWORD.',
+    );
+}
+
+const jwt = new JoseTokenService(process.env.JWT_SECRET ?? '');
+const hasher = new Argon2PasswordHasher();
+const users = new DrizzleUserRepository(db);
+await seedInitialManager(db, hasher, initialManagerPassword);
+const resolveAuthenticatedUser = new ResolveAuthenticatedUser(users, jwt);
+const auth = new AuthController(
+    new FirstAccess(users, hasher),
+    new LogIn(users, hasher, jwt),
+    new PreRegisterUser(users, hasher, new SecurePasswordGenerator()),
+    resolveAuthenticatedUser,
+);
 
 const eventBus = new InMemoryEventBus({
     error: (context, message) => {
@@ -32,11 +63,12 @@ const serviceOrder = serviceOrderCompositionRoot(eventBus, {
         new DrizzleVehicleRepository(),
         new DrizzleCustomerRepository(),
     ),
+    actorResolver: new TokenActorResolver(resolveAuthenticatedUser),
     emailSender: new SmtpEmailSender(emailConfig.smtp),
     frontendUrl: emailConfig.frontendUrl,
     approvalTokenTtlMinutes: emailConfig.ttlMinutes,
 });
-const app = buildApp({ registry, serviceOrder });
+const app = buildApp({ registry, auth, serviceOrder });
 let expiryInterval: ReturnType<typeof setInterval> | undefined;
 app.addHook('onClose', async () => {
     if (expiryInterval) clearInterval(expiryInterval);

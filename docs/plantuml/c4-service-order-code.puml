@@ -1,0 +1,87 @@
+@startuml service_order_c4_code
+title C4 - Service Order - detalhe opcional do codigo de dominio
+left to right direction
+skinparam classAttributeIconSize 0
+
+package "src/shared/domain" {
+  abstract class "AggregateRoot<TId>" as AggregateRoot {
+    +id: TId
+    +version: number
+    +markPersisted(): void
+    +pullEvents(): DomainEvent[]
+    #record(event: DomainEvent): void
+  }
+}
+package "src/service-order/domain" {
+  class ServiceOrder {
+    +description: string
+    +{static} register(props: ServiceOrderProps): ServiceOrder
+    +addSupply(partCode: string, quantity: number): void
+    +markSupplyUsed(partCode: string): void
+    +approve(): void
+    +startExecution(): void
+    +finish(): void
+    +cancel(): void
+  }
+  class SupplyItem {
+    +partCode: string
+    +quantity: number
+    +used: boolean
+    +markUsed(): void
+  }
+  class ServiceOrderId <<Identifier>>
+  class ServiceOrderStatus <<Value Object>> {
+    +value: ServiceOrderStatusType
+    +canTransitionTo(next: ServiceOrderStatusType): boolean
+    +transitionTo(next: ServiceOrderStatusType): ServiceOrderStatus
+  }
+  class Budget {
+    +serviceOrderId: string
+    +totalCents: number
+    +approve(): void
+    +reject(): void
+  }
+  class BudgetId <<Identifier>>
+  class BudgetStatus <<Value Object>> {
+    +value: BudgetStatusType
+    +transitionTo(next: BudgetStatusType): BudgetStatus
+  }
+  interface ServiceOrderRepository {
+    +save(serviceOrder: ServiceOrder): Promise<void>
+    +findById(id: ServiceOrderId | string): Promise<ServiceOrder | null>
+  }
+  interface BudgetRepository {
+    +save(budget: Budget): Promise<void>
+    +findById(id: BudgetId | string): Promise<Budget | null>
+    +findByServiceOrderId(serviceOrderId: string): Promise<Budget[]>
+  }
+}
+AggregateRoot <|-- ServiceOrder
+AggregateRoot <|-- Budget
+ServiceOrder "1" *-- "0..*" SupplyItem : items
+ServiceOrder --> ServiceOrderId : id
+ServiceOrder --> ServiceOrderStatus : status
+Budget --> BudgetId : id
+Budget --> BudgetStatus : status
+Budget "0..*" -- "1" ServiceOrder : serviceOrderId (referencia logica)
+ServiceOrderRepository ..> ServiceOrder : persiste / reconstitui
+BudgetRepository ..> Budget : persiste / reconstitui
+
+note bottom of ServiceOrder
+  SupplyItem e entidade interna; nao possui repositorio proprio.
+  finish() registra ServiceOrderFinished, mas nao tem caso de uso HTTP.
+  O VO aceita PAUSED; nao ha metodo de pausa/retomada no agregado.
+end note
+note bottom of Budget
+  Budget e ServiceOrder sao agregados distintos.
+  A associacao representa o ID; nao ha referencia de objeto entre eles.
+  approve() registra BudgetApproved; a aplicacao publica apos salvar.
+  totalCents representa valor inteiro em centavos.
+  Criacao e rejeicao nao possuem casos de uso HTTP.
+end note
+legend bottom
+  Recorte: tipos e operacoes relevantes do componente de dominio.
+  Heranca: triangulo; composicao: losango; dependencia: seta tracejada.
+  Adaptadores Drizzle e casos de uso pertencem ao nivel C3.
+endlegend
+@enduml
