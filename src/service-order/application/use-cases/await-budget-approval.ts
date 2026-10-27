@@ -40,8 +40,7 @@ export class AwaitBudgetApproval {
             totalCents,
         });
         order.awaitApproval(budget.id.value);
-        await this.budgets.save(budget);
-        await this.orders.save(order);
+        await this.orders.save(order, budget);
         await this.bus.publish(order.pullEvents());
         return { status: order.status.value };
     }

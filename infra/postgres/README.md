@@ -39,6 +39,7 @@ init/01-schema.sql
 init/02-service-order.sql
 init/03-budget-approval.sql
 init/04-service-catalog-and-status.sql
+init/05-order-status-history.sql
 ```
 
 Esse script cria o modelo relacional da oficina.
@@ -59,11 +60,12 @@ O script usa `IF NOT EXISTS` e pode ser reaplicado. Não é necessário recriar 
 volume. A execução desse script em banco real deve preceder o uso das rotas de OS.
 
 Para um banco com o schema `service_order` já instalado, aplique também as
-migrações incrementais da aprovação por link e do catálogo de serviços/status:
+migrações incrementais da aprovação por link, do catálogo de serviços/status e do histórico de fases da OS:
 
 ```bash
 docker compose exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1' < init/03-budget-approval.sql
 docker compose exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1' < init/04-service-catalog-and-status.sql
+docker compose exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1' < init/05-order-status-history.sql
 ```
 
 O MailHog recebe mensagens SMTP na porta 1025 e disponibiliza a caixa de
@@ -280,7 +282,11 @@ postgres/
 ├── .env.example
 ├── README.md
 └── init/
-    └── 01-schema.sql
+    ├── 01-schema.sql
+    ├── 02-service-order.sql
+    ├── 03-budget-approval.sql
+    ├── 04-service-catalog-and-status.sql
+    └── 05-order-status-history.sql
 ```
 
 ## Evolução do schema

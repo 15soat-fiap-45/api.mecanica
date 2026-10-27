@@ -33,17 +33,16 @@ describe('AwaitBudgetApproval', () => {
         forOrder: vi.fn(async () => rows),
     });
 
-    it('adds prices of multiple services, saves the budget and order before announcing approval', async () => {
+    it('adds prices of multiple services, saves the budget and order atomically before announcing approval', async () => {
         const os = order();
-        const saveOrder = vi.fn(async () => {
-            expect(os.status.value).toBe('AWAITING_APPROVAL');
+        const saveOrder = vi.fn(async (savedOrder, budget) => {
+            expect(savedOrder.status.value).toBe('AWAITING_APPROVAL');
+            expect(budget?.totalCents).toBe(35000);
         });
-        const saveBudget = vi.fn(async (budget) => {
-            expect(budget.totalCents).toBe(35000);
-        });
+        const saveBudget = vi.fn();
         const publish = vi.fn(async (events) => {
             expect(saveOrder).toHaveBeenCalledOnce();
-            expect(saveBudget).toHaveBeenCalledOnce();
+            expect(saveBudget).not.toHaveBeenCalled();
             expect(events[0].budgetId).toBeTruthy();
         });
         await new AwaitBudgetApproval(

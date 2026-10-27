@@ -8,6 +8,7 @@ import {
 } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import { PartCode } from '../../../shared/domain/part-code.js';
+import { actorContext } from '../../application/ports/actor-resolver.js';
 import type { ServiceOrderUseCases } from '../../composition-root.js';
 
 function getApprovalHtml(): string {
@@ -38,6 +39,15 @@ export function registerServiceOrderRoutes(
 ): void {
     app.setValidatorCompiler(validatorCompiler);
     app.setSerializerCompiler(serializerCompiler);
+    app.addHook('preHandler', (request, _reply, done) => {
+        if (!useCases.actorResolver) {
+            actorContext.run(null, done);
+            return;
+        }
+        useCases.actorResolver
+            .resolve(request.headers.authorization)
+            .then((actorId) => actorContext.run(actorId, done), done);
+    });
     const typedApp = app.withTypeProvider<ZodTypeProvider>();
 
     typedApp.post(
@@ -143,6 +153,35 @@ export function registerServiceOrderRoutes(
             schema: { tags: ['Service orders'], params: orderParams },
         },
         async (request) => useCases.findServiceOrder.execute(request.params),
+    );
+
+    typedApp.get(
+        '/service-orders/:serviceOrderId/history',
+        {
+            schema: {
+                tags: ['Service orders'],
+                params: orderParams,
+                response: {
+                    200: z.object({
+                        serviceOrderId: z.string(),
+                        history: z.array(
+                            z.object({
+                                status: z.string(),
+                                valueCents: z
+                                    .number()
+                                    .int()
+                                    .nonnegative()
+                                    .nullable(),
+                                changedBy: z.string().nullable(),
+                                recordedAt: z.string(),
+                            }),
+                        ),
+                    }),
+                },
+            },
+        },
+        async (request) =>
+            useCases.findServiceOrderHistory.execute(request.params),
     );
 
     typedApp.post(

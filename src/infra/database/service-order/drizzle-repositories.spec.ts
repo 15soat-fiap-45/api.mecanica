@@ -56,7 +56,10 @@ describe('Drizzle ServiceOrderRepository', () => {
             2,
             false,
         ]);
-        expect(statements()[4]).toBe('commit');
+        expect(statements()[4]).toContain(
+            'INSERT INTO service_order.order_status_history',
+        );
+        expect(statements()[5]).toBe('commit');
         expect(order.version).toBe(1);
         expect(order.pullEvents()).toHaveLength(2);
 
@@ -94,6 +97,84 @@ describe('Drizzle ServiceOrderRepository', () => {
         expect(statements()).toHaveLength(3);
         expect(statements().at(-1)).toBe('rollback');
         expect(order.version).toBe(3);
+    });
+
+    it('persists the budget and order transition atomically and rolls back the budget if saving the order fails', async () => {
+        const { database: okDb, statements: okStatements } = databaseWith();
+        const order = ServiceOrder.create({
+            id: 'os-1',
+            description: 'Freios',
+        });
+        const budget = Budget.create({
+            id: 'budget-1',
+            serviceOrderId: 'os-1',
+            totalCents: 12345,
+        });
+        order.awaitApproval(budget.id.value);
+
+        await new DrizzleServiceOrderRepository(okDb).save(order, budget);
+        expect(okStatements()[0]).toBe('begin');
+        expect(
+            okStatements().some((s) =>
+                s.includes('insert into "service_order"."orders"'),
+            ),
+        ).toBe(true);
+        expect(
+            okStatements().some((s) =>
+                s.includes('insert into "service_order"."budgets"'),
+            ),
+        ).toBe(true);
+        expect(okStatements().at(-1)).toBe('commit');
+        expect(order.version).toBe(1);
+        expect(budget.version).toBe(1);
+
+        const { database: conflictDb, statements: conflictStatements } =
+            databaseWith(() => []);
+        const staleOrder = ServiceOrder.create({
+            id: 'os-1',
+            description: 'Freios',
+            version: 2,
+        });
+        const orphanBudget = Budget.create({
+            id: 'budget-2',
+            serviceOrderId: 'os-1',
+            totalCents: 12345,
+        });
+        staleOrder.awaitApproval(orphanBudget.id.value);
+
+        await expect(
+            new DrizzleServiceOrderRepository(conflictDb).save(
+                staleOrder,
+                orphanBudget,
+            ),
+        ).rejects.toBeInstanceOf(ConcurrentModificationError);
+        expect(conflictStatements().at(-1)).toBe('rollback');
+        expect(conflictStatements()).not.toContain('commit');
+        expect(
+            conflictStatements().some((s) =>
+                s.includes('insert into "service_order"."budgets"'),
+            ),
+        ).toBe(false);
+        expect(staleOrder.version).toBe(2);
+        expect(orphanBudget.version).toBe(0);
+    });
+
+    it('revokes pending approval requests in the same transaction when an order is cancelled', async () => {
+        const { database, statements } = databaseWith();
+        const order = ServiceOrder.create({
+            id: 'os-1',
+            description: 'Freios',
+        });
+        order.awaitApproval('budget-1');
+        order.cancel();
+
+        await new DrizzleServiceOrderRepository(database).save(order);
+        expect(
+            statements().some((s) =>
+                s.includes('update "service_order"."approval_requests"'),
+            ),
+        ).toBe(true);
+        expect(statements().at(-1)).toBe('commit');
     });
 
     it('rehydrates a consistent order snapshot with used items and no pending events', async () => {
@@ -158,6 +239,33 @@ describe('Drizzle ServiceOrderRepository', () => {
                 'missing',
             ),
         ).toBeNull();
+    });
+
+    it('returns status history ordered by id with inspection value when available', async () => {
+        const t1 = new Date('2026-10-26T10:00:00.000Z');
+        const t2 = new Date('2026-10-26T10:15:00.000Z');
+        const { database, query } = databaseWith(() => [
+            ['PENDING', null, 'user-1', t1],
+            ['AWAITING_APPROVAL', '12345', 'user-1', t2],
+        ]);
+        const history = await new DrizzleServiceOrderRepository(
+            database,
+        ).findStatusHistory(new ServiceOrderId('os-1'));
+        expect(query.mock.calls[0]?.[1]).toEqual(['os-1']);
+        expect(history).toEqual([
+            {
+                status: 'PENDING',
+                valueCents: null,
+                changedBy: 'user-1',
+                recordedAt: t1,
+            },
+            {
+                status: 'AWAITING_APPROVAL',
+                valueCents: 12345,
+                changedBy: 'user-1',
+                recordedAt: t2,
+            },
+        ]);
     });
 });
 

@@ -16,6 +16,7 @@ it.skipIf(!process.env.TEST_DATABASE_URL || !process.env.TEST_MAILHOG_URL)(
             { DrizzleServiceCatalog },
             { DrizzleApprovalRequestRepository },
             { RegistryVehicleContactLookup },
+            { TokenActorResolver },
             { registryCompositionRoot },
             { serviceOrderCompositionRoot },
             { InMemoryEventBus },
@@ -32,6 +33,7 @@ it.skipIf(!process.env.TEST_DATABASE_URL || !process.env.TEST_MAILHOG_URL)(
             import('../../../infra/database/service-order/drizzle-service-catalog.js'),
             import('../../../infra/database/service-order/drizzle-approval-request-repository.js'),
             import('../../../infra/registry-vehicle-contact-lookup.js'),
+            import('../../../infra/token-actor-resolver.js'),
             import('../../../registry/composition-root.js'),
             import('../../composition-root.js'),
             import('../../../shared/application/in-memory-event-bus.js'),
@@ -57,6 +59,10 @@ it.skipIf(!process.env.TEST_DATABASE_URL || !process.env.TEST_MAILHOG_URL)(
                 vehicles,
                 customers,
             ),
+            actorResolver: new TokenActorResolver({
+                verify: async (token) =>
+                    token === 'jwt-mecanico' ? 'mecanico@oficina.com' : null,
+            }),
             emailSender: new SmtpEmailSender({
                 host: '127.0.0.1',
                 port: Number(process.env.TEST_SMTP_PORT),
@@ -124,9 +130,11 @@ it.skipIf(!process.env.TEST_DATABASE_URL || !process.env.TEST_MAILHOG_URL)(
                 color: 'Preto',
                 plate: process.env.TEST_VEHICLE_PLATE ?? randomPlate(),
             });
+            const mechanicHeaders = { authorization: 'Bearer jwt-mecanico' };
             const created = await app.inject({
                 method: 'POST',
                 url: '/service-orders',
+                headers: mechanicHeaders,
                 payload: { description: 'Freios', vehicleId: vehicle.id },
             });
             expect(created.statusCode).toBe(201);
@@ -169,6 +177,7 @@ it.skipIf(!process.env.TEST_DATABASE_URL || !process.env.TEST_MAILHOG_URL)(
             const awaiting = await app.inject({
                 method: 'POST',
                 url: `/service-orders/${orderId}/awaiting-approval`,
+                headers: mechanicHeaders,
             });
             expect(awaiting.statusCode).toBe(200);
             const [quotedBudget] = await db
@@ -247,6 +256,7 @@ it.skipIf(!process.env.TEST_DATABASE_URL || !process.env.TEST_MAILHOG_URL)(
                 const response = await app.inject({
                     method: 'POST',
                     url: '/service-orders',
+                    headers: mechanicHeaders,
                     payload: { description: 'Reparo', vehicleId: vehicle.id },
                 });
                 expect(response.statusCode).toBe(201);
@@ -258,6 +268,7 @@ it.skipIf(!process.env.TEST_DATABASE_URL || !process.env.TEST_MAILHOG_URL)(
                 const waiting = await app.inject({
                     method: 'POST',
                     url: `/service-orders/${id}/awaiting-approval`,
+                    headers: mechanicHeaders,
                 });
                 expect(waiting.statusCode).toBe(200);
                 return id;
@@ -282,8 +293,54 @@ it.skipIf(!process.env.TEST_DATABASE_URL || !process.env.TEST_MAILHOG_URL)(
                 .where(eq(serviceOrders.id, rejectedOrderId));
             expect(rejectedOrder?.status).toBe('REJECTED');
 
+            const cancelledOrderId = await createQuotedOrder();
+            await delivered(4);
+            const cancelResponse = await app.inject({
+                method: 'POST',
+                url: `/service-orders/${cancelledOrderId}/cancel`,
+                headers: mechanicHeaders,
+            });
+            expect(cancelResponse.statusCode).toBe(200);
+            const [cancelledReq] = await db
+                .select()
+                .from(approvalRequests)
+                .where(eq(approvalRequests.orderId, cancelledOrderId));
+            expect(cancelledReq?.revokedAt).not.toBeNull();
+
+            const past = new Date(Date.now() - 60_000);
+            const createdAt = new Date(Date.now() - 120_000);
+            for (let i = 0; i < 100; i++) {
+                const cid = randomUUID();
+                const bid = randomUUID();
+                await db.insert(serviceOrders).values({
+                    id: cid,
+                    description: 'Cancelada em lote',
+                    vehicleId: vehicle.id,
+                    status: 'CANCELLED',
+                    version: 2,
+                });
+                await db.insert(budgets).values({
+                    id: bid,
+                    serviceOrderId: cid,
+                    totalCents: 1000,
+                    status: 'PENDING',
+                    version: 1,
+                });
+                await db.insert(approvalRequests).values({
+                    id: randomUUID(),
+                    orderId: cid,
+                    budgetId: bid,
+                    budgetVersion: '1',
+                    tokenHash: createHash('sha256')
+                        .update(`${cid}-${i}`)
+                        .digest('hex'),
+                    expiresAt: past,
+                    createdAt,
+                });
+            }
+
             const expiredOrderId = await createQuotedOrder();
-            const expiredMail = await delivered(4);
+            const expiredMail = await delivered(5);
             const expiredToken = expiredMail
                 .replace(/=\r?\n/g, '')
                 .match(/orcamento\/([A-Za-z0-9_-]{43})/)?.[1];
@@ -328,11 +385,93 @@ it.skipIf(!process.env.TEST_DATABASE_URL || !process.env.TEST_MAILHOG_URL)(
                 const response = await app.inject({
                     method: 'POST',
                     url: `/service-orders/${orderId}/${path}`,
+                    headers: mechanicHeaders,
                 });
                 expect(response.statusCode).toBe(200);
                 expect(response.json().status).toBe(expectedStatus);
             }
-            expect(await delivered(5)).toContain('pronto para retirada');
+            expect(await delivered(6)).toContain('pronto para retirada');
+            const historyResponse = await app.inject({
+                method: 'GET',
+                url: `/service-orders/${orderId}/history`,
+            });
+            expect(historyResponse.statusCode).toBe(200);
+            expect(
+                historyResponse
+                    .json()
+                    .history.map(
+                        (entry: {
+                            status: string;
+                            valueCents: number | null;
+                            changedBy: string | null;
+                        }) => ({
+                            status: entry.status,
+                            valueCents: entry.valueCents,
+                            changedBy: entry.changedBy,
+                        }),
+                    ),
+            ).toEqual([
+                {
+                    status: 'PENDING',
+                    valueCents: null,
+                    changedBy: 'mecanico@oficina.com',
+                },
+                {
+                    status: 'AWAITING_APPROVAL',
+                    valueCents: 12345,
+                    changedBy: 'mecanico@oficina.com',
+                },
+                { status: 'APPROVED', valueCents: 12345, changedBy: null },
+                {
+                    status: 'IN_PROGRESS',
+                    valueCents: 12345,
+                    changedBy: 'mecanico@oficina.com',
+                },
+                {
+                    status: 'COMPLETED',
+                    valueCents: 12345,
+                    changedBy: 'mecanico@oficina.com',
+                },
+                {
+                    status: 'DELIVERED',
+                    valueCents: 12345,
+                    changedBy: 'mecanico@oficina.com',
+                },
+            ]);
+            for (const rejectedId of [rejectedOrderId, expiredOrderId]) {
+                const rejectedHistory = await app.inject({
+                    method: 'GET',
+                    url: `/service-orders/${rejectedId}/history`,
+                });
+                expect(rejectedHistory.statusCode).toBe(200);
+                expect(
+                    rejectedHistory
+                        .json()
+                        .history.map(
+                            (entry: {
+                                status: string;
+                                valueCents: number | null;
+                                changedBy: string | null;
+                            }) => ({
+                                status: entry.status,
+                                valueCents: entry.valueCents,
+                                changedBy: entry.changedBy,
+                            }),
+                        ),
+                ).toEqual([
+                    {
+                        status: 'PENDING',
+                        valueCents: null,
+                        changedBy: 'mecanico@oficina.com',
+                    },
+                    {
+                        status: 'AWAITING_APPROVAL',
+                        valueCents: 4000,
+                        changedBy: 'mecanico@oficina.com',
+                    },
+                    { status: 'REJECTED', valueCents: 4000, changedBy: null },
+                ]);
+            }
             expect(failures).toEqual([]);
         } finally {
             await app.close();

@@ -16,19 +16,20 @@ O documento oficial `Fase 1 - Tech Challenge.pdf` não está presente na árvore
 
 ## Estado atual
 
-| Capacidade                                            | Estado                                         | Evidência / observação                                                                                                        |
-| ----------------------------------------------------- | ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| Cadastrar cliente                                     | **Implementado, mas não validado via banco**   | `src/registry/application/use-cases/register-customer.ts` e rota `POST /customers`                                            |
-| Consultar cliente por CPF/CNPJ                        | **Implementado, mas não validado via banco**   | `find-customer-by-document.ts` e `GET /customers/:cpfCnpj`                                                                    |
-| Cadastrar veículo                                     | **Implementado, mas não validado via banco**   | `register-vehicle.ts` e `POST /vehicles`                                                                                      |
-| Consultar veículo por placa                           | **Implementado, mas não validado via banco**   | `find-vehicle-by-plate.ts` e `GET /vehicles/:plate`                                                                           |
-| Validação de CPF/CNPJ, e-mail, telefone e placa       | **Implementado**                               | Value objects em `src/registry/domain/**/value-objects`                                                                       |
-| Ordens de serviço no domínio                          | **Implementado e validado via integração E2E** | Repositórios Drizzle, catálogo de serviços, ciclo de execução/entrega e rotas HTTP                                            |
-| Orçamento e aprovação/rejeição                        | **Implementado e validado via integração E2E** | Geração automática a partir dos serviços da OS, envio de link único por e-mail (MailHog/SMTP), aprovação, recusa e expiração  |
-| Estoque e reservas                                    | **Parcialmente implementado**                  | Agregados, casos de uso, handlers e testes existem; não há endpoints nem repositórios PostgreSQL correspondentes              |
-| CRUD completo de clientes, veículos, serviços e peças | **Pendente / parcial**                         | Foram encontradas operações de criação e consulta de clientes, veículos e serviços; atualização e exclusão não estão expostas |
-| Autenticação JWT e autorização administrativa         | **Pendente**                                   | Nenhum plugin, middleware ou caso de uso JWT identificado                                                                     |
-| Dockerfile da aplicação e Docker Compose completo     | **Pendente**                                   | Existe Compose para PostgreSQL/MailHog e SonarQube, mas não para a aplicação                                                  |
+| Capacidade                                            | Estado                                         | Evidência / observação                                                                                                                 |
+| ----------------------------------------------------- | ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| Cadastrar cliente                                     | **Implementado e validado via integração E2E** | `src/registry/application/use-cases/register-customer.ts`, `DrizzleCustomerRepository` e rota `POST /customers`                        |
+| Consultar cliente por CPF/CNPJ                        | **Implementado**                               | `find-customer-by-document.ts`, `DrizzleCustomerRepository` e `GET /customers/:cpfCnpj`                                                |
+| Cadastrar veículo                                     | **Implementado e validado via integração E2E** | `register-vehicle.ts`, `DrizzleVehicleRepository` e `POST /vehicles`                                                                   |
+| Consultar veículo por placa                           | **Implementado**                               | `find-vehicle-by-plate.ts`, `DrizzleVehicleRepository` e `GET /vehicles/:plate`                                                        |
+| Validação de CPF/CNPJ, e-mail, telefone e placa       | **Implementado**                               | Value objects em `src/registry/domain/**/value-objects`                                                                                |
+| Ordens de serviço no domínio                          | **Implementado e validado via integração E2E** | Repositórios Drizzle, catálogo de serviços, ciclo de execução/entrega e rotas HTTP                                                     |
+| Histórico de fases da OS                              | **Implementado e validado via integração E2E** | Tabela `service_order.order_status_history` (`status`, `value_cents`, `changed_by`, `recorded_at`) e `GET /service-orders/:id/history` |
+| Orçamento e aprovação/rejeição                        | **Implementado e validado via integração E2E** | Persistência atômica orçamento+OS, envio de link único por e-mail (MailHog/SMTP), aprovação, recusa, revogação e expiração             |
+| Estoque e reservas                                    | **Parcialmente implementado**                  | Agregados, casos de uso, handlers e testes existem; não há endpoints nem repositórios PostgreSQL correspondentes                       |
+| CRUD completo de clientes, veículos, serviços e peças | **Pendente / parcial**                         | Foram encontradas operações de criação e consulta de clientes, veículos e serviços; atualização e exclusão não estão expostas          |
+| Autenticação JWT e autorização administrativa         | **Isolamento preparado via Porta/Adaptador**   | `ActorResolver` + `TokenActorResolver` desacoplados prontos para receber `JoseTokenService` / `ResolveAuthenticatedUser`               |
+| Dockerfile da aplicação e Docker Compose completo     | **Pendente**                                   | Existe Compose para PostgreSQL/MailHog e SonarQube, mas não para a aplicação                                                           |
 
 ## Arquitetura e DDD
 
@@ -59,6 +60,24 @@ COMPLETED          -> DELIVERED
 DELIVERED          -> (final)
 CANCELLED          -> (final)
 ```
+
+Estados encerrados ou terminais (`COMPLETED`, `DELIVERED`, `REJECTED` e `CANCELLED`, identificados por `ServiceOrderStatus.isClosed()`) bloqueiam a inclusão de novos insumos (`addSupply`).
+
+### Histórico de fases da OS e isolamento com o módulo de Auth
+
+Cada transição de fase da OS é registrada cronologicamente em `service_order.order_status_history` (migração `infra/postgres/init/05-order-status-history.sql`) com:
+
+- `status`: fase da OS (`PENDING`, `AWAITING_APPROVAL`, `APPROVED`, `REJECTED`, `IN_PROGRESS`, `PAUSED`, `COMPLETED`, `DELIVERED`, `CANCELLED`).
+- `value_cents` (`valueCents`): valor orçado em centavos quando a vistoria/orçamento já foi realizada (`NULL` na abertura em `PENDING`, gravado diretamente a partir do `Budget` persistido na mesma transação em `AWAITING_APPROVAL` e preservado nas fases subsequentes).
+- `changed_by` (`changedBy`): identificador do usuário autenticado que efetuou a mudança ou `NULL` em transições públicas/automáticas (aprovação/recusa pelo cliente via link de e-mail ou expiração de token).
+- `recorded_at` (`recordedAt`): data/hora da mudança de fase.
+
+Para identificar o usuário sem quebrar o isolamento entre os módulos `service-order` e `auth` (que utiliza JWT com `jose`):
+
+1. **Porta no módulo `service-order` (`src/service-order/application/ports/actor-resolver.ts`):** define o contrato `ActorResolver` (`resolve(authorizationHeader?: string): Promise<string | null>`) e o contexto assíncrono `actorContext` (`AsyncLocalStorage<string | null>`). O módulo `service-order` não importa nada de `src/auth/` nem conhece JWT ou `jose`.
+2. **Adaptador por tipagem estrutural em `src/infra/token-actor-resolver.ts`:** `TokenActorResolver` extrai o token `Bearer <jwt>` do header `Authorization` e aceita, por _structural typing_ (`TokenVerifier`), tanto `JoseTokenService` (`{ verify(token): Promise<string | null> }`) quanto `ResolveAuthenticatedUser` (`{ execute(token): Promise<{ id: { value: string } }> }`) do módulo `auth`. Para conectá-lo no bootstrap (`src/index.ts`), basta injetar `actorResolver: new TokenActorResolver(tokenService)` no `serviceOrderCompositionRoot`.
+3. **Propagação via `AsyncLocalStorage` (`src/service-order/infra/http/service-order-routes.ts`):** um hook `preHandler` do Fastify resolve o ator no início da requisição e executa o handler dentro de `actorContext.run(actorId, done)`. Assim, `DrizzleServiceOrderRepository` e `DrizzleApprovalRequestRepository` gravam `changed_by` automaticamente sem acoplar entidades de domínio ou casos de uso a headers HTTP.
+4. **Desacoplamento no banco:** a coluna `changed_by VARCHAR(320)` em `service_order.order_status_history` não possui _foreign key_ cruzada para `public.auth_users`, preservando a autonomia de schema de cada contexto delimitado e aceitando tanto UUID quanto `sub`/e-mail do JWT.
 
 ### Documentação DDD
 
@@ -121,10 +140,10 @@ O banco identificado no projeto é o **PostgreSQL**. A escolha está refletida e
 
 Há duas representações no banco:
 
-- `src/infra/database/schema.ts` contém tabelas Drizzle para cliente, veículo e serviço, além do schema `service_order` para OS (`orders`), itens (`supply_items`), orçamentos (`budgets`), solicitações de aprovação (`approval_requests`) e catálogo de serviços (`services`, `service_parts`, `order_services`).
-- `infra/postgres/init/01-schema.sql` contém o modelo legado em `public` (incluindo `peca_insumo`, validada ao vincular peças a serviços do catálogo).
+- `src/infra/database/schema.ts` contém tabelas Drizzle para cliente, veículo e serviço, além do schema `service_order` para OS (`orders`), itens (`supply_items`), orçamentos (`budgets`), solicitações de aprovação (`approval_requests`), catálogo de serviços (`services`, `service_parts`, `order_services`) e histórico de fases da OS (`order_status_history`).
+- `infra/postgres/init/01-schema.sql` contém o modelo legado em `public` (incluindo `peca_insumo`, validada ao vincular peças a serviços do catálogo, e `os_status_historico`).
 
-Os scripts SQL em `infra/postgres/init/` (`01-schema.sql` a `04-service-catalog-and-status.sql`) são executados automaticamente quando o volume do PostgreSQL é criado pela primeira vez. Os scripts disponíveis são:
+Os scripts SQL em `infra/postgres/init/` (`01-schema.sql` a `05-order-status-history.sql`) são executados automaticamente quando o volume do PostgreSQL é criado pela primeira vez. Os scripts disponíveis são:
 
 ```bash
 npm run db:generate
@@ -174,32 +193,33 @@ Não existe `Dockerfile` da aplicação nem `docker-compose.yml` na raiz orquest
 
 O Fastify registra Swagger e Swagger UI em `/docs`. A especificação OpenAPI é gerada a partir das rotas registradas.
 
-| Método | Rota                                                       | Finalidade                                                        | Autenticação |
-| ------ | ---------------------------------------------------------- | ----------------------------------------------------------------- | ------------ |
-| `GET`  | `/health`                                                  | Verifica a aplicação e executa `SELECT 1` no banco                | Não          |
-| `POST` | `/customers`                                               | Cadastra cliente                                                  | Não          |
-| `GET`  | `/customers/:cpfCnpj`                                      | Consulta cliente por CPF/CNPJ                                     | Não          |
-| `POST` | `/vehicles`                                                | Cadastra veículo vinculado a cliente                              | Não          |
-| `GET`  | `/vehicles/:plate`                                         | Consulta veículo por placa                                        | Não          |
-| `POST` | `/services`                                                | Cadastra serviço no catálogo (validando `partIds` no banco)       | Não          |
-| `GET`  | `/services`                                                | Lista serviços do catálogo                                        | Não          |
-| `POST` | `/service-orders`                                          | Cadastra OS (`description`, `vehicleId`)                          | Não          |
-| `GET`  | `/service-orders/:serviceOrderId`                          | Consulta OS e serviços associados                                 | Não          |
-| `POST` | `/service-orders/:serviceOrderId/services`                 | Associa serviço do catálogo à OS (`serviceId`)                    | Não          |
-| `POST` | `/service-orders/:serviceOrderId/supplies`                 | Inclui insumo (`partCode`, `quantity`)                            | Não          |
-| `POST` | `/service-orders/:serviceOrderId/supplies/:partCode/usage` | Registra uso do insumo                                            | Não          |
-| `POST` | `/service-orders/:serviceOrderId/awaiting-approval`        | Calcula orçamento a partir dos serviços e envia link de aprovação | Não          |
-| `POST` | `/service-orders/:serviceOrderId/start`                    | Inicia execução da OS (`IN_PROGRESS`)                             | Não          |
-| `POST` | `/service-orders/:serviceOrderId/finish`                   | Finaliza execução da OS (`COMPLETED`) e notifica cliente          | Não          |
-| `POST` | `/service-orders/:serviceOrderId/deliver`                  | Registra entrega do veículo (`DELIVERED`)                         | Não          |
-| `POST` | `/service-orders/:serviceOrderId/cancel`                   | Cancela OS                                                        | Não          |
-| `POST` | `/budget-approvals/decide`                                 | Confirma aprovação ou recusa do orçamento por token               | Não          |
-| `GET`  | `/orcamento/:token` e `/orcamento`                         | Página web de aprovação/recusa do orçamento                       | Não          |
-| `GET`  | `/docs`                                                    | Interface Swagger UI                                              | Não          |
+| Método | Rota                                                       | Finalidade                                                                             | Autenticação |
+| ------ | ---------------------------------------------------------- | -------------------------------------------------------------------------------------- | ------------ |
+| `GET`  | `/health`                                                  | Verifica a aplicação e executa `SELECT 1` no banco                                     | Não          |
+| `POST` | `/customers`                                               | Cadastra cliente                                                                       | Não          |
+| `GET`  | `/customers/:cpfCnpj`                                      | Consulta cliente por CPF/CNPJ                                                          | Não          |
+| `POST` | `/vehicles`                                                | Cadastra veículo vinculado a cliente                                                   | Não          |
+| `GET`  | `/vehicles/:plate`                                         | Consulta veículo por placa                                                             | Não          |
+| `POST` | `/services`                                                | Cadastra serviço no catálogo (validando `partIds` no banco)                            | Não          |
+| `GET`  | `/services`                                                | Lista serviços do catálogo                                                             | Não          |
+| `POST` | `/service-orders`                                          | Cadastra OS (`description`, `vehicleId`)                                               | Não          |
+| `GET`  | `/service-orders/:serviceOrderId`                          | Consulta OS e serviços associados                                                      | Não          |
+| `GET`  | `/service-orders/:serviceOrderId/history`                  | Consulta histórico de fases da OS (`status`, `valueCents`, `changedBy` e `recordedAt`) | Não          |
+| `POST` | `/service-orders/:serviceOrderId/services`                 | Associa serviço do catálogo à OS (`serviceId`)                                         | Não          |
+| `POST` | `/service-orders/:serviceOrderId/supplies`                 | Inclui insumo (`partCode`, `quantity`)                                                 | Não          |
+| `POST` | `/service-orders/:serviceOrderId/supplies/:partCode/usage` | Registra uso do insumo                                                                 | Não          |
+| `POST` | `/service-orders/:serviceOrderId/awaiting-approval`        | Calcula orçamento a partir dos serviços e envia link de aprovação                      | Não          |
+| `POST` | `/service-orders/:serviceOrderId/start`                    | Inicia execução da OS (`IN_PROGRESS`)                                                  | Não          |
+| `POST` | `/service-orders/:serviceOrderId/finish`                   | Finaliza execução da OS (`COMPLETED`) e notifica cliente                               | Não          |
+| `POST` | `/service-orders/:serviceOrderId/deliver`                  | Registra entrega do veículo (`DELIVERED`)                                              | Não          |
+| `POST` | `/service-orders/:serviceOrderId/cancel`                   | Cancela OS                                                                             | Não          |
+| `POST` | `/budget-approvals/decide`                                 | Confirma aprovação ou recusa do orçamento por token                                    | Não          |
+| `GET`  | `/orcamento/:token` e `/orcamento`                         | Página web de aprovação/recusa do orçamento                                            | Não          |
+| `GET`  | `/docs`                                                    | Interface Swagger UI                                                                   | Não          |
 
 A validação de payload usa Zod; erros de validação retornam HTTP 400 e exceções de aplicação/domínio são convertidas pelo error handler central em `src/app.ts`.
 
-Os controllers de OS usam `DrizzleServiceOrderRepository`, `DrizzleBudgetRepository`, `DrizzleServiceCatalog`, `DrizzleApprovalRequestRepository` e a mesma instância de `InMemoryEventBus` usada no cadastro. A OS guarda `vehicleId`; `RegistryVehicleContactLookup` valida a existência do veículo e consulta o contato do cliente. Ao acionar `POST /service-orders/:serviceOrderId/awaiting-approval`, o orçamento é calculado somando os serviços atribuídos à OS, persistido como `PENDING` e o evento `service-order.awaiting-approval` emite um token de uso único por e-mail. Somente o hash SHA-256 é persistido em `service_order.approval_requests`. A decisão é confirmada via `POST /budget-approvals/decide` (`approved` ou `rejected`), atualizando orçamento e OS. Ao finalizar a OS (`POST /service-orders/:serviceOrderId/finish`), o evento `service-order.finished` envia o e-mail informando que o veículo está pronto para retirada. Conflitos de versão retornam HTTP 409.
+Os controllers de OS usam `DrizzleServiceOrderRepository`, `DrizzleBudgetRepository`, `DrizzleServiceCatalog`, `DrizzleApprovalRequestRepository` e a mesma instância de `InMemoryEventBus` usada no cadastro. A OS guarda `vehicleId`; `RegistryVehicleContactLookup` valida a existência do veículo e consulta o contato do cliente. Ao acionar `POST /service-orders/:serviceOrderId/awaiting-approval`, o orçamento é calculado somando os serviços atribuídos à OS e persistido (`PENDING`) **atomicamente na mesma transação** que a transição da OS para `AWAITING_APPROVAL`; em seguida, o evento `service-order.awaiting-approval` emite um token de uso único por e-mail (persistindo apenas o hash SHA-256 em `service_order.approval_requests`). A decisão é confirmada via `POST /budget-approvals/decide` (`approved` ou `rejected`), atualizando orçamento e OS. Cancelar uma OS (`POST /service-orders/:serviceOrderId/cancel`) revoga na mesma transação quaisquer solicitações de aprovação pendentes, e a rotina periódica `expirePending` filtra ordens em `AWAITING_APPROVAL` antes do limite de lote (`LIMIT 100`). Ao finalizar a OS (`POST /service-orders/:serviceOrderId/finish`), o evento `service-order.finished` envia o e-mail informando que o veículo está pronto para retirada. Todas as mudanças de fase são gravadas em `service_order.order_status_history` com data (`recordedAt`), valor pós-vistoria (`valueCents`) e autor da transição (`changedBy`, resolvido via `ActorResolver` / `TokenActorResolver` a partir do header `Authorization: Bearer <jwt>`). Conflitos de versão retornam HTTP 409.
 
 Exemplo de cadastro de OS:
 
@@ -209,7 +229,7 @@ curl -X POST http://localhost:3000/service-orders \
   -d '{"description":"Troca de pastilhas de freio","vehicleId":"ID_DO_VEICULO"}'
 ```
 
-Não foi identificado mecanismo JWT, autorização por perfil ou proteção específica para dados sensíveis.
+A resolução do usuário autenticado via header `Authorization: Bearer <jwt>` nas transições da OS é feita de forma desacoplada por `ActorResolver` e `TokenActorResolver` (compatível com `JoseTokenService` / `ResolveAuthenticatedUser` do módulo `auth`).
 
 ## Testes e qualidade
 
@@ -226,10 +246,9 @@ npm run build
 
 Na análise desta versão:
 
-- **75 arquivos de teste passaram**.
-- **672 testes passaram**.
-- Cobertura V8 observada: **98,34% statements**, **91,09% branches**, **98,78% functions** e **98,03% lines**.
-- `typecheck`, `lint`, `format:check` e `build` concluíram sem erros.
+- **49 arquivos de teste** (48 suítes unitárias/HTTP + 1 suíte de integração E2E com PostgreSQL e MailHog reais).
+- **399 testes** (398 testes unitários/HTTP + 1 fluxo E2E completo).
+- `typecheck`, `lint` e `build` concluíram sem erros.
 
 Os testes incluem testes unitários de domínio/aplicação, testes de repositórios Drizzle, testes de rotas HTTP via `app.inject` e o teste de integração ponta a ponta (`src/service-order/infra/http/service-order-real.integration.spec.ts`) validado contra PostgreSQL e MailHog reais.
 
@@ -242,9 +261,9 @@ src/
 ├── composition-root.ts            # composição dos módulos e Event Bus
 ├── shared/                        # abstrações comuns
 ├── registry/                      # clientes e veículos
-├── service-order/                 # OS, orçamento, catálogo, aprovação e eventos
+├── service-order/                 # OS, orçamento, catálogo, aprovação, histórico e eventos
 ├── stock/                         # estoque, reservas e handlers
-└── infra/database/                # conexão, schema e repositórios Drizzle
+└── infra/                         # conexão, schema, repositórios Drizzle e adaptadores cross-module
 
 infra/
 ├── postgres/                      # Compose (PostgreSQL + MailHog), .env.example e scripts SQL
@@ -257,8 +276,8 @@ docs/adr/                          # decisões arquiteturais
 
 - O Event Bus é in-process/in-memory; não há durabilidade, retry automático, DLQ ou replay.
 - A consistência entre contextos é eventual e os handlers são preparados para idempotência em cenários específicos.
-- A API HTTP cobre cadastro de clientes/veículos, catálogo de serviços, ciclo completo da OS (criação, associação de serviços, insumos, envio de orçamento para aprovação, decisão de aprovação/recusa por token, início, finalização, entrega e cancelamento) e health check.
-- Não foram encontrados endpoints de atualização/exclusão, autenticação JWT ou autorização por perfil.
+- A API HTTP cobre cadastro de clientes/veículos, catálogo de serviços, ciclo completo da OS (criação, associação de serviços, insumos, envio de orçamento para aprovação, decisão de aprovação/recusa por token, consulta de histórico de fases, início, finalização, entrega e cancelamento) e health check.
+- O módulo `service-order` já possui a porta `ActorResolver` e o adaptador `TokenActorResolver` prontos para registrar o autor autenticado via JWT (`jose`) sem acoplamento direto ao módulo `auth`.
 - Não há Dockerfile da API nem Compose completo da aplicação.
 
 ## Links e informações da entrega
@@ -269,8 +288,7 @@ docs/adr/                          # decisões arquiteturais
 - Grupo: **[PREENCHER]**
 - Integrantes e RMs: **[PREENCHER]**
 - Usuário do Discord: **[PREENCHER]**
-- Branch entregue: `main`
-- Commit analisado: `d7d724a`
+- Branch entregue: `feat/service-order-integration`
 - Versão da entrega: **[PREENCHER]**
 
 ## Status da documentação

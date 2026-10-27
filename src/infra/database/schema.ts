@@ -178,3 +178,32 @@ export const orderServices = serviceOrderSchema.table(
         ),
     ],
 );
+
+export const orderStatusHistory = serviceOrderSchema.table(
+    'order_status_history',
+    {
+        id: bigint('id', { mode: 'number' })
+            .generatedByDefaultAsIdentity()
+            .primaryKey(),
+        orderId: varchar('order_id', { length: 36 })
+            .notNull()
+            .references(() => serviceOrders.id, { onDelete: 'cascade' }),
+        status: varchar('status', { length: 20 }).notNull(),
+        valueCents: bigint('value_cents', { mode: 'number' }),
+        changedBy: varchar('changed_by', { length: 320 }),
+        recordedAt: timestamp('recorded_at', { withTimezone: true })
+            .notNull()
+            .defaultNow(),
+    },
+    (table) => [
+        index('order_status_history_order_id_idx').on(table.orderId, table.id),
+        check(
+            'order_status_history_status_check',
+            sql`${table.status} IN ('PENDING', 'AWAITING_APPROVAL', 'REJECTED', 'APPROVED', 'IN_PROGRESS', 'PAUSED', 'COMPLETED', 'DELIVERED', 'CANCELLED')`,
+        ),
+        check(
+            'order_status_history_value_cents_check',
+            sql`${table.valueCents} IS NULL OR ${table.valueCents} >= 0`,
+        ),
+    ],
+);

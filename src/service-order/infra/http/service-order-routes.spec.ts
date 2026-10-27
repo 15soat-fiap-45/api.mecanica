@@ -9,6 +9,8 @@ import { Budget } from '../../domain/budget/budget.js';
 import type { BudgetRepository } from '../../domain/budget/budget.repository.js';
 import { ApprovalRequest } from '../../domain/approval/approval-request.js';
 import type { ApprovalRequestRepository } from '../../domain/approval/approval-request.repository.js';
+import { actorContext } from '../../application/ports/actor-resolver.js';
+import { TokenActorResolver } from '../../../infra/token-actor-resolver.js';
 
 vi.mock('../../../infra/database/connection.js', () => ({
     db: {},
@@ -24,12 +26,51 @@ function setup() {
     const orders = new Map<string, ServiceOrder>();
     const budgets = new Map<string, Budget>();
     const requests = new Map<string, ApprovalRequest>();
+    const history = new Map<
+        string,
+        {
+            status: ServiceOrder['status']['value'];
+            valueCents: number | null;
+            changedBy: string | null;
+            recordedAt: Date;
+        }[]
+    >();
+    const recordHistory = (
+        orderId: string,
+        status: ServiceOrder['status']['value'],
+    ) => {
+        const list = history.get(orderId) ?? [];
+        if (list.at(-1)?.status === status) return;
+        const orderBudget = [...budgets.values()]
+            .filter((b) => b.serviceOrderId === orderId)
+            .at(-1);
+        list.push({
+            status,
+            valueCents: orderBudget ? orderBudget.totalCents : null,
+            changedBy: actorContext.getStore() ?? null,
+            recordedAt: new Date(),
+        });
+        history.set(orderId, list);
+    };
     const emails: { text: string }[] = [];
     const serviceOrderRepository: ServiceOrderRepository = {
-        save: vi.fn(async (order: ServiceOrder) => {
+        save: vi.fn(async (order: ServiceOrder, budget?: Budget) => {
             orders.set(order.id.value, order);
+            if (budget) budgets.set(budget.id.value, budget);
+            if (order.status.value === 'CANCELLED') {
+                for (const existing of requests.values()) {
+                    if (
+                        existing.orderId === order.id.value &&
+                        existing.isActive(new Date())
+                    ) {
+                        existing.revoke(new Date());
+                    }
+                }
+            }
+            recordHistory(order.id.value, order.status.value);
         }),
         findById: vi.fn(async (id) => orders.get(String(id)) ?? null),
+        findStatusHistory: vi.fn(async (id) => history.get(String(id)) ?? []),
     };
     const budgetRepository: BudgetRepository = {
         save: vi.fn(async (budget: Budget) => {
@@ -50,7 +91,37 @@ function setup() {
         }),
     };
     const approvals: ApprovalRequestRepository = {
-        expirePending: vi.fn(async () => 0),
+        expirePending: vi.fn(async (now: Date) => {
+            const eligible = [...requests.values()]
+                .filter((req) => {
+                    const persisted = req.toPersistence();
+                    const order = orders.get(req.orderId);
+                    return (
+                        !persisted.usedAt &&
+                        !persisted.revokedAt &&
+                        persisted.expiresAt <= now &&
+                        order?.status.value === 'AWAITING_APPROVAL'
+                    );
+                })
+                .slice(0, 100);
+            for (const req of eligible) {
+                const order = orders.get(req.orderId);
+                const budget = budgets.get(req.budgetId);
+                if (!order || !budget) continue;
+                budget.reject();
+                order.reject();
+                requests.set(
+                    req.tokenHash,
+                    ApprovalRequest.restore({
+                        ...req.toPersistence(),
+                        decision: 'rejected',
+                        usedAt: now,
+                    }),
+                );
+                recordHistory(order.id.value, 'REJECTED');
+            }
+            return eligible.length;
+        }),
         issue: vi.fn(async (request) => {
             for (const existing of requests.values()) {
                 if (
@@ -85,6 +156,7 @@ function setup() {
             );
             if (budget.status.value === 'REJECTED') {
                 orders.get(request.orderId)?.reject();
+                recordHistory(request.orderId, 'REJECTED');
             }
         }),
     };
@@ -126,6 +198,10 @@ function setup() {
                     : null,
             ),
         },
+        actorResolver: new TokenActorResolver({
+            verify: async (token) =>
+                token === 'jwt-mecanico' ? 'mecanico-1' : null,
+        }),
         emailSender,
         frontendUrl: 'https://example.com',
         approvalTokenTtlMinutes: 30,
@@ -140,6 +216,7 @@ function setup() {
         emailSender,
         busErrors,
         requests,
+        approvals,
         serviceOrder,
         events,
         serviceOrderRepository,
@@ -581,5 +658,184 @@ describe('Service Order HTTP integration', () => {
         });
         expect(awaiting.statusCode).toBe(200);
         expect(awaiting.json().status).toBe('AWAITING_APPROVAL');
+    });
+
+    it('returns the chronological status history with inspection value and actor once quoted', async () => {
+        const { app, emails } = setup();
+        const headers = { authorization: 'Bearer jwt-mecanico' };
+        const created = await app.inject({
+            method: 'POST',
+            url: '/service-orders',
+            headers,
+            payload: { description: 'Freios', vehicleId: 'vehicle-1' },
+        });
+        const orderId = created.json().id as string;
+
+        await app.inject({
+            method: 'POST',
+            url: `/service-orders/${orderId}/awaiting-approval`,
+            headers,
+        });
+        const token = emails[0]!.text.match(
+            /orcamento\/([A-Za-z0-9_-]{43})/,
+        )![1]!;
+        await app.inject({
+            method: 'POST',
+            url: '/budget-approvals/decide',
+            payload: { token, decision: 'approved' },
+        });
+        await app.inject({
+            method: 'POST',
+            url: `/service-orders/${orderId}/start`,
+            headers,
+        });
+
+        const history = await app.inject({
+            method: 'GET',
+            url: `/service-orders/${orderId}/history`,
+        });
+        expect(history.statusCode).toBe(200);
+        expect(history.json()).toEqual({
+            serviceOrderId: orderId,
+            history: [
+                {
+                    status: 'PENDING',
+                    valueCents: null,
+                    changedBy: 'mecanico-1',
+                    recordedAt: expect.any(String),
+                },
+                {
+                    status: 'AWAITING_APPROVAL',
+                    valueCents: 12345,
+                    changedBy: 'mecanico-1',
+                    recordedAt: expect.any(String),
+                },
+                {
+                    status: 'APPROVED',
+                    valueCents: 12345,
+                    changedBy: null,
+                    recordedAt: expect.any(String),
+                },
+                {
+                    status: 'IN_PROGRESS',
+                    valueCents: 12345,
+                    changedBy: 'mecanico-1',
+                    recordedAt: expect.any(String),
+                },
+            ],
+        });
+
+        const missing = await app.inject({
+            method: 'GET',
+            url: '/service-orders/missing/history',
+        });
+        expect(missing.statusCode).toBe(404);
+    });
+
+    it('does not leave a pending budget persisted when saving the order transition fails', async () => {
+        const { app, orders, budgets, serviceOrderRepository } = setup();
+        orders.set(
+            'os-1',
+            ServiceOrder.create({
+                id: 'os-1',
+                description: 'Freios',
+                vehicleId: 'vehicle-1',
+            }),
+        );
+        vi.mocked(serviceOrderRepository.save).mockRejectedValueOnce(
+            new Error('db write failed'),
+        );
+
+        const response = await app.inject({
+            method: 'POST',
+            url: '/service-orders/os-1/awaiting-approval',
+        });
+        expect(response.statusCode).toBe(500);
+        expect(budgets.size).toBe(0);
+    });
+
+    it('revokes pending links on cancel and expires an awaiting order even after 100 expired links of cancelled orders', async () => {
+        const { app, orders, budgets, requests, approvals } = setup();
+        const past = new Date(Date.now() - 60_000);
+        const createdAt = new Date(Date.now() - 120_000);
+
+        for (let i = 0; i < 100; i++) {
+            const cancelledOrder = ServiceOrder.create({
+                id: `os-cancelled-${i}`,
+                description: 'Cancelada',
+                vehicleId: 'vehicle-1',
+            });
+            cancelledOrder.awaitApproval(`budget-cancelled-${i}`);
+            cancelledOrder.cancel();
+            orders.set(cancelledOrder.id.value, cancelledOrder);
+            requests.set(
+                `hash-cancelled-${i}`,
+                ApprovalRequest.create(
+                    {
+                        id: `req-cancelled-${i}`,
+                        orderId: cancelledOrder.id.value,
+                        budgetId: `budget-cancelled-${i}`,
+                        budgetVersion: '1',
+                        tokenHash: `hash-cancelled-${i}`,
+                        expiresAt: past,
+                    },
+                    createdAt,
+                ),
+            );
+        }
+
+        const created = await app.inject({
+            method: 'POST',
+            url: '/service-orders',
+            payload: { description: 'Freios', vehicleId: 'vehicle-1' },
+        });
+        const cancelledViaHttpId = created.json().id as string;
+        await app.inject({
+            method: 'POST',
+            url: `/service-orders/${cancelledViaHttpId}/awaiting-approval`,
+        });
+        await app.inject({
+            method: 'POST',
+            url: `/service-orders/${cancelledViaHttpId}/cancel`,
+        });
+        const revokedReq = [...requests.values()].find(
+            (r) => r.orderId === cancelledViaHttpId,
+        );
+        expect(revokedReq?.toPersistence().revokedAt).not.toBeNull();
+
+        const waitingOrder = ServiceOrder.create({
+            id: 'os-waiting-101',
+            description: 'Aguardando',
+            vehicleId: 'vehicle-1',
+        });
+        const waitingBudget = Budget.create({
+            id: 'budget-waiting-101',
+            serviceOrderId: waitingOrder.id.value,
+            totalCents: 5000,
+        });
+        waitingOrder.awaitApproval(waitingBudget.id.value);
+        orders.set(waitingOrder.id.value, waitingOrder);
+        budgets.set(waitingBudget.id.value, waitingBudget);
+        requests.set(
+            'hash-waiting-101',
+            ApprovalRequest.create(
+                {
+                    id: 'req-waiting-101',
+                    orderId: waitingOrder.id.value,
+                    budgetId: waitingBudget.id.value,
+                    budgetVersion: '1',
+                    tokenHash: 'hash-waiting-101',
+                    expiresAt: past,
+                },
+                createdAt,
+            ),
+        );
+
+        const expiredCount = await approvals.expirePending(new Date());
+        expect(expiredCount).toBe(1);
+        expect(orders.get('os-waiting-101')?.status.value).toBe('REJECTED');
+        expect(budgets.get('budget-waiting-101')?.status.value).toBe(
+            'REJECTED',
+        );
     });
 });

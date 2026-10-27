@@ -89,6 +89,15 @@ export class ServiceOrderStatus {
         return TRANSITIONS[this._value].includes(next);
     }
 
+    isClosed(): boolean {
+        return (
+            this._value === 'COMPLETED' ||
+            this._value === 'DELIVERED' ||
+            this._value === 'REJECTED' ||
+            this._value === 'CANCELLED'
+        );
+    }
+
     transitionTo(next: ServiceOrderStatusType): ServiceOrderStatus {
         if (!this.canTransitionTo(next)) {
             throw new InvalidServiceOrderStatusException(

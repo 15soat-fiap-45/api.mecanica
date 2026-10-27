@@ -92,10 +92,7 @@ export class ServiceOrder extends AggregateRoot<ServiceOrderId> {
     }
 
     addSupply(partCode: string, quantity: number): void {
-        if (
-            this._status.value === 'COMPLETED' ||
-            this._status.value === 'CANCELLED'
-        ) {
+        if (this._status.isClosed()) {
             throw new InvalidServiceOrderStatusException(
                 `Cannot add supplies to a ${this._status.value} service order`,
             );

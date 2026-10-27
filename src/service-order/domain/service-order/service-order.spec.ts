@@ -96,7 +96,7 @@ describe('ServiceOrder Aggregate Root', () => {
         expect(os.items).toHaveLength(0);
     });
 
-    it('should not add supplies to a COMPLETED or CANCELLED order', () => {
+    it('should not add supplies to a COMPLETED, DELIVERED, REJECTED, or CANCELLED order', () => {
         const completed = ServiceOrder.create(makeProps());
         completed.approve();
         completed.startExecution();
@@ -109,6 +109,32 @@ describe('ServiceOrder Aggregate Root', () => {
         expect(completed.items).toHaveLength(0);
         expect(completed.pullEvents()).toHaveLength(0);
 
+        const delivered = ServiceOrder.create(
+            makeProps({ id: 'os-delivered' }),
+        );
+        delivered.approve();
+        delivered.startExecution();
+        delivered.finish();
+        delivered.deliver();
+        delivered.pullEvents();
+
+        expect(() => delivered.addSupply('PAST-FREIO-01', 2)).toThrow(
+            InvalidServiceOrderStatusException,
+        );
+        expect(delivered.items).toHaveLength(0);
+        expect(delivered.pullEvents()).toHaveLength(0);
+
+        const rejected = ServiceOrder.create(makeProps({ id: 'os-rejected' }));
+        rejected.awaitApproval('budget-1');
+        rejected.reject();
+        rejected.pullEvents();
+
+        expect(() => rejected.addSupply('PAST-FREIO-01', 2)).toThrow(
+            InvalidServiceOrderStatusException,
+        );
+        expect(rejected.items).toHaveLength(0);
+        expect(rejected.pullEvents()).toHaveLength(0);
+
         const cancelled = ServiceOrder.create(makeProps({ id: 'os-2' }));
         cancelled.cancel();
         cancelled.pullEvents();
@@ -117,6 +143,7 @@ describe('ServiceOrder Aggregate Root', () => {
             InvalidServiceOrderStatusException,
         );
         expect(cancelled.items).toHaveLength(0);
+        expect(cancelled.pullEvents()).toHaveLength(0);
     });
 
     it('should mark a supply as used and record SupplyUsed', () => {

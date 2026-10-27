@@ -140,3 +140,57 @@ it('rejects the service order in the same transaction as the budget and token', 
     ).toBe(true);
     expect(statements.at(-1)).toBe('commit');
 });
+
+it('filters eligible AWAITING_APPROVAL orders before applying the 100 limit in expirePending (100 cancelled + 1 awaiting approval)', async () => {
+    const now = new Date('2026-10-26T14:00:00Z');
+    const expiredAt = new Date('2026-10-26T13:00:00Z');
+    const allExpiredLinks = [
+        ...Array.from({ length: 100 }, (_, i) => ({
+            id: `req-cancelled-${i}`,
+            orderId: `os-cancelled-${i}`,
+            budgetId: `budget-cancelled-${i}`,
+            orderStatus: 'CANCELLED',
+        })),
+        {
+            id: 'req-101',
+            orderId: 'os-101',
+            budgetId: 'budget-101',
+            orderStatus: 'AWAITING_APPROVAL',
+        },
+    ];
+    const query = vi.fn(
+        async (config: { text: string }, params: unknown[] = []) => {
+            if (config.text.includes('inner join "service_order"."orders"')) {
+                const statusFilter = params[1];
+                const limit = Number(params[2]);
+                return {
+                    rows: allExpiredLinks
+                        .filter((r) => r.orderStatus === statusFilter)
+                        .slice(0, limit)
+                        .map((r) => [r.id, r.orderId, r.budgetId]),
+                };
+            }
+            if (config.text.includes('from "service_order"."orders"')) {
+                return { rows: [['os-101']] };
+            }
+            if (
+                config.text.includes('from "service_order"."approval_requests"')
+            ) {
+                return { rows: [['req-101', expiredAt, null, null]] };
+            }
+            if (config.text.includes('update "service_order"."budgets"')) {
+                return { rows: [['budget-101', 4000]] };
+            }
+            return { rows: [] };
+        },
+    );
+    const db = drizzle({ query } as unknown as Pool);
+    const expiredCount = await new DrizzleApprovalRequestRepository(
+        db,
+    ).expirePending(now);
+    expect(expiredCount).toBe(1);
+    const selectSql = query.mock.calls[0]?.[0].text ?? '';
+    expect(selectSql).toContain('inner join "service_order"."orders"');
+    expect(selectSql).toContain('"service_order"."orders"."status" = $');
+    expect(selectSql).toContain('limit $');
+});

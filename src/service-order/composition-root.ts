@@ -10,6 +10,7 @@ import { SendBudgetApprovalEmail } from './application/handlers/send-budget-appr
 import { AwaitBudgetApproval } from './application/use-cases/await-budget-approval.js';
 import { DecideBudgetApproval } from './application/use-cases/decide-budget-approval.js';
 import type { ServiceCatalog } from './application/ports/service-catalog.js';
+import type { ActorResolver } from './application/ports/actor-resolver.js';
 import { ChangeServiceOrderStatus } from './application/use-cases/change-service-order-status.js';
 import { SendVehicleReadyEmail } from './application/handlers/send-vehicle-ready-email.js';
 import type { ServiceOrderFinished } from './domain/service-order/events/service-order-finished.js';
@@ -22,10 +23,10 @@ import {
 } from './application/use-cases/register-service-order.js';
 import {
     AddSupplyToServiceOrder,
-    type AddSupplyToServiceOrderInput,
     type AddSupplyToServiceOrderOutput,
+    type AddSupplyToServiceOrderInput,
+    ServiceOrderNotFoundError,
 } from './application/use-cases/add-supply-to-service-order.js';
-import { ServiceOrderNotFoundError } from './application/use-cases/add-supply-to-service-order.js';
 import {
     RegisterSupplyUsage,
     type RegisterSupplyUsageInput,
@@ -46,9 +47,11 @@ export interface ServiceOrderDependencies {
     frontendUrl: string;
     approvalTokenTtlMinutes: number;
     serviceCatalog: ServiceCatalog;
+    actorResolver?: ActorResolver | undefined;
 }
 
 export interface ServiceOrderUseCases {
+    actorResolver?: ActorResolver | undefined;
     registerServiceOrder: UseCase<
         RegisterServiceOrderInput,
         RegisterServiceOrderOutput
@@ -69,6 +72,17 @@ export interface ServiceOrderUseCases {
             description: string;
             status: string;
             services: Awaited<ReturnType<ServiceCatalog['forOrder']>>;
+        }>;
+    };
+    findServiceOrderHistory: {
+        execute(input: { serviceOrderId: string }): Promise<{
+            serviceOrderId: string;
+            history: {
+                status: string;
+                valueCents: number | null;
+                changedBy: string | null;
+                recordedAt: string;
+            }[];
         }>;
     };
     decideBudgetApproval: DecideBudgetApproval;
@@ -123,6 +137,7 @@ export function serviceOrderCompositionRoot(
     );
 
     return {
+        actorResolver: deps.actorResolver,
         registerServiceOrder: new RegisterServiceOrder(
             deps.serviceOrderRepository,
             deps.vehicleContacts,
@@ -167,6 +182,26 @@ export function serviceOrderCompositionRoot(
                     services: await deps.serviceCatalog.forOrder(
                         order.id.value,
                     ),
+                };
+            },
+        },
+        findServiceOrderHistory: {
+            execute: async ({ serviceOrderId }) => {
+                const order =
+                    await deps.serviceOrderRepository.findById(serviceOrderId);
+                if (!order) throw new ServiceOrderNotFoundError();
+                const entries =
+                    (await deps.serviceOrderRepository.findStatusHistory?.(
+                        order.id.value,
+                    )) ?? [];
+                return {
+                    serviceOrderId: order.id.value,
+                    history: entries.map((entry) => ({
+                        status: entry.status,
+                        valueCents: entry.valueCents,
+                        changedBy: entry.changedBy,
+                        recordedAt: entry.recordedAt.toISOString(),
+                    })),
                 };
             },
         },

@@ -1,9 +1,15 @@
 import { and, eq, gt, isNull, lte, sql } from 'drizzle-orm';
+import { actorContext } from '../../../service-order/application/ports/actor-resolver.js';
 import type { ApprovalRequestRepository } from '../../../service-order/domain/approval/approval-request.repository.js';
 import { ApprovalRequest } from '../../../service-order/domain/approval/approval-request.js';
 import type { Budget } from '../../../service-order/domain/budget/budget.js';
 import { db } from '../connection.js';
-import { approvalRequests, budgets, serviceOrders } from '../schema.js';
+import {
+    approvalRequests,
+    budgets,
+    orderStatusHistory,
+    serviceOrders,
+} from '../schema.js';
 import { ConcurrentModificationError } from './concurrent-modification-error.js';
 
 export class DrizzleApprovalRequestRepository implements ApprovalRequestRepository {
@@ -61,6 +67,7 @@ export class DrizzleApprovalRequestRepository implements ApprovalRequestReposito
         orderVersion: number,
     ): Promise<void> {
         const props = request.toPersistence();
+        const changedBy = actorContext.getStore() ?? null;
         await this.database.transaction(async (tx) => {
             const [order] = await tx
                 .select({
@@ -127,6 +134,13 @@ export class DrizzleApprovalRequestRepository implements ApprovalRequestReposito
                     )
                     .returning({ id: serviceOrders.id });
                 if (!rejected) throw new ConcurrentModificationError();
+                await tx.insert(orderStatusHistory).values({
+                    orderId: request.orderId,
+                    status: 'REJECTED',
+                    valueCents: budget.totalCents,
+                    changedBy,
+                    recordedAt: props.usedAt ?? new Date(),
+                });
             }
         });
         budget.markPersisted();
@@ -140,11 +154,16 @@ export class DrizzleApprovalRequestRepository implements ApprovalRequestReposito
                 budgetId: approvalRequests.budgetId,
             })
             .from(approvalRequests)
+            .innerJoin(
+                serviceOrders,
+                eq(approvalRequests.orderId, serviceOrders.id),
+            )
             .where(
                 and(
                     isNull(approvalRequests.usedAt),
                     isNull(approvalRequests.revokedAt),
                     lte(approvalRequests.expiresAt, now),
+                    eq(serviceOrders.status, 'AWAITING_APPROVAL'),
                 ),
             )
             .limit(100);
@@ -193,7 +212,10 @@ export class DrizzleApprovalRequestRepository implements ApprovalRequestReposito
                             eq(budgets.status, 'PENDING'),
                         ),
                     )
-                    .returning({ id: budgets.id });
+                    .returning({
+                        id: budgets.id,
+                        totalCents: budgets.totalCents,
+                    });
                 if (!budget) return false;
                 await tx
                     .update(serviceOrders)
@@ -202,6 +224,13 @@ export class DrizzleApprovalRequestRepository implements ApprovalRequestReposito
                         version: sql`${serviceOrders.version} + 1`,
                     })
                     .where(eq(serviceOrders.id, request.orderId));
+                await tx.insert(orderStatusHistory).values({
+                    orderId: request.orderId,
+                    status: 'REJECTED',
+                    valueCents: budget.totalCents,
+                    changedBy: null,
+                    recordedAt: now,
+                });
                 await tx
                     .update(approvalRequests)
                     .set({
