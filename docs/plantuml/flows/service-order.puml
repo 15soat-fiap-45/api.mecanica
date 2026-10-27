@@ -1,69 +1,76 @@
 @startuml service_order_budget_approval
-title Fluxo dinamico complementar - aprovacao de orcamento e OS
+title Fluxo dinamico complementar - solicitacao e decisao de aprovacao de orcamento
 autonumber
-actor "Consumidor HTTP" as Caller
+
+actor "Operador Autenticado" as Operator
+actor "Cliente do Veiculo" as Customer
 participant "Fastify / Zod" as HTTP
-participant ApproveBudget as UseCase
-participant DrizzleBudgetRepository as BudgetRepo
-participant Budget
-database "PostgreSQL" as DB
-participant InMemoryEventBus as Bus
-participant MoveServiceOrderToApproved as Handler
+participant AwaitBudgetApproval as AwaitUC
+participant DrizzleServiceCatalog as Catalog
 participant DrizzleServiceOrderRepository as OrderRepo
-participant ServiceOrder as Order
+participant InMemoryEventBus as Bus
+participant SendBudgetApprovalEmail as EmailHandler
+participant DrizzleApprovalRequestRepository as ApprovalRepo
+participant SmtpEmailSender as Mailer
+participant DecideBudgetApproval as DecideUC
+participant MoveServiceOrderToApproved as ApproveHandler
+database "PostgreSQL" as DB
 
-Caller -> HTTP: POST /budgets/:budgetId/approve
-HTTP -> UseCase: execute({ budgetId })
-UseCase -> BudgetRepo: findById(budgetId)
-BudgetRepo -> DB: SELECT service_order.budgets
-DB --> BudgetRepo: linha do orcamento existente
-BudgetRepo --> UseCase: Budget reconstituido
-UseCase -> Budget: approve()
-Budget -> Budget: status APPROVED; registra BudgetApproved
-UseCase -> BudgetRepo: save(budget)
-BudgetRepo -> DB: INSERT / UPDATE com verificacao de version
-DB --> BudgetRepo: gravacao confirmada
-BudgetRepo --> UseCase: save concluido; version incrementada
-UseCase -> Budget: pullEvents()
-Budget --> UseCase: BudgetApproved
-UseCase -> Bus: publish(events)
-Bus -> Handler: handle(BudgetApproved)
-Handler -> OrderRepo: findById(event.serviceOrderId)
+== 1. Envio da OS para Aprovacao de Orcamento ==
+Operator -> HTTP: POST /service-orders/:id/awaiting-approval (Bearer JWT)
+HTTP -> AwaitUC: execute({ serviceOrderId })
+AwaitUC -> OrderRepo: findById(serviceOrderId)
 OrderRepo -> DB: SELECT orders LEFT JOIN supply_items
-DB --> OrderRepo: agregado persistido
-OrderRepo --> Handler: ServiceOrder ou null
+DB --> OrderRepo: ServiceOrder (PENDING)
+AwaitUC -> Catalog: forOrder(serviceOrderId)
+Catalog -> DB: SELECT order_services, service_parts
+DB --> Catalog: servicos atribuidos
+AwaitUC -> AwaitUC: cria Budget (soma valueCents) e chama order.awaitApproval(budget.id)
+AwaitUC -> OrderRepo: save(order, budget)
+OrderRepo -> DB: TX: UPDATE orders (AWAITING_APPROVAL), INSERT budgets (PENDING), INSERT order_status_history
+DB --> OrderRepo: COMMIT
+AwaitUC -> Bus: publish([OrderAwaitingApproval])
+Bus -> EmailHandler: handle(OrderAwaitingApproval)
+EmailHandler -> ApprovalRepo: issue(ApprovalRequest com tokenHash e budgetVersion)
+ApprovalRepo -> DB: TX: revoga anteriores e INSERT approval_requests
+EmailHandler -> Mailer: send(e-mail HTML com /orcamento/:token?acao=aprovar|recusar)
+EmailHandler -> ApprovalRepo: markSent(request.id)
+Bus --> AwaitUC: publish concluido
+AwaitUC --> HTTP: { status: "AWAITING_APPROVAL" }
+HTTP --> Operator: HTTP 200
 
-alt OS existe e pode transicionar para APPROVED
-  Handler -> Order: approve()
-  Handler -> OrderRepo: save(serviceOrder)
-  OrderRepo -> DB: transacao: grava OS e itens com verificacao de version
-  alt versao atual e gravacao bem-sucedida
-    DB --> OrderRepo: COMMIT
-    OrderRepo --> Handler: save concluido; version incrementada
-    Handler --> Bus: conclui
-  else conflito de versao ou erro de persistencia
-    DB --> OrderRepo: nenhuma linha atualizada ou erro
-    OrderRepo -> DB: ROLLBACK da transacao da OS
-    OrderRepo --> Handler: ConcurrentModificationError ou erro de persistencia
-    Handler --> Bus: falha do handler
-    Bus -> Bus: registra event handler failed; sem retry
-  end
-else OS existe e nao pode transicionar para APPROVED
-  Handler --> Bus: retorna sem alterar OS (idempotencia)
-else OS nao encontrada
-  Handler --> Bus: ServiceOrderNotFoundError
-  Bus -> Bus: registra falha do handler
+== 2. Decisao do Cliente via Token ==
+Customer -> HTTP: POST /budget-approvals/decide { token, decision, rejectionReason? }
+HTTP -> DecideUC: execute(input)
+DecideUC -> ApprovalRepo: findByTokenHash(sha256(token))
+ApprovalRepo -> DB: SELECT approval_requests
+DB --> ApprovalRepo: ApprovalRequest ativo
+DecideUC -> OrderRepo: findById(orderId) + BudgetRepository.findById(budgetId)
+DecideUC -> DecideUC: valida AWAITING_APPROVAL, budgetVersion, request.decide() e budget.approve()|reject()
+DecideUC -> ApprovalRepo: decide(request, budget, order.version)
+
+alt decision == "approved"
+  ApprovalRepo -> DB: TX: SELECT orders FOR UPDATE, UPDATE approval_requests (used_at), UPDATE budgets (APPROVED)
+  DB --> ApprovalRepo: COMMIT
+  DecideUC -> Bus: publish([BudgetApproved])
+  Bus -> ApproveHandler: handle(BudgetApproved)
+  ApproveHandler -> OrderRepo: findById(serviceOrderId)
+  ApproveHandler -> ApproveHandler: order.approve()
+  ApproveHandler -> OrderRepo: save(order)
+  OrderRepo -> DB: TX: UPDATE orders (APPROVED), INSERT order_status_history
+  DB --> OrderRepo: COMMIT
+else decision == "rejected"
+  ApprovalRepo -> DB: TX: UPDATE approval_requests, UPDATE budgets (REJECTED), UPDATE orders (REJECTED), INSERT order_status_history
+  DB --> ApprovalRepo: COMMIT
 end
 
-Bus --> UseCase: publish resolvido
-UseCase --> HTTP: dados do Budget aprovado
-HTTP --> Caller: HTTP 200
+DecideUC --> HTTP: { status: "decided", decision }
+HTTP --> Customer: HTTP 200
 
-note over BudgetRepo,OrderRepo
-  Caminho principal assume payload valido e orcamento PENDING existente.
-  Falhas de persistencia do caso de uso sao mapeadas pelo error handler.
-  Budget e OS sao salvos separadamente, sem transacao conjunta.
-  Qualquer falha do handler (inclusive concorrencia) e registrada pelo bus;
-  ela nao desfaz o Budget e nao impede o HTTP 200 da aprovacao.
+note over ApprovalRepo,OrderRepo
+  Se o mesmo token ja decidido receber novamente a mesma decision,
+  DecideBudgetApproval retorna { status: "already_decided", decision } (idempotencia).
+  Se o orcamento/OS tiver sido modificado (budgetVersion divergente),
+  retorna HTTP 400 (BudgetChangedError).
 end note
 @enduml

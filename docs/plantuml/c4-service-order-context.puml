@@ -4,15 +4,20 @@ title C1 - Contexto da API Oficina Mecanica - foco em Service Order
 LAYOUT_LEFT_RIGHT()
 SHOW_PERSON_OUTLINE()
 
-Person(consumer, "Consumidor HTTP", "Operador ou integracao que utiliza a API da oficina")
-System(workshop, "API Oficina Mecanica", "Gerencia clientes, veiculos, ordens de servico, insumos da OS e aprovacao de orcamentos.")
-Rel(consumer, workshop, "Cadastra e cancela OS, inclui e registra uso de insumos, aprova orcamentos", "HTTP/JSON")
+Person(operator, "Operador Autenticado", "Atendente, mecanico ou gerente autenticado via JWT com permissoes RBAC (OS_CRIAR, OS_CONCLUIR, ESTOQUE_BAIXAR)")
+Person(customer, "Cliente do Veiculo", "Proprietario do veiculo que recebe notificacoes por e-mail e decide sobre o orcamento")
+System(workshop, "API Oficina Mecanica", "Gerencia catalogo de servicos, ordens de servico, insumos, historico de status e aprovacao de orcamentos.")
+System_Ext(smtp, "Servidor SMTP", "Entrega e-mails transacionais de aprovacao de orcamento e de veiculo pronto para retirada.")
+
+Rel(operator, workshop, "Gerencia catalogo, cadastra/consulta OS e historico, atribui servicos/insumos e altera status", "HTTP/JSON + Bearer JWT")
+Rel(workshop, smtp, "Envia e-mails de orcamento (com link tokenizado) e de conclusao da OS", "SMTP / Nodemailer")
+Rel(smtp, customer, "Entrega e-mails de notificacao", "E-mail HTML/Texto")
+Rel(customer, workshop, "Acessa pagina de orcamento (/orcamento/:token) e aprova ou recusa o orcamento (/budget-approvals/decide)", "HTTP/HTML e JSON")
 
 note bottom of workshop
-  Service Order e um modulo interno do monolito.
-  Registry tambem esta ativo; Stock possui codigo de dominio/aplicacao,
-  mas seus handlers nao sao ativados por src/index.ts.
-  Nenhum sistema externo integrado ao fluxo de OS foi identificado.
+  Service Order e um modulo interno do monolito modular,
+  integrado a Auth (validacao de token/permissoes) e Registry (contato do veiculo/cliente).
+  Stock possui codigo de dominio/aplicacao, mas seus handlers nao sao ativados por src/index.ts.
   O PostgreSQL e detalhado como container no nivel C2.
 end note
 SHOW_LEGEND()
