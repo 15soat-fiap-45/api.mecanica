@@ -15,11 +15,16 @@ export abstract class AggregateRoot<TId extends Identifier> {
 
     protected constructor(
         public readonly id: TId,
-        private readonly _version = 0,
+        private _version = 0,
     ) {}
 
     get version(): number {
         return this._version;
+    }
+
+    /** Called by the repository only after a successful commit. */
+    markPersisted(): void {
+        this._version += 1;
     }
 
     /** Chamado pelos métodos de negócio: this.record(new XCadastrado(...)) */

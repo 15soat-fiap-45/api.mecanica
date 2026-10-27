@@ -9,10 +9,14 @@ import { DomainException } from './shared/domain/domain-exception.js';
 import { registerRegistryRoutes } from './registry/infra/http/registry-routes.js';
 import type { RegistryUseCases } from './registry/composition-root.js';
 import type { AuthController } from './auth/infra/http/auth-controller.js';
+import type { ServiceOrderUseCases } from './service-order/composition-root.js';
+import { registerServiceOrderRoutes } from './service-order/infra/http/service-order-routes.js';
+import { jsonSchemaTransform } from 'fastify-type-provider-zod';
 
 export interface AppDependencies {
     registry?: RegistryUseCases;
     auth?: AuthController;
+    serviceOrder?: ServiceOrderUseCases;
 }
 
 export function buildApp(deps: AppDependencies = {}) {
@@ -24,10 +28,11 @@ export function buildApp(deps: AppDependencies = {}) {
         openapi: {
             info: {
                 title: 'Mechanical Workshop API',
-                description: 'Registry context API',
+                description: 'Registry and service order contexts API',
                 version: '1.0.0',
             },
         },
+        transform: jsonSchemaTransform,
     });
     app.register(swaggerUi, { routePrefix: '/docs' });
 
@@ -43,7 +48,8 @@ export function buildApp(deps: AppDependencies = {}) {
         if (error instanceof ApplicationException) {
             const statusCode = error.name.includes('NotFound')
                 ? 404
-                : error.name.includes('AlreadyExists')
+                : error.name.includes('AlreadyExists') ||
+                    error.name === 'ConcurrentModificationError'
                   ? 409
                   : 400;
             return reply.code(statusCode).send({
@@ -96,6 +102,12 @@ export function buildApp(deps: AppDependencies = {}) {
         });
     }
     if (deps.auth) deps.auth.register(app);
+
+    if (deps.serviceOrder) {
+        app.register(async (serviceOrderApp) => {
+            registerServiceOrderRoutes(serviceOrderApp, deps.serviceOrder!);
+        });
+    }
 
     return app;
 }

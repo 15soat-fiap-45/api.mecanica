@@ -1,36 +1,43 @@
 # Diagramas PlantUML - API Oficina Mecanica
 
-Os diagramas desta pasta descrevem o estado confirmado no código atual. A implementação é um monolito modular em TypeScript, com Fastify, Zod, Drizzle ORM, PostgreSQL e Event Bus em memória.
+Os diagramas desta pasta descrevem o estado confirmado no código atual. A implementação é um monolito modular em TypeScript, com Fastify, Zod, Drizzle ORM, PostgreSQL, Nodemailer (SMTP) e Event Bus em memória.
 
 ## Arquivos
 
-- `c4-context.puml`: contexto da API e sua única integração persistente atual.
-- `c4-containers.puml`: processo Fastify, aplicação, domínio, Event Bus e persistência.
-- `c4-components.puml`: componentes efetivamente usados pelo bootstrap HTTP.
-- `database-er.puml`: tabelas do schema Drizzle atual.
+- `c4-context.puml` e `c4-service-order-context.puml`: contexto da API e integrações (PostgreSQL e SMTP).
+- `c4-containers.puml` e `c4-service-order-containers.puml`: processo Fastify, aplicação, domínio, Event Bus, SMTP e persistência.
+- `c4-components.puml` e `c4-service-order-components.puml`: componentes efetivamente usados pelo bootstrap HTTP.
+- `c4-service-order-code.puml`: agregados, entidades, value objects e contratos de repositório de `service-order`.
+- `database-er.puml`: tabelas do schema Drizzle atual (`public` e `service_order`).
 - `deployment.puml`: execução atual com processo Node.js e PostgreSQL.
 - `flows/client-registration.puml`: fluxo real de `POST /customers`.
 - `flows/auth-service.puml`: pré-cadastro e login registrados pelo controller Auth.
-- `flows/service-order.puml`: fluxo interno de OS/estoque via eventos.
+- `flows/service-order.puml`: fluxo de solicitação de aprovação de orçamento por e-mail/token e decisão pelo cliente.
 - `flows/states.puml`: estados implementados para OS, orçamento, reserva e estoque.
 
-## Rotas atuais
+## Rotas de Service Order
 
-- `GET /health`
-- `GET /docs`
-- `POST /auth/first-access`
-- `POST /auth/login`
-- `POST /users`
-- `POST /customers`
-- `GET /customers/:cpfCnpj`
-- `POST /vehicles`
-- `GET /vehicles/:plate`
-
-As rotas Auth usam JWT para pré-cadastro, mas não protegem as rotas Registry. Não há Redis, S3, pagamentos, e-mail/SMS ou endpoints HTTP de ordem de serviço/estoque.
+- Autenticadas via Bearer JWT + RBAC (`TokenActorResolver`):
+  - `POST /service-orders` (`OS_CRIAR`)
+  - `POST /services` (`OS_CRIAR`)
+  - `GET /services` (autenticado)
+  - `POST /service-orders/:serviceOrderId/services` (`OS_CONCLUIR`)
+  - `GET /service-orders/:serviceOrderId` (autenticado)
+  - `GET /service-orders/:serviceOrderId/history` (autenticado)
+  - `POST /service-orders/:serviceOrderId/supplies` (`ESTOQUE_BAIXAR`)
+  - `POST /service-orders/:serviceOrderId/supplies/:partCode/usage` (`ESTOQUE_BAIXAR`)
+  - `POST /service-orders/:serviceOrderId/cancel` (`OS_CRIAR`)
+  - `POST /service-orders/:serviceOrderId/awaiting-approval` (`OS_CONCLUIR`)
+  - `POST /service-orders/:serviceOrderId/start` (`OS_CONCLUIR`)
+  - `POST /service-orders/:serviceOrderId/finish` (`OS_CONCLUIR`)
+  - `POST /service-orders/:serviceOrderId/deliver` (`OS_CRIAR`)
+- Públicas (fluxo de aprovação do cliente):
+  - `POST /budget-approvals/decide`
+  - `GET /orcamento/:token` e `GET /orcamento`
 
 ## Banco
 
-`src/infra/database/schema.ts` mapeia `auth_users`, `cliente`, `veiculo` e `servico`. O SQL inicial em `infra/postgres/init/01-schema.sql` declara tabelas adicionais, mas elas ainda não possuem correspondência completa nos adaptadores Drizzle; por isso não são representadas como persistência ativa no ER.
+`src/infra/database/schema.ts` mapeia no schema `public` (`auth_users`, `cliente`, `veiculo`, `servico`) e no schema `service_order` (`orders`, `supply_items`, `budgets`, `approval_requests`, `services`, `service_parts`, `order_services`, `order_status_history`).
 
 ## Validação
 

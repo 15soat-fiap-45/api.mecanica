@@ -15,27 +15,16 @@ import type { ServiceOrderCancelled } from './stock/application/handlers/release
 import { ConsumeUsedSupply } from './stock/application/handlers/consume-used-supply.js';
 import type { SupplyUsed } from './stock/application/handlers/consume-used-supply.js';
 
-import type { ServiceOrderRepository } from './service-order/domain/service-order/service-order.repository.js';
-import type { BudgetRepository } from './service-order/domain/budget/budget.repository.js';
+import { serviceOrderCompositionRoot } from './service-order/composition-root.js';
+import type { ServiceOrderDependencies } from './service-order/composition-root.js';
+export type { ServiceOrderDependencies } from './service-order/composition-root.js';
 import type { CustomerRepository } from './registry/domain/customer/customer.repository.js';
 import type { VehicleRepository } from './registry/domain/vehicle/vehicle.repository.js';
 import { registryCompositionRoot } from './registry/composition-root.js';
-import { RegisterServiceOrder } from './service-order/application/use-cases/register-service-order.js';
-import { AddSupplyToServiceOrder } from './service-order/application/use-cases/add-supply-to-service-order.js';
-import { ApproveBudget } from './service-order/application/use-cases/approve-budget.js';
-import { RegisterSupplyUsage } from './service-order/application/use-cases/register-supply-usage.js';
-import { CancelServiceOrder } from './service-order/application/use-cases/cancel-service-order.js';
-import { MoveServiceOrderToApproved } from './service-order/application/handlers/move-service-order-to-approved.js';
-import type { BudgetApproved } from './service-order/domain/budget/events/budget-approved.js';
 
 export interface StockDependencies {
     partSupplyRepository: PartSupplyRepository;
     reservationRepository: SupplyReservationRepository;
-}
-
-export interface ServiceOrderDependencies {
-    serviceOrderRepository: ServiceOrderRepository;
-    budgetRepository: BudgetRepository;
 }
 
 export interface RegistryDependencies {
@@ -116,33 +105,7 @@ export function compositionRoot(
         consumeUsedSupply.handle(event),
     );
 
-    // Service order use cases
-    const registerServiceOrder = new RegisterServiceOrder(
-        deps.serviceOrderRepository,
-        eventBus,
-    );
-    const addSupplyToServiceOrder = new AddSupplyToServiceOrder(
-        deps.serviceOrderRepository,
-        eventBus,
-    );
-    const approveBudget = new ApproveBudget(deps.budgetRepository, eventBus);
-    const registerSupplyUsage = new RegisterSupplyUsage(
-        deps.serviceOrderRepository,
-        eventBus,
-    );
-    const cancelServiceOrder = new CancelServiceOrder(
-        deps.serviceOrderRepository,
-        eventBus,
-    );
-
-    // Policies
-    const moveServiceOrderToApproved = new MoveServiceOrderToApproved(
-        deps.serviceOrderRepository,
-    );
-    eventBus.subscribe<BudgetApproved>(
-        'service-order.budget-approved',
-        (event) => moveServiceOrderToApproved.handle(event),
-    );
+    const serviceOrder = serviceOrderCompositionRoot(eventBus, deps);
 
     return {
         ...registry,
@@ -151,11 +114,7 @@ export function compositionRoot(
         reserveSupply,
         writeOffStock,
         cancelReservation,
-        registerServiceOrder,
-        addSupplyToServiceOrder,
-        approveBudget,
-        registerSupplyUsage,
-        cancelServiceOrder,
+        ...serviceOrder,
     };
 }
 

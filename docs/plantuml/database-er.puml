@@ -2,54 +2,112 @@
 hide circle
 skinparam linetype ortho
 
-entity "cliente" as cliente {
-    * cliente_id : VARCHAR(14) <<PK>>
-    --
-    nome : VARCHAR(100)
-    telefone : VARCHAR(11)
-    email : VARCHAR(100)
-    version : INTEGER
+package "Schema public" {
+    entity "cliente" as cliente {
+        * cliente_id : VARCHAR(14) <<PK>>
+        --
+        nome : VARCHAR(100)
+        telefone : VARCHAR(11)
+        email : VARCHAR(100)
+        version : INTEGER
+    }
+
+    entity "veiculo" as veiculo {
+        * veiculo_id : VARCHAR(36) <<PK>>
+        --
+        placa : VARCHAR(7) <<UNIQUE>>
+        modelo : VARCHAR(30)
+        ano : INTEGER
+        marca : VARCHAR(16)
+        cor : VARCHAR(15)
+        version : INTEGER
+        cliente_id : VARCHAR(14) <<FK>>
+    }
 }
 
-entity "veiculo" as veiculo {
-    * veiculo_id : VARCHAR(36) <<PK>>
-    --
-    placa : VARCHAR(7) <<UNIQUE>>
-    modelo : VARCHAR(30)
-    ano : INTEGER
-    marca : VARCHAR(16)
-    cor : VARCHAR(15)
-    version : INTEGER
-    cliente_id : VARCHAR(14) <<FK>>
-}
+package "Schema service_order" {
+    entity "orders" as orders {
+        * id : VARCHAR(36) <<PK>>
+        --
+        description : TEXT
+        vehicle_id : VARCHAR(36) nullable
+        status : VARCHAR(20)
+        version : INTEGER
+    }
 
-entity "servico" as servico {
-    * servico_id : BIGINT <<PK, identity>>
-    --
-    titulo : VARCHAR(20)
-    descricao : VARCHAR(200) nullable
-    valor : BIGINT
+    entity "supply_items" as supply_items {
+        * service_order_id : VARCHAR(36) <<PK, FK>>
+        * part_code : VARCHAR(50) <<PK>>
+        --
+        quantity : INTEGER
+        used : BOOLEAN
+    }
+
+    entity "budgets" as budgets {
+        * id : VARCHAR(36) <<PK>>
+        --
+        service_order_id : VARCHAR(36) <<FK>>
+        total_cents : BIGINT
+        status : VARCHAR(20)
+        version : INTEGER
+    }
+
+    entity "approval_requests" as approval_requests {
+        * id : VARCHAR(36) <<PK>>
+        --
+        order_id : VARCHAR(36) <<FK>>
+        budget_id : VARCHAR(36) <<FK>>
+        budget_version : VARCHAR(64)
+        token_hash : VARCHAR(64) <<UNIQUE>>
+        created_at : TIMESTAMPTZ
+        expires_at : TIMESTAMPTZ
+        used_at : TIMESTAMPTZ nullable
+        revoked_at : TIMESTAMPTZ nullable
+        sent_at : TIMESTAMPTZ nullable
+        decision : VARCHAR(8) nullable
+        rejection_reason : TEXT nullable
+    }
+
+    entity "services" as catalog_services {
+        * id : BIGINT <<PK, identity>>
+        --
+        title : VARCHAR(20)
+        description : VARCHAR(200) nullable
+        value_cents : BIGINT
+    }
+
+    entity "service_parts" as service_parts {
+        * service_id : BIGINT <<PK, FK>>
+        * part_id : BIGINT <<PK>>
+    }
+
+    entity "order_services" as order_services {
+        * order_id : VARCHAR(36) <<PK, FK>>
+        * service_id : BIGINT <<PK, FK>>
+        --
+        title : VARCHAR(20)
+        value_cents : BIGINT
+    }
+
+    entity "order_status_history" as order_status_history {
+        * id : BIGINT <<PK, identity>>
+        --
+        order_id : VARCHAR(36) <<FK>>
+        status : VARCHAR(20)
+        value_cents : BIGINT nullable
+        changed_by : VARCHAR(320) nullable
+        recorded_at : TIMESTAMPTZ
+    }
 }
 
 cliente ||--o{ veiculo : possui
-
-note right of cliente
-    Tabela definida em
-    src/infra/database/schema.ts.
-    Cliente é identificado por CPF/CNPJ.
-end note
-
-note right of veiculo
-    cliente_id referencia cliente.cliente_id.
-    Usada pelo repositório Drizzle de veículos.
-end note
-
-note bottom of servico
-    Está no schema Drizzle e no SQL inicial,
-    mas não há repositório ou rota de serviço
-    identificada no estado atual.
-end note
-
-note "Limite do diagrama: o schema Drizzle atual contém somente estas três tabelas.\nO SQL inicial do PostgreSQL também declara tabelas de OS/estoque, mas elas ainda não estão mapeadas pelos adaptadores da aplicação." as scope
-scope .. cliente
+veiculo ||..o{ orders : referencia logica (vehicle_id)
+orders ||--o{ supply_items : contem
+orders ||--o{ budgets : gera
+orders ||--o{ approval_requests : solicita aprovacao
+budgets ||--o{ approval_requests : vinculado a
+catalog_services ||--o{ service_parts : requer pecas
+orders ||--o{ order_services : possui servicos
+catalog_services ||--o{ order_services : referenciado em
+orders ||--o{ order_status_history : audita transicoes
 @enduml

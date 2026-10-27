@@ -1,0 +1,120 @@
+@startuml service_order_c4_code
+title C4 - Service Order - detalhe do codigo de dominio e portas
+left to right direction
+skinparam classAttributeIconSize 0
+
+package "src/shared/domain" {
+  abstract class "AggregateRoot<TId>" as AggregateRoot {
+    +id: TId
+    +version: number
+    +markPersisted(): void
+    +pullEvents(): DomainEvent[]
+    #record(event: DomainEvent): void
+  }
+}
+
+package "src/service-order/domain" {
+  class ServiceOrder {
+    +description: string
+    +vehicleId: string | null
+    +{static} create(props: ServiceOrderProps): ServiceOrder
+    +{static} register(props: ServiceOrderProps): ServiceOrder
+    +addSupply(partCode: string, quantity: number): void
+    +markSupplyUsed(partCode: string): void
+    +awaitApproval(budgetId: string): void
+    +approve(): void
+    +reject(): void
+    +startExecution(): void
+    +finish(): void
+    +deliver(): void
+    +cancel(): void
+  }
+  class SupplyItem {
+    +partCode: string
+    +quantity: number
+    +used: boolean
+    +markUsed(): void
+  }
+  class ServiceOrderId <<Identifier>>
+  class ServiceOrderStatus <<Value Object>> {
+    +value: ServiceOrderStatusType
+    +canTransitionTo(next: ServiceOrderStatusType): boolean
+    +isClosed(): boolean
+    +transitionTo(next: ServiceOrderStatusType): ServiceOrderStatus
+  }
+  class Budget {
+    +serviceOrderId: string
+    +totalCents: number
+    +{static} create(props: BudgetProps): Budget
+    +approve(): void
+    +reject(): void
+  }
+  class BudgetId <<Identifier>>
+  class BudgetStatus <<Value Object>> {
+    +value: BudgetStatusType
+    +transitionTo(next: BudgetStatusType): BudgetStatus
+  }
+  class ApprovalRequest {
+    +id: string
+    +orderId: string
+    +budgetId: string
+    +budgetVersion: string
+    +tokenHash: string
+    +expiresAt: Date
+    +decision: ApprovalDecision | null
+    +usedAt: Date | null
+    +sentAt: Date | null
+    +{static} create(props, now: Date): ApprovalRequest
+    +{static} restore(props: ApprovalRequestProps): ApprovalRequest
+    +isActive(now: Date): boolean
+    +revoke(now: Date): void
+    +markSent(now: Date): void
+    +decide(decision: ApprovalDecision, now: Date, rejectionReason?: string): void
+  }
+  interface ServiceOrderRepository {
+    +save(serviceOrder: ServiceOrder, budget?: Budget): Promise<void>
+    +findById(id: ServiceOrderId | string): Promise<ServiceOrder | null>
+    +findStatusHistory?(id: ServiceOrderId | string): Promise<ServiceOrderStatusHistoryEntry[]>
+  }
+  interface BudgetRepository {
+    +save(budget: Budget): Promise<void>
+    +findById(id: BudgetId | string): Promise<Budget | null>
+    +findByServiceOrderId(serviceOrderId: string): Promise<Budget[]>
+  }
+  interface ApprovalRequestRepository {
+    +issue(request: ApprovalRequest): Promise<void>
+    +markSent(id: string): Promise<void>
+    +findByTokenHash(hash: string): Promise<ApprovalRequest | null>
+    +decide(request: ApprovalRequest, budget: Budget, orderVersion: number): Promise<void>
+    +expirePending(now: Date): Promise<number>
+  }
+}
+
+AggregateRoot <|-- ServiceOrder
+AggregateRoot <|-- Budget
+ServiceOrder "1" *-- "0..*" SupplyItem : items
+ServiceOrder --> ServiceOrderId : id
+ServiceOrder --> ServiceOrderStatus : status
+Budget --> BudgetId : id
+Budget --> BudgetStatus : status
+Budget "0..*" -- "1" ServiceOrder : serviceOrderId
+ApprovalRequest "0..*" -- "1" ServiceOrder : orderId
+ApprovalRequest "0..*" -- "1" Budget : budgetId
+ServiceOrderRepository ..> ServiceOrder : persiste / reconstitui
+ServiceOrderRepository ..> Budget : salva atomicamente com OS (opcional)
+BudgetRepository ..> Budget : persiste / reconstitui
+ApprovalRequestRepository ..> ApprovalRequest : emite / decide / expira
+ApprovalRequestRepository ..> Budget : atualiza atomicamente na decisao
+
+note bottom of ServiceOrder
+  SupplyItem e entidade interna ao agregado ServiceOrder.
+  awaitApproval(budgetId) registra OrderAwaitingApproval.
+  finish() registra ServiceOrderFinished (dispara e-mail de retirada).
+  cancel() registra ServiceOrderCancelled e revoga aprovacoes ativas.
+end note
+note bottom of ApprovalRequest
+  Armazena apenas o SHA-256 do token (tokenHash) e o hash da versao
+  combinada do orcamento + OS (budgetVersion) para impedir aprovacao
+  de orcamento alterado apos emissao do link.
+end note
+@enduml

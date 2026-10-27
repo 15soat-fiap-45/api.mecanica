@@ -240,6 +240,7 @@ CREATE TABLE os_status_historico (
             'FINALIZADA',
             'ENTREGUE'
         )),
+    valor        BIGINT CHECK (valor IS NULL OR valor >= 0),
     data_hora    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     usuario_id   BIGINT,
     observacao   TEXT,
@@ -251,3 +252,4 @@ CREATE TABLE os_status_historico (
         FOREIGN KEY (usuario_id)
         REFERENCES usuario(usuario_id)
 );
+

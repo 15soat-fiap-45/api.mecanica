@@ -1,36 +1,76 @@
-@startuml Fluxo: Casos de Uso de Ordem e Estoque
-!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Sequence.puml
+@startuml service_order_budget_approval
+title Fluxo dinamico complementar - solicitacao e decisao de aprovacao de orcamento
 autonumber
 
-participant Caller as "Chamador interno"
-participant UseCase as "Service Order use case"
-participant OrderRepo as "ServiceOrderRepository"
-participant Bus as "InMemoryEventBus"
-participant StockHandler as "Stock handler"
-participant StockRepo as "PartSupply / Reservation repository"
+actor "Operador Autenticado" as Operator
+actor "Cliente do Veiculo" as Customer
+participant "Fastify / Zod" as HTTP
+participant AwaitBudgetApproval as AwaitUC
+participant DrizzleServiceCatalog as Catalog
+participant DrizzleServiceOrderRepository as OrderRepo
+participant InMemoryEventBus as Bus
+participant SendBudgetApprovalEmail as EmailHandler
+participant DrizzleApprovalRequestRepository as ApprovalRepo
+participant SmtpEmailSender as Mailer
+participant DecideBudgetApproval as DecideUC
+participant MoveServiceOrderToApproved as ApproveHandler
+database "PostgreSQL" as DB
 
-Caller -> UseCase: execute(...)
-UseCase -> OrderRepo: find/save ServiceOrder ou Budget
-OrderRepo --> UseCase: agregado (fake/implementação injetada)
-UseCase -> Bus: publish evento de domínio
+== 1. Envio da OS para Aprovacao de Orcamento ==
+Operator -> HTTP: POST /service-orders/:id/awaiting-approval (Bearer JWT)
+HTTP -> AwaitUC: execute({ serviceOrderId })
+AwaitUC -> OrderRepo: findById(serviceOrderId)
+OrderRepo -> DB: SELECT orders LEFT JOIN supply_items
+DB --> OrderRepo: ServiceOrder (PENDING)
+AwaitUC -> Catalog: forOrder(serviceOrderId)
+Catalog -> DB: SELECT order_services, service_parts
+DB --> Catalog: servicos atribuidos
+AwaitUC -> AwaitUC: cria Budget (soma valueCents) e chama order.awaitApproval(budget.id)
+AwaitUC -> OrderRepo: save(order, budget)
+OrderRepo -> DB: TX: UPDATE orders (AWAITING_APPROVAL), INSERT budgets (PENDING), INSERT order_status_history
+DB --> OrderRepo: COMMIT
+AwaitUC -> Bus: publish([OrderAwaitingApproval])
+Bus -> EmailHandler: handle(OrderAwaitingApproval)
+EmailHandler -> ApprovalRepo: issue(ApprovalRequest com tokenHash e budgetVersion)
+ApprovalRepo -> DB: TX: revoga anteriores e INSERT approval_requests
+EmailHandler -> Mailer: send(e-mail HTML com /orcamento/:token?acao=aprovar|recusar)
+EmailHandler -> ApprovalRepo: markSent(request.id)
+Bus --> AwaitUC: publish concluido
+AwaitUC --> HTTP: { status: "AWAITING_APPROVAL" }
+HTTP --> Operator: HTTP 200
 
-alt additional-supplies-included
-    Bus -> StockHandler: CheckAvailability
-    StockHandler -> StockRepo: reserva insumos disponíveis
-else service-order.finished
-    Bus -> StockHandler: WriteOffReservedSupplies
-    StockHandler -> StockRepo: confirma e consome reservas
-else service-order.cancelled
-    Bus -> StockHandler: ReleaseReservedSupplies
-    StockHandler -> StockRepo: cancela reservas e devolve quantidade
-else service-order.supply-used
-    Bus -> StockHandler: ConsumeUsedSupply
-    StockHandler -> StockRepo: consome reserva da peça utilizada
+== 2. Decisao do Cliente via Token ==
+Customer -> HTTP: POST /budget-approvals/decide { token, decision, rejectionReason? }
+HTTP -> DecideUC: execute(input)
+DecideUC -> ApprovalRepo: findByTokenHash(sha256(token))
+ApprovalRepo -> DB: SELECT approval_requests
+DB --> ApprovalRepo: ApprovalRequest ativo
+DecideUC -> OrderRepo: findById(orderId) + BudgetRepository.findById(budgetId)
+DecideUC -> DecideUC: valida AWAITING_APPROVAL, budgetVersion, request.decide() e budget.approve()|reject()
+DecideUC -> ApprovalRepo: decide(request, budget, order.version)
+
+alt decision == "approved"
+  ApprovalRepo -> DB: TX: SELECT orders FOR UPDATE, UPDATE approval_requests (used_at), UPDATE budgets (APPROVED)
+  DB --> ApprovalRepo: COMMIT
+  DecideUC -> Bus: publish([BudgetApproved])
+  Bus -> ApproveHandler: handle(BudgetApproved)
+  ApproveHandler -> OrderRepo: findById(serviceOrderId)
+  ApproveHandler -> ApproveHandler: order.approve()
+  ApproveHandler -> OrderRepo: save(order)
+  OrderRepo -> DB: TX: UPDATE orders (APPROVED), INSERT order_status_history
+  DB --> OrderRepo: COMMIT
+else decision == "rejected"
+  ApprovalRepo -> DB: TX: UPDATE approval_requests, UPDATE budgets (REJECTED), UPDATE orders (REJECTED), INSERT order_status_history
+  DB --> ApprovalRepo: COMMIT
 end
 
-note over Caller,StockRepo
-    Não existe endpoint HTTP de ordem de serviço ou estoque no estado atual.
-    O composition-root conecta os handlers ao Event Bus em memória.
-    Repositórios concretos PostgreSQL desses contextos ainda não foram identificados.
+DecideUC --> HTTP: { status: "decided", decision }
+HTTP --> Customer: HTTP 200
+
+note over ApprovalRepo,OrderRepo
+  Se o mesmo token ja decidido receber novamente a mesma decision,
+  DecideBudgetApproval retorna { status: "already_decided", decision } (idempotencia).
+  Se o orcamento/OS tiver sido modificado (budgetVersion divergente),
+  retorna HTTP 400 (BudgetChangedError).
 end note
 @enduml

@@ -1,0 +1,53 @@
+@startuml service_order_c3_components
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Component.puml
+title C3 - Service Order - visao principal dos componentes no container API HTTP
+LAYOUT_LEFT_RIGHT()
+
+Person(operator, "Operador Autenticado", "Comandos e consultas de OS e catalogo")
+Person(customer, "Cliente do Veiculo", "Aprova ou recusa orcamento via token")
+
+Container_Boundary(api, "API HTTP - processo Node.js / Fastify") {
+  Component(http, "Adaptador HTTP Service Order", "Fastify / Zod", "registerServiceOrderRoutes: 14 rotas (11 autenticadas com RBAC via actorContext e 3 publicas de orcamento).")
+  Component(orders, "Casos de uso de OS", "TypeScript / Application", "RegisterServiceOrder, AddSupplyToServiceOrder, RegisterSupplyUsage, ChangeServiceOrderStatus (start/finish/deliver), CancelServiceOrder e consultas de OS/historico.")
+  Component(budget_uc, "Casos de uso de Orcamento", "TypeScript / Application", "AwaitBudgetApproval e DecideBudgetApproval (e ApproveBudget legado).")
+  Component(domain, "Dominio Service Order", "TypeScript / DDD", "Agregados ServiceOrder e Budget; entidade ApprovalRequest; SupplyItem, tokens, VOs de status e eventos.")
+  Component(ports, "Portas do Modulo", "Interfaces TypeScript", "ServiceOrderRepository, BudgetRepository, ApprovalRequestRepository, ServiceCatalog, VehicleContactLookup, ActorResolver e EmailSender.")
+  Component(db_adapters, "Adaptadores Drizzle Service Order", "Drizzle ORM / Infrastructure", "DrizzleServiceOrderRepository, DrizzleBudgetRepository, DrizzleApprovalRequestRepository e DrizzleServiceCatalog.")
+  Component(cross_adapters, "Adaptadores de Integracao Interna", "Infrastructure", "TokenActorResolver (integra com Auth) e RegistryVehicleContactLookup (integra com Registry).")
+  Component(email_adapter, "Adaptador de E-mail", "Nodemailer / Infrastructure", "SmtpEmailSender: envia e-mails HTML/texto via SMTP.")
+  Component(bus, "Event Bus compartilhado", "EventBus / InMemoryEventBus", "Entrega sequencial no mesmo processo e isola falhas dos handlers.")
+  Component(handlers, "Handlers de Eventos de OS", "TypeScript / Application", "MoveServiceOrderToApproved (budget-approved), SendBudgetApprovalEmail (awaiting-approval) e SendVehicleReadyEmail (finished).")
+  Component(expiry_job, "Job de Expiracao", "setInterval / Bootstrap", "Invoca approvalRequests.expirePending() a cada 60s para rejeitar aprovacoes vencidas.")
+}
+
+ContainerDb(database, "Banco da oficina", "PostgreSQL 17", "Schema service_order (8 tabelas) e tabelas de Auth/Registry")
+System_Ext(smtp, "Servidor SMTP", "Entrega de e-mails")
+
+Rel(operator, http, "Requisicoes autenticadas", "HTTP/JSON + JWT")
+Rel(customer, http, "GET /orcamento/:token e POST /budget-approvals/decide", "HTTP")
+Rel(http, ports, "Autentica/autoriza ator e acessa catalogo", "ActorResolver / ServiceCatalog")
+Rel(http, orders, "Executa comandos e consultas de OS", "execute(input)")
+Rel(http, budget_uc, "Solicita ou decide aprovacao de orcamento", "execute(input)")
+Rel(orders, domain, "Invoca regras de negocio e coleta eventos", "TypeScript")
+Rel(budget_uc, domain, "Cria/decide Budget e ApprovalRequest", "TypeScript")
+Rel(orders, ports, "Persiste OS, consulta contato e catalogo", "Ports")
+Rel(budget_uc, ports, "Persiste OS+Budget e decide ApprovalRequest", "Ports")
+Rel(orders, bus, "Publica eventos de OS", "publish(events)")
+Rel(budget_uc, bus, "Publica awaiting-approval e budget-approved", "publish(events)")
+Rel(bus, handlers, "Entrega eventos", "handle(event)")
+Rel(handlers, domain, "Aprova OS ou cria ApprovalRequest", "TypeScript")
+Rel(handlers, ports, "Persiste estado, busca contato e envia e-mail", "Ports")
+Rel(expiry_job, db_adapters, "Expira solicitacoes pendentes", "expirePending(now)")
+Rel(db_adapters, ports, "Implementam repositorios e catalogo", "TypeScript")
+Rel(cross_adapters, ports, "Implementam ActorResolver e VehicleContactLookup", "TypeScript")
+Rel(email_adapter, ports, "Implementa EmailSender", "TypeScript")
+Rel(db_adapters, database, "Transacoes SQL e controle otimista de versao", "SQL / pg")
+Rel(cross_adapters, database, "Consulta usuarios, veiculos e clientes via Auth/Registry", "SQL / pg")
+Rel(email_adapter, smtp, "Envia mensagem", "SMTP")
+
+note bottom of http
+  actorContext (AsyncLocalStorage) propaga o ID do usuario autenticado
+  ate os repositorios Drizzle para gravar changed_by em order_status_history.
+end note
+SHOW_LEGEND()
+@enduml

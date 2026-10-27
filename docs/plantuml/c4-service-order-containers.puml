@@ -1,0 +1,29 @@
+@startuml service_order_c2_containers
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+title C2 - Containers da API Oficina Mecanica - foco em Service Order
+LAYOUT_LEFT_RIGHT()
+SHOW_PERSON_OUTLINE()
+
+Person(operator, "Operador Autenticado", "Atendente, mecanico ou gerente")
+Person(customer, "Cliente do Veiculo", "Proprietario do veiculo")
+
+System_Boundary(workshop, "API Oficina Mecanica") {
+  Container(api, "API HTTP e Pagina de Orcamento", "Node.js / TypeScript / Fastify / Zod", "Executa Auth, Registry e Service Order no mesmo processo; serve public/orcamento.html; executa job periodico de expiracao de aprovacoes.")
+  ContainerDb(database, "Banco da oficina", "PostgreSQL 17", "Schema service_order: orders, supply_items, budgets, approval_requests, services, service_parts, order_services e order_status_history. Schema public: auth_users, cliente, veiculo e peca_insumo.")
+}
+
+System_Ext(smtp, "Servidor SMTP", "Infraestrutura de envio de e-mails")
+
+Rel(operator, api, "Envia comandos e consultas autenticadas de OS e catalogo", "HTTP/JSON + Bearer JWT")
+Rel(customer, api, "Visualiza pagina de orcamento e envia decisao via token", "HTTP/HTML e JSON")
+Rel(api, database, "Persiste e consulta agregados, catalogo e historico com controle transacional e otimista", "SQL via Drizzle ORM / pg")
+Rel(api, smtp, "Envia notificacoes de aprovacao de orcamento e veiculo pronto", "SMTP / Nodemailer")
+
+note bottom of api
+  Modulos, camadas, repositorios e InMemoryEventBus
+  sao componentes internos deste processo.
+  Um timer interno (setInterval 60s) executa expirePending()
+  para rejeitar orcamentos e OS com solicitacao de aprovacao expirada.
+end note
+SHOW_LEGEND()
+@enduml

@@ -9,6 +9,7 @@ import { SupplyUsed } from './events/supply-used.js';
 import { ServiceOrderFinished } from './events/service-order-finished.js';
 import { ServiceOrderCancelled } from './events/service-order-cancelled.js';
 import { InvalidServiceOrderStatusException } from './value-objects/service-order-status.js';
+import { OrderAwaitingApproval } from './events/order-awaiting-approval.js';
 
 export class SupplyItemAlreadyAddedException extends DomainException {
     constructor(message = 'Supply item with this part code already added') {
@@ -27,6 +28,7 @@ export class SupplyItemNotFoundException extends DomainException {
 export interface ServiceOrderProps {
     id?: ServiceOrderId | string | undefined;
     description: string;
+    vehicleId?: string | undefined;
     status?: ServiceOrderStatus | undefined;
     items?: SupplyItem[] | undefined;
     version?: number | undefined;
@@ -34,6 +36,7 @@ export interface ServiceOrderProps {
 
 export class ServiceOrder extends AggregateRoot<ServiceOrderId> {
     description: string;
+    readonly vehicleId: string | null;
     private _status: ServiceOrderStatus;
     private readonly _items: SupplyItem[];
 
@@ -43,11 +46,13 @@ export class ServiceOrder extends AggregateRoot<ServiceOrderId> {
         status: ServiceOrderStatus,
         items: SupplyItem[],
         version = 0,
+        vehicleId: string | null = null,
     ) {
         const serviceOrderId =
             id instanceof ServiceOrderId ? id : new ServiceOrderId(id);
         super(serviceOrderId, version);
         this.description = description;
+        this.vehicleId = vehicleId;
         this._status = status;
         this._items = items;
     }
@@ -71,6 +76,7 @@ export class ServiceOrder extends AggregateRoot<ServiceOrderId> {
             props.status ?? ServiceOrderStatus.pending(),
             props.items ?? [],
             props.version ?? 0,
+            props.vehicleId ?? null,
         );
     }
 
@@ -86,10 +92,7 @@ export class ServiceOrder extends AggregateRoot<ServiceOrderId> {
     }
 
     addSupply(partCode: string, quantity: number): void {
-        if (
-            this._status.value === 'COMPLETED' ||
-            this._status.value === 'CANCELLED'
-        ) {
+        if (this._status.isClosed()) {
             throw new InvalidServiceOrderStatusException(
                 `Cannot add supplies to a ${this._status.value} service order`,
             );
@@ -138,6 +141,20 @@ export class ServiceOrder extends AggregateRoot<ServiceOrderId> {
         this._status = this._status.transitionTo('APPROVED');
     }
 
+    reject(): void {
+        this._status = this._status.transitionTo('REJECTED');
+    }
+
+    awaitApproval(budgetId: string): void {
+        this._status = this._status.transitionTo('AWAITING_APPROVAL');
+        this.record(
+            new OrderAwaitingApproval({
+                aggregateId: this.id.value,
+                budgetId,
+            }),
+        );
+    }
+
     startExecution(): void {
         this._status = this._status.transitionTo('IN_PROGRESS');
     }
@@ -149,6 +166,10 @@ export class ServiceOrder extends AggregateRoot<ServiceOrderId> {
                 aggregateId: this.id.value,
             }),
         );
+    }
+
+    deliver(): void {
+        this._status = this._status.transitionTo('DELIVERED');
     }
 
     cancel(): void {
