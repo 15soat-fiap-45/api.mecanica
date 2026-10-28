@@ -30,9 +30,22 @@ export function buildApp(deps: AppDependencies = {}) {
     app.register(swagger, {
         openapi: {
             info: {
-                title: 'Mechanical Workshop API',
-                description: 'Registry and service order contexts API',
+                title: 'API Oficina Mecânica',
+                description:
+                    'API da oficina mecânica: cadastro de clientes e veículos, ordens de serviço e orçamentos, ' +
+                    'autenticação (Auth) e indicadores de Business Intelligence. ' +
+                    'Para rotas protegidas, faça login em /auth/login e informe o token no botão Authorize.',
                 version: '1.0.0',
+            },
+            components: {
+                securitySchemes: {
+                    bearerAuth: {
+                        type: 'http',
+                        scheme: 'bearer',
+                        bearerFormat: 'JWT',
+                        description: 'Token retornado por POST /auth/login.',
+                    },
+                },
             },
         },
         transform: jsonSchemaTransform,
