@@ -26,6 +26,8 @@ describe('RegisterVehicle Use Case', () => {
         existingId: Vehicle | null = null,
     ): VehicleRepository => ({
         save: vi.fn().mockResolvedValue(undefined),
+        update: vi.fn().mockResolvedValue(undefined),
+        delete: vi.fn().mockResolvedValue(undefined),
         findByPlate: vi.fn().mockResolvedValue(existingPlate),
         findById: vi.fn().mockResolvedValue(existingId),
     });
@@ -40,6 +42,8 @@ describe('RegisterVehicle Use Case', () => {
     ): CustomerRepository => ({
         findByCpfCnpj: vi.fn().mockResolvedValue(existing),
         save: vi.fn().mockResolvedValue(undefined),
+        update: vi.fn().mockResolvedValue(undefined),
+        delete: vi.fn().mockResolvedValue(undefined),
     });
 
     it('should register a new vehicle successfully and publish domain event', async () => {

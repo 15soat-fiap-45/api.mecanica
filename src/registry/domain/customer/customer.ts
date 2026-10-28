@@ -56,4 +56,10 @@ export class Customer extends AggregateRoot<CustomerId> {
         );
         return customer;
     }
+
+    update(name: string, email: Email, tel: Telephone): void {
+        this.name = name;
+        this.email = email;
+        this.tel = tel;
+    }
 }
