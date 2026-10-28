@@ -12,6 +12,8 @@ import { ApprovalRequest } from '../../domain/approval/approval-request.js';
 import type { ApprovalRequestRepository } from '../../domain/approval/approval-request.repository.js';
 import { actorContext } from '../../application/ports/actor-resolver.js';
 import { TokenActorResolver } from '../../../infra/token-actor-resolver.js';
+import type { EmailMessage } from '../../application/ports/email-sender.js';
+import { z } from 'zod';
 
 vi.mock('../../../infra/database/connection.js', () => ({
     db: {},
@@ -59,7 +61,7 @@ function setup(
         });
         history.set(orderId, list);
     };
-    const emails: { text: string }[] = [];
+    const emails: EmailMessage[] = [];
     const serviceOrderRepository: ServiceOrderRepository = {
         save: vi.fn(async (order: ServiceOrder, budget?: Budget) => {
             orders.set(order.id.value, order);
@@ -93,7 +95,7 @@ function setup(
     const busErrors = vi.fn();
     const bus = new InMemoryEventBus({ error: busErrors });
     const emailSender = {
-        send: vi.fn(async (email: { text: string }) => {
+        send: vi.fn(async (email: EmailMessage) => {
             emails.push(email);
         }),
     };
@@ -247,6 +249,65 @@ function setup(
 }
 
 describe('Service Order HTTP integration', () => {
+    it('notifies the customer to collect the vehicle only when the service is completed', async () => {
+        const { app, orders, emails, busErrors } = setup();
+        const order = ServiceOrder.create({
+            id: 'os-1',
+            description: 'Troca de óleo',
+            vehicleId: 'vehicle-1',
+        });
+        orders.set('os-1', order);
+
+        const prematureFinish = await app.inject({
+            method: 'POST',
+            url: '/service-orders/os-1/finish',
+        });
+        expect(prematureFinish.statusCode).toBe(400);
+        expect(emails).toHaveLength(0);
+
+        order.approve();
+        const started = await app.inject({
+            method: 'POST',
+            url: '/service-orders/os-1/start',
+        });
+        expect(started.statusCode).toBe(200);
+        expect(emails).toHaveLength(0);
+
+        const finished = await app.inject({
+            method: 'POST',
+            url: '/service-orders/os-1/finish',
+        });
+        expect(finished.statusCode).toBe(200);
+        expect(finished.json()).toEqual({
+            serviceOrderId: 'os-1',
+            status: 'COMPLETED',
+        });
+        expect(orders.get('os-1')?.status.value).toBe('COMPLETED');
+        expect(emails).toHaveLength(1);
+        expect(emails[0]).toEqual({
+            to: 'ana@example.com',
+            subject: 'Veículo pronto para retirada - OS os-1',
+            html: expect.stringContaining('Serviço finalizado!'),
+            text: expect.stringContaining('pronto para retirada na oficina'),
+        });
+        expect(emails[0]?.text).toContain('Troca de óleo');
+        expect(busErrors).not.toHaveBeenCalled();
+
+        const repeatedFinish = await app.inject({
+            method: 'POST',
+            url: '/service-orders/os-1/finish',
+        });
+        expect(repeatedFinish.statusCode).toBe(400);
+        expect(emails).toHaveLength(1);
+
+        const delivered = await app.inject({
+            method: 'POST',
+            url: '/service-orders/os-1/deliver',
+        });
+        expect(delivered.statusCode).toBe(200);
+        expect(emails).toHaveLength(1);
+    });
+
     it('creates an order and publishes the event after persistence', async () => {
         const { app, orders, events } = setup();
         const response = await app.inject({
@@ -576,6 +637,112 @@ describe('Service Order HTTP integration', () => {
         expect(
             (await app.inject({ method: 'GET', url: '/docs/json' })).statusCode,
         ).toBe(200);
+    });
+
+    it('publishes valid request and response examples for every JSON service order operation', async () => {
+        const { app } = setup();
+        const documentedSchemas: z.ZodType[] = [];
+        app.addHook('onRoute', ({ schema, method }) => {
+            if (
+                method === 'HEAD' ||
+                !schema?.tags?.some((tag) =>
+                    ['Service orders', 'Budgets'].includes(tag),
+                )
+            )
+                return;
+            for (const candidate of [
+                schema.body,
+                ...Object.values(schema.response ?? {}),
+            ]) {
+                if (candidate instanceof z.ZodType)
+                    documentedSchemas.push(candidate);
+            }
+        });
+        const response = await app.inject({ method: 'GET', url: '/docs/json' });
+        expect(response.statusCode).toBe(200);
+        type Media = {
+            example?: unknown;
+            examples?: Record<string, { value: unknown }>;
+            schema?: { example?: unknown };
+        };
+        const document = response.json<{
+            paths: Record<
+                string,
+                Record<
+                    string,
+                    {
+                        requestBody?: { content: Record<string, Media> };
+                        responses: Record<
+                            string,
+                            { content?: Record<string, Media> }
+                        >;
+                    }
+                >
+            >;
+        }>();
+        const examplesOf = (media: Media | undefined) =>
+            media?.examples
+                ? Object.values(media.examples).map(({ value }) => value)
+                : [media?.example ?? media?.schema?.example].filter(
+                      (value) => value !== undefined,
+                  );
+        let operations = 0;
+        let bodies = 0;
+        for (const [path, methods] of Object.entries(document.paths)) {
+            if (
+                !path.startsWith('/service-orders') &&
+                path !== '/budget-approvals/decide'
+            )
+                continue;
+            for (const operation of Object.values(methods)) {
+                operations++;
+                const success =
+                    operation.responses['201'] ?? operation.responses['200'];
+                expect(
+                    examplesOf(success?.content?.['application/json']).length,
+                    path,
+                ).toBeGreaterThan(0);
+                if (operation.requestBody) {
+                    bodies++;
+                    expect(
+                        examplesOf(
+                            operation.requestBody.content['application/json'],
+                        ).length,
+                        path,
+                    ).toBeGreaterThan(0);
+                }
+            }
+        }
+        expect(operations).toBe(11);
+        expect(bodies).toBe(4);
+        expect(documentedSchemas).toHaveLength(15);
+        for (const schema of documentedSchemas) {
+            const examples = schema.meta()?.examples;
+            if (!Array.isArray(examples)) {
+                throw new Error('Missing schema examples');
+            }
+            expect(examples.length).toBeGreaterThan(0);
+            for (const example of examples) {
+                expect(
+                    schema.safeParse(example).success,
+                    JSON.stringify(example),
+                ).toBe(true);
+            }
+        }
+        for (const [action, status] of [
+            ['start', 'IN_PROGRESS'],
+            ['finish', 'COMPLETED'],
+            ['deliver', 'DELIVERED'],
+        ]) {
+            const operation =
+                document.paths[`/service-orders/{serviceOrderId}/${action}`]
+                    ?.post;
+            expect(
+                examplesOf(
+                    operation?.responses['200']?.content?.['application/json'],
+                ),
+            ).toEqual([expect.objectContaining({ status })]);
+        }
     });
 
     it('serves the approval HTML page at /orcamento/:token and /orcamento', async () => {
