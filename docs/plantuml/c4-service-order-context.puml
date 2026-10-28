@@ -9,7 +9,7 @@ Person(customer, "Cliente do Veiculo", "Proprietario do veiculo que recebe notif
 System(workshop, "API Oficina Mecanica", "Gerencia ordens de servico, insumos, valores manuais, historico de status e aprovacao de orcamentos.")
 System_Ext(smtp, "Servidor SMTP", "Entrega e-mails transacionais de aprovacao de orcamento e de veiculo pronto para retirada.")
 
-Rel(operator, workshop, "Cadastra/consulta OS e historico, adiciona insumos, informa valor e altera status", "HTTP/JSON + Bearer JWT")
+Rel(operator, workshop, "Cadastra/consulta OS e historico, registra descricao da avaliacao, adiciona insumos, informa valor e altera status", "HTTP/JSON + Bearer JWT")
 Rel(workshop, smtp, "Envia e-mails de orcamento (com link tokenizado) e de conclusao da OS", "SMTP / Nodemailer")
 Rel(smtp, customer, "Entrega e-mails de notificacao", "E-mail HTML/Texto")
 Rel(customer, workshop, "Acessa pagina de orcamento (/orcamento/:token) e aprova ou recusa o orcamento (/budget-approvals/decide)", "HTTP/HTML e JSON")
@@ -17,6 +17,7 @@ Rel(customer, workshop, "Acessa pagina de orcamento (/orcamento/:token) e aprova
 note bottom of workshop
   Service Order e um modulo interno do monolito modular,
   integrado a Auth (validacao de token/permissoes) e Registry (contato do veiculo/cliente).
+  Mecanico e gerente podem revisar a descricao da OS durante a avaliacao (PENDING).
   Stock possui codigo de dominio/aplicacao, mas seus handlers nao sao ativados por src/index.ts.
   O PostgreSQL e detalhado como container no nivel C2.
 end note

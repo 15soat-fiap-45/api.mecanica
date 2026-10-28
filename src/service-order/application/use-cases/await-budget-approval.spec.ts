@@ -16,6 +16,9 @@ describe('AwaitBudgetApproval', () => {
         const saveOrder = vi.fn(async (savedOrder, budget) => {
             expect(savedOrder.status.value).toBe('AWAITING_APPROVAL');
             expect(savedOrder.valueCents).toBe(35000);
+            expect(savedOrder.description).toBe(
+                'Pastilhas desgastadas; substituir.',
+            );
             expect(budget?.totalCents).toBe(35000);
         });
         const saveBudget = vi.fn();
@@ -32,7 +35,11 @@ describe('AwaitBudgetApproval', () => {
                 save: saveBudget,
             },
             { publish, subscribe: vi.fn() },
-        ).execute({ serviceOrderId: 'os-1', valueCents: 35000 });
+        ).execute({
+            serviceOrderId: 'os-1',
+            valueCents: 35000,
+            description: '  Pastilhas desgastadas; substituir.  ',
+        });
         expect(publish).toHaveBeenCalledOnce();
     });
 
@@ -41,6 +48,7 @@ describe('AwaitBudgetApproval', () => {
         const saveOrder = vi.fn(async (savedOrder, budget) => {
             expect(savedOrder.status.value).toBe('AWAITING_APPROVAL');
             expect(savedOrder.valueCents).toBe(22000);
+            expect(savedOrder.description).toBe('Freios');
             expect(budget?.totalCents).toBe(22000);
         });
         const saveBudget = vi.fn();

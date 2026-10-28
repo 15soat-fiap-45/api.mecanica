@@ -7,9 +7,9 @@ Person(operator, "Operador Autenticado", "Comandos e consultas de OS")
 Person(customer, "Cliente do Veiculo", "Aprova ou recusa orcamento via token")
 
 Container_Boundary(api, "API HTTP - processo Node.js / Fastify") {
-  Component(http, "Adaptador HTTP Service Order", "Fastify / Zod", "registerServiceOrderRoutes: 11 rotas (8 autenticadas com RBAC via actorContext e 3 publicas de orcamento).")
-  Component(orders, "Casos de uso de OS", "TypeScript / Application", "RegisterServiceOrder, AddSupplyToServiceOrder, RegisterSupplyUsage, ChangeServiceOrderStatus (start/finish/deliver), CancelServiceOrder e consultas de OS/historico.")
-  Component(budget_uc, "Casos de uso de Orcamento", "TypeScript / Application", "AwaitBudgetApproval e DecideBudgetApproval (e ApproveBudget legado).")
+  Component(http, "Adaptador HTTP Service Order", "Fastify / Zod", "registerServiceOrderRoutes: 14 rotas (11 autenticadas via ActorResolver e 3 publicas de orcamento). PATCH de descricao exige OS_CONCLUIR.")
+  Component(orders, "Casos de uso de OS", "TypeScript / Application", "RegisterServiceOrder, UpdateServiceOrderDescription, AddSupplyToServiceOrder, RegisterSupplyUsage, ChangeServiceOrderStatus (start/finish/deliver), CancelServiceOrder e consultas de OS/historico.")
+  Component(budget_uc, "Casos de uso de Orcamento", "TypeScript / Application", "AwaitBudgetApproval (valueCents e description opcionais) e DecideBudgetApproval.")
   Component(domain, "Dominio Service Order", "TypeScript / DDD", "Agregados ServiceOrder e Budget; entidade ApprovalRequest; SupplyItem, tokens, VOs de status e eventos.")
   Component(ports, "Portas do Modulo", "Interfaces TypeScript", "ServiceOrderRepository, BudgetRepository, ApprovalRequestRepository, VehicleContactLookup, ActorResolver e EmailSender.")
   Component(db_adapters, "Adaptadores Drizzle Service Order", "Drizzle ORM / Infrastructure", "DrizzleServiceOrderRepository, DrizzleBudgetRepository e DrizzleApprovalRequestRepository.")
@@ -26,7 +26,7 @@ System_Ext(smtp, "Servidor SMTP", "Entrega de e-mails")
 Rel(operator, http, "Requisicoes autenticadas", "HTTP/JSON + JWT")
 Rel(customer, http, "GET /orcamento/:token e POST /budget-approvals/decide", "HTTP")
 Rel(http, ports, "Autentica/autoriza ator", "ActorResolver")
-Rel(http, orders, "Executa comandos e consultas de OS", "execute(input)")
+Rel(http, orders, "Salva descricao durante avaliacao; executa comandos e consultas de OS", "execute(input)")
 Rel(http, budget_uc, "Solicita ou decide aprovacao de orcamento", "execute(input)")
 Rel(orders, domain, "Invoca regras de negocio e coleta eventos", "TypeScript")
 Rel(budget_uc, domain, "Cria/decide Budget e ApprovalRequest", "TypeScript")
@@ -46,8 +46,13 @@ Rel(cross_adapters, database, "Consulta usuarios, veiculos e clientes via Auth/R
 Rel(email_adapter, smtp, "Envia mensagem", "SMTP")
 
 note bottom of http
+  PATCH /service-orders/:serviceOrderId/description:
+  mecanico e gerente (OS_CONCLUIR), somente com OS em PENDING.
+  POST /service-orders/:serviceOrderId/awaiting-approval
+  tambem aceita description, persistida junto da OS e do orcamento.
   actorContext (AsyncLocalStorage) propaga o ID do usuario autenticado
   ate os repositorios Drizzle para gravar changed_by em order_status_history.
+  Editar apenas a descricao nao cria uma nova transicao de status.
 end note
 SHOW_LEGEND()
 @enduml

@@ -3,40 +3,49 @@
 LAYOUT_LEFT_RIGHT()
 
 Container_Boundary(api, "Processo Fastify") {
-    Component(fastify, "Fastify", "HTTP framework", "Cria a aplicação e recebe requests")
-    Component(routes, "registry-routes", "Fastify + Zod", "POST/GET /customers e /vehicles")
-    Component(error_handler, "Error handler", "Fastify", "Mapeia validação, aplicação e domínio para HTTP")
-    Component(use_cases, "Registry use cases", "Application", "Register/Find Customer e Vehicle")
-    Component(aggregates, "Registry domain", "Domain", "Customer, Vehicle e value objects")
-    Component(repositories, "Registry repositories", "Ports", "CustomerRepository e VehicleRepository")
-    Component(drizzle_adapters, "Drizzle repositories", "Infrastructure", "Persistência de cliente e veículo")
-    Component(event_bus, "InMemoryEventBus", "Shared application", "Publica eventos de registro")
-    Component(swagger, "Swagger / Swagger UI", "Fastify plugins", "OpenAPI; UI em /docs")
-    Component(health, "Health check", "Fastify route", "GET /health executa SELECT 1")
+    Component(fastify, "Fastify / Bootstrap", "src/app.ts e src/index.ts", "Registra Auth, Registry, Service Order, Swagger, health check e error handler")
+    Component(auth, "Auth", "HTTP / Application / Domain", "Primeiro acesso, login JWT, usuarios e resolucao de atores/permissoes")
+    Component(registry, "Registry", "HTTP / Application / Domain", "Cadastro e consulta de clientes e veiculos")
+    Component(service_http, "Rotas Service Order", "Fastify / Zod", "Comandos e consultas autenticados de OS; pagina publica e decisao de orcamento")
+    Component(service_order, "Service Order", "Application / Domain", "UpdateServiceOrderDescription (PENDING), ciclo da OS, insumos, historico, AwaitBudgetApproval e DecideBudgetApproval")
+    Component(actor, "TokenActorResolver", "Infrastructure", "Autentica JWT via Auth e verifica RBAC; OS_CONCLUIR para descricao e envio de orcamento")
+    Component(contact, "RegistryVehicleContactLookup", "Infrastructure", "Consulta contato do cliente a partir do veiculo")
+    Component(drizzle, "Repositorios Drizzle", "Infrastructure", "Usuarios, clientes, veiculos, OS, orcamentos e solicitacoes de aprovacao")
+    Component(event_bus, "InMemoryEventBus", "Shared application", "Entrega sequencial no processo; publica eventos e isola falhas dos handlers")
+    Component(handlers, "Handlers Service Order", "Application", "MoveServiceOrderToApproved, SendBudgetApprovalEmail e SendVehicleReadyEmail")
+    Component(email, "SmtpEmailSender", "Nodemailer", "Envia e-mails de orcamento com descricao da OS e de veiculo pronto")
+    Component(expiry, "Job de Expiracao", "setInterval / Bootstrap", "Invoca expirePending() a cada 60s")
 }
-Container_Boundary(other_contexts, "Módulos internos sem adaptador HTTP") {
-    Component(service_order, "Service Order", "Domain + application", "OS, Budget e handlers de aprovação")
-    Component(stock, "Stock", "Domain + application", "PartSupply, reservas, consumo e baixa")
-}
-System_Ext(postgres, "PostgreSQL", "Tabelas mapeadas pelo Drizzle: cliente, veiculo e servico")
+ContainerDb(postgres, "Banco da oficina", "PostgreSQL 17", "Schemas public e service_order")
+System_Ext(smtp, "Servidor SMTP", "Entrega de e-mails")
 
-Rel(fastify, routes, "registra")
-Rel(fastify, error_handler, "configura")
-Rel(fastify, swagger, "registra")
-Rel(fastify, health, "registra")
-Rel(routes, use_cases, "executa")
-Rel(use_cases, aggregates, "cria e valida")
-Rel(use_cases, repositories, "usa")
-Rel(repositories, drizzle_adapters, "implementado por")
-Rel(drizzle_adapters, postgres, "SQL via Drizzle")
-Rel(use_cases, event_bus, "publica")
-Rel(event_bus, service_order, "eventos de OS/orçamento")
-Rel(event_bus, stock, "eventos de reservas/consumo")
-Rel(health, postgres, "SELECT 1")
+Rel(fastify, auth, "Registra controller")
+Rel(fastify, registry, "Registra rotas")
+Rel(fastify, service_http, "Registra rotas")
+Rel(fastify, expiry, "Inicia e encerra timer")
+Rel(service_http, actor, "Autentica e autoriza")
+Rel(actor, auth, "Resolve ator e permissoes")
+Rel(service_http, service_order, "Executa casos de uso")
+Rel(service_order, contact, "Valida veiculo e consulta contato")
+Rel(contact, registry, "Consulta veiculo e cliente")
+Rel(auth, drizzle, "Persiste usuarios")
+Rel(registry, drizzle, "Persiste clientes e veiculos")
+Rel(service_order, drizzle, "Persiste e consulta agregados e historico")
+Rel(service_order, event_bus, "Publica eventos de OS/orcamento")
+Rel(registry, event_bus, "Publica eventos de cadastro")
+Rel(event_bus, handlers, "Entrega eventos")
+Rel(handlers, drizzle, "Busca e atualiza OS/orcamento/aprovacao")
+Rel(handlers, contact, "Consulta destinatario")
+Rel(handlers, email, "Envia notificacao")
+Rel(expiry, drizzle, "Expira aprovacoes pendentes")
+Rel(drizzle, postgres, "SQL via Drizzle / pg")
+Rel(email, smtp, "Envia mensagem", "SMTP")
 
-note right of other_contexts
-    O bootstrap HTTP instancia somente o Registry.
-    OS e Stock são compostos por contratos de repositório.
+note bottom of service_order
+    A descricao da avaliacao substitui orders.description enquanto PENDING.
+    A edicao isolada nao publica evento nem altera o status.
+    Stock permanece sem handlers ativados no bootstrap atual.
+    O detalhamento do modulo esta em c4-service-order-components.puml.
 end note
 SHOW_LEGEND()
 @enduml

@@ -7,12 +7,12 @@ Os diagramas desta pasta descrevem o estado confirmado no código atual. A imple
 - `c4-context.puml` e `c4-service-order-context.puml`: contexto da API e integrações (PostgreSQL e SMTP).
 - `c4-containers.puml` e `c4-service-order-containers.puml`: processo Fastify, aplicação, domínio, Event Bus, SMTP e persistência.
 - `c4-components.puml` e `c4-service-order-components.puml`: componentes efetivamente usados pelo bootstrap HTTP.
-- `c4-service-order-code.puml`: agregados, entidades, value objects e contratos de repositório de `service-order`.
+- `c4-service-order-code.puml`: avaliação da OS, agregados, entidades, value objects e contratos de repositório de `service-order`.
 - `database-er.puml`: tabelas do schema Drizzle atual (`public` e `service_order`).
 - `deployment.puml`: execução atual com processo Node.js e PostgreSQL.
 - `flows/client-registration.puml`: fluxo real de `POST /customers`.
 - `flows/auth-service.puml`: pré-cadastro e login registrados pelo controller Auth.
-- `flows/service-order.puml`: fluxo de solicitação de aprovação de orçamento por e-mail/token e decisão pelo cliente.
+- `flows/service-order.puml`: registro/revisão da descrição durante a avaliação, envio do orçamento por e-mail/token e decisão pelo cliente.
 - `flows/states.puml`: estados implementados para OS, orçamento, reserva e estoque.
 
 ## Rotas de Service Order
@@ -20,6 +20,7 @@ Os diagramas desta pasta descrevem o estado confirmado no código atual. A imple
 - Autenticadas via Bearer JWT + RBAC (`TokenActorResolver`):
   - `POST /service-orders` (`OS_CRIAR`)
   - `GET /service-orders/:serviceOrderId` (autenticado)
+  - `PATCH /service-orders/:serviceOrderId/description` (`OS_CONCLUIR`, somente `PENDING`)
   - `GET /service-orders/:serviceOrderId/history` (autenticado)
   - `POST /service-orders/:serviceOrderId/supplies` (`ESTOQUE_BAIXAR`)
   - `POST /service-orders/:serviceOrderId/supplies/:partCode/usage` (`ESTOQUE_BAIXAR`)
@@ -31,6 +32,12 @@ Os diagramas desta pasta descrevem o estado confirmado no código atual. A imple
 - Públicas (fluxo de aprovação do cliente):
   - `POST /budget-approvals/decide`
   - `GET /orcamento/:token` e `GET /orcamento`
+
+### Descrição da avaliação
+
+Mecânico e gerente podem registrar e revisar `description` na própria OS durante a avaliação (`PENDING`). `UpdateServiceOrderDescription` chama `ServiceOrder.updateDescription()` e salva pelo `ServiceOrderRepository`, reutilizando `service_order.orders.description`. O texto substitui a descrição anterior, tem espaços das extremidades removidos e não pode ficar vazio. A edição isolada mantém o status e não cria uma nova entrada no histórico de fases.
+
+`AwaitBudgetApproval` também aceita `description` opcional junto de `valueCents`; os dados da OS e o orçamento são persistidos na mesma transação antes da notificação. Omitir a descrição preserva o texto anterior. Após o envio para aprovação, a edição fica bloqueada. A descrição aparece na consulta da OS e no e-mail do orçamento; a página HTML de aprovação apenas confirma a decisão. O hash `budgetVersion` considera a descrição, o valor e os itens da OS.
 
 ## Banco
 

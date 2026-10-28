@@ -3,21 +3,23 @@
 LAYOUT_LEFT_RIGHT()
 SHOW_PERSON_OUTLINE()
 
-Person(api_client, "Consumidor HTTP", "Cliente da API, ferramenta de integracao ou operador")
-System(api, "API Oficina Mecanica", "Monolito modular em TypeScript com Fastify. Expõe health check, Swagger e o contexto Registry.")
-System_Ext(postgres, "PostgreSQL", "Banco usado pelo Fastify/Drizzle. O schema mapeado pela aplicacao contém cliente, veiculo e servico.")
+Person(operator, "Operador Autenticado", "Atendente, mecanico, estoquista ou gerente; acesso conforme JWT e permissoes RBAC")
+Person(customer, "Cliente do Veiculo", "Recebe o orcamento e confirma aprovacao ou recusa via token")
+System(api, "API Oficina Mecanica", "Monolito modular em TypeScript/Fastify: Auth, Registry e Service Order; avaliacao da OS, insumos, orcamento e historico.")
+System_Ext(smtp, "Servidor SMTP", "Entrega e-mails de orcamento e veiculo pronto para retirada")
 
-Rel(api_client, api, "HTTP/JSON", "GET /health, /docs\nPOST/GET /customers e /vehicles")
-Rel(api, postgres, "SQL", "SELECT/INSERT via Drizzle")
+Rel(operator, api, "Autentica, cadastra clientes/veiculos e gerencia OS; mecanico registra descricao na avaliacao", "HTTP/JSON + Bearer JWT")
+Rel(api, smtp, "Envia descricao da OS, valor e link de aprovacao; notifica conclusao", "SMTP / Nodemailer")
+Rel(smtp, customer, "Entrega notificacoes", "E-mail HTML/Texto")
+Rel(customer, api, "Acessa /orcamento/:token e confirma decisao em /budget-approvals/decide", "HTTP/HTML e JSON")
 
 note right of api
-    Contextos modelados no código:
-    - Registry: clientes e veículos
-    - Service Order: OS e orçamento
-    - Stock: peças, reservas e consumo
-
-    Apenas Registry está conectado às rotas HTTP
-    e aos repositórios Drizzle no bootstrap atual.
+    Auth, Registry e Service Order sao ativados por src/index.ts.
+    A descricao da OS pode ser revisada em PENDING
+    por mecanico ou gerente (OS_CONCLUIR).
+    Stock possui dominio/aplicacao, mas seus handlers
+    nao sao ativados pelo bootstrap atual.
+    PostgreSQL e detalhado no nivel de containers (C2).
 end note
 
 SHOW_LEGEND()

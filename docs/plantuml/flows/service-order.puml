@@ -1,10 +1,12 @@
 @startuml service_order_budget_approval
-title Fluxo dinamico complementar - solicitacao e decisao de aprovacao de orcamento
+title Fluxo dinamico complementar - avaliacao da OS e aprovacao de orcamento
 autonumber
 
-actor "Operador Autenticado" as Operator
+actor "Mecanico ou Gerente" as Operator
 actor "Cliente do Veiculo" as Customer
 participant "Fastify / Zod" as HTTP
+participant TokenActorResolver as Auth
+participant UpdateServiceOrderDescription as DescriptionUC
 participant AwaitBudgetApproval as AwaitUC
 participant DrizzleServiceOrderRepository as OrderRepo
 participant InMemoryEventBus as Bus
@@ -15,27 +17,58 @@ participant DecideBudgetApproval as DecideUC
 participant MoveServiceOrderToApproved as ApproveHandler
 database "PostgreSQL" as DB
 
-== 1. Envio da OS para Aprovacao de Orcamento ==
-Operator -> HTTP: POST /service-orders/:id/awaiting-approval { valueCents? } (Bearer JWT)
-HTTP -> AwaitUC: execute({ serviceOrderId, valueCents })
+== 1. Descricao durante a Avaliacao (opcional, pode ser revisada) ==
+Operator -> HTTP: PATCH /service-orders/:id/description { description } (Bearer JWT)
+HTTP -> Auth: authenticate(Authorization) e verificar OS_CONCLUIR
+Auth --> HTTP: ator autorizado (MECANICO ou GERENTE)
+HTTP -> DescriptionUC: execute({ serviceOrderId, description })
+DescriptionUC -> OrderRepo: findById(serviceOrderId)
+OrderRepo -> DB: SELECT orders LEFT JOIN supply_items
+DB --> OrderRepo: ServiceOrder (PENDING)
+OrderRepo --> DescriptionUC: order
+DescriptionUC -> DescriptionUC: order.updateDescription(description)\nvalida PENDING, remove espacos das extremidades e rejeita texto vazio
+DescriptionUC -> OrderRepo: save(order)
+OrderRepo -> DB: TX: persiste orders.description e incrementa version\nsem nova entrada de historico (status permanece PENDING)
+DB --> OrderRepo: COMMIT
+DescriptionUC --> HTTP: { serviceOrderId, description }
+HTTP --> Operator: HTTP 200
+
+note over HTTP,OrderRepo
+  Sem token/ator valido: HTTP 401; sem OS_CONCLUIR: HTTP 403.
+  OS inexistente: HTTP 404; descricao vazia ou OS fora de PENDING: HTTP 400.
+  Conflito de versao na persistencia: HTTP 409.
+end note
+
+== 2. Envio da OS para Aprovacao de Orcamento ==
+Operator -> HTTP: POST /service-orders/:id/awaiting-approval { valueCents?, description? } (Bearer JWT)
+HTTP -> Auth: authenticate(Authorization) e verificar OS_CONCLUIR
+Auth --> HTTP: ator autorizado
+HTTP -> AwaitUC: execute({ serviceOrderId, valueCents, description })
 AwaitUC -> OrderRepo: findById(serviceOrderId)
 OrderRepo -> DB: SELECT orders LEFT JOIN supply_items
 DB --> OrderRepo: ServiceOrder (PENDING)
-AwaitUC -> AwaitUC: atualiza order.setValueCents(valueCents) se informado, cria Budget(order.valueCents) e chama order.awaitApproval(budget.id)
+AwaitUC -> AwaitUC: order.setValueCents(valueCents) se informado e valida valor\norder.updateDescription(description) se informada\ncria Budget(order.valueCents) e chama order.awaitApproval(budget.id)
 AwaitUC -> OrderRepo: save(order, budget)
-OrderRepo -> DB: TX: UPDATE orders (AWAITING_APPROVAL, value_cents), INSERT budgets (PENDING), INSERT order_status_history
+OrderRepo -> DB: TX: persiste orders (AWAITING_APPROVAL, value_cents, description),\nbudgets (PENDING) e order_status_history
 DB --> OrderRepo: COMMIT
 AwaitUC -> Bus: publish([OrderAwaitingApproval])
 Bus -> EmailHandler: handle(OrderAwaitingApproval)
 EmailHandler -> ApprovalRepo: issue(ApprovalRequest com tokenHash e budgetVersion)
 ApprovalRepo -> DB: TX: revoga anteriores e INSERT approval_requests
-EmailHandler -> Mailer: send(e-mail HTML com /orcamento/:token?acao=aprovar|recusar)
+EmailHandler -> Mailer: send(e-mail HTML/texto com order.description, valor\ne /orcamento/:token?acao=aprovar|recusar)
 EmailHandler -> ApprovalRepo: markSent(request.id)
 Bus --> AwaitUC: publish concluido
 AwaitUC --> HTTP: { status: "AWAITING_APPROVAL" }
 HTTP --> Operator: HTTP 200
 
-== 2. Decisao do Cliente via Token ==
+note over AwaitUC,Mailer
+  description omitida preserva o texto salvo na avaliacao.
+  Apos o envio (AWAITING_APPROVAL), a edicao da descricao fica bloqueada.
+  O hash budgetVersion inclui a descricao, o valor e os itens da OS.
+  A pagina /orcamento/:token confirma a decisao; a descricao esta no e-mail.
+end note
+
+== 3. Decisao do Cliente via Token ==
 Customer -> HTTP: POST /budget-approvals/decide { token, decision, rejectionReason? }
 HTTP -> DecideUC: execute(input)
 DecideUC -> ApprovalRepo: findByTokenHash(sha256(token))

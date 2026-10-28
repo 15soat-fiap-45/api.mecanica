@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+    InvalidServiceOrderDescriptionException,
     InvalidServiceOrderValueException,
     ServiceOrder,
     SupplyItemAlreadyAddedException,
@@ -10,7 +11,10 @@ import {
     InvalidSupplyItemException,
     SupplyItemAlreadyUsedException,
 } from './supply-item.js';
-import { InvalidServiceOrderStatusException } from './value-objects/service-order-status.js';
+import {
+    InvalidServiceOrderStatusException,
+    ServiceOrderStatus,
+} from './value-objects/service-order-status.js';
 
 describe('ServiceOrder Aggregate Root', () => {
     const makeProps = (overrides = {}) => ({
@@ -44,6 +48,44 @@ describe('ServiceOrder Aggregate Root', () => {
         expect(events[0]?.aggregateId).toBe('os-1');
 
         expect(os.pullEvents()).toHaveLength(0);
+    });
+
+    it('updates and trims the description during evaluation', () => {
+        const os = ServiceOrder.create(makeProps());
+        os.updateDescription('  Pastilhas desgastadas.\nSubstituir o par.  ');
+        expect(os.description).toBe(
+            'Pastilhas desgastadas.\nSubstituir o par.',
+        );
+        expect(os.status.value).toBe('PENDING');
+    });
+
+    it('rejects a blank evaluation description without changing the order', () => {
+        const os = ServiceOrder.create(makeProps());
+        expect(() => os.updateDescription(' \n ')).toThrow(
+            InvalidServiceOrderDescriptionException,
+        );
+        expect(os.description).toBe(makeProps().description);
+    });
+
+    it.each([
+        'AWAITING_APPROVAL',
+        'APPROVED',
+        'REJECTED',
+        'IN_PROGRESS',
+        'PAUSED',
+        'COMPLETED',
+        'DELIVERED',
+        'CANCELLED',
+    ])('rejects description changes in %s', (status) => {
+        const os = ServiceOrder.create(
+            makeProps({
+                status: ServiceOrderStatus.create(status),
+            }),
+        );
+        expect(() => os.updateDescription('Novo diagnóstico')).toThrow(
+            InvalidServiceOrderStatusException,
+        );
+        expect(os.description).toBe(makeProps().description);
     });
 
     it('should add a supply item and record AdditionalSuppliesIncluded', () => {

@@ -210,6 +210,48 @@ export function registerServiceOrderRoutes(
         async (request) => useCases.findServiceOrder.execute(request.params),
     );
 
+    typedApp.patch(
+        '/service-orders/:serviceOrderId/description',
+        {
+            preValidation: requireAuth('OS_CONCLUIR'),
+            schema: {
+                tags: ['Service orders'],
+                summary:
+                    'Atualiza a descrição durante a avaliação da OS pendente',
+                params: orderParams,
+                body: z.object({ description: z.string().trim().min(1) }).meta({
+                    examples: [
+                        {
+                            description:
+                                'Pastilhas desgastadas; substituir o par dianteiro.',
+                        },
+                    ],
+                }),
+                response: {
+                    200: z
+                        .object({
+                            serviceOrderId: z.string(),
+                            description: z.string(),
+                        })
+                        .meta({
+                            examples: [
+                                {
+                                    serviceOrderId: exampleOrderId,
+                                    description:
+                                        'Pastilhas desgastadas; substituir o par dianteiro.',
+                                },
+                            ],
+                        }),
+                },
+            },
+        },
+        async (request) =>
+            useCases.updateServiceOrderDescription.execute({
+                ...request.params,
+                ...request.body,
+            }),
+    );
+
     typedApp.get(
         '/service-orders/:serviceOrderId/history',
         {
@@ -382,12 +424,22 @@ export function registerServiceOrderRoutes(
                 body: z
                     .object({
                         valueCents: valueCentsSchema.optional(),
+                        description: z.string().trim().min(1).optional(),
                     })
                     .nullish()
                     .describe(
-                        'Opcional quando a OS já possui um valor definido. O valor é informado em centavos.',
+                        'Permite informar a descrição da avaliação e o valor em centavos. Campos omitidos preservam os dados da OS.',
                     )
-                    .meta({ examples: [{ valueCents: 35000 }] }),
+                    .meta({
+                        examples: [
+                            { valueCents: 35000 },
+                            {
+                                valueCents: 35000,
+                                description:
+                                    'Pastilhas desgastadas; substituir o par dianteiro.',
+                            },
+                        ],
+                    }),
                 response: {
                     200: z
                         .object({
@@ -401,6 +453,7 @@ export function registerServiceOrderRoutes(
             useCases.awaitBudgetApproval.execute({
                 serviceOrderId: request.params.serviceOrderId,
                 valueCents: request.body?.valueCents,
+                description: request.body?.description,
             }),
     );
 

@@ -249,6 +249,134 @@ function setup(
 }
 
 describe('Service Order HTTP integration', () => {
+    it('lets a mechanic save and revise the description during evaluation, then emails it for approval', async () => {
+        const { app, orders, emails, serviceOrderRepository } = setup({
+            defaultAuthorization: 'Bearer jwt-mecanico',
+        });
+        orders.set(
+            'os-1',
+            ServiceOrder.create({
+                id: 'os-1',
+                description: 'Barulho nos freios',
+                vehicleId: 'vehicle-1',
+            }),
+        );
+        for (const description of [
+            'Pastilhas desgastadas.',
+            'Pastilhas e discos desgastados; substituir ambos.',
+        ]) {
+            const response = await app.inject({
+                method: 'PATCH',
+                url: '/service-orders/os-1/description',
+                payload: { description: `  ${description}  ` },
+            });
+            expect(response.statusCode).toBe(200);
+            expect(response.json()).toEqual({
+                serviceOrderId: 'os-1',
+                description,
+            });
+            expect(serviceOrderRepository.save).toHaveBeenLastCalledWith(
+                orders.get('os-1'),
+            );
+            const found = await app.inject({
+                method: 'GET',
+                url: '/service-orders/os-1',
+            });
+            expect(found.json()).toMatchObject({
+                description,
+                status: 'PENDING',
+            });
+        }
+        const response = await app.inject({
+            method: 'POST',
+            url: '/service-orders/os-1/awaiting-approval',
+            payload: { valueCents: 35000 },
+        });
+        expect(response.statusCode).toBe(200);
+        expect(emails[0]?.text).toContain(
+            'Pastilhas e discos desgastados; substituir ambos.',
+        );
+    });
+
+    it('lets a mechanic provide the description with the budget approval request', async () => {
+        const { app, orders, emails } = setup({
+            defaultAuthorization: 'Bearer jwt-mecanico',
+        });
+        orders.set(
+            'os-1',
+            ServiceOrder.create({
+                id: 'os-1',
+                description: 'Barulho',
+                vehicleId: 'vehicle-1',
+            }),
+        );
+        const response = await app.inject({
+            method: 'POST',
+            url: '/service-orders/os-1/awaiting-approval',
+            payload: {
+                valueCents: 35000,
+                description: '  Substituir pastilhas.  ',
+            },
+        });
+        expect(response.statusCode).toBe(200);
+        expect(orders.get('os-1')?.description).toBe('Substituir pastilhas.');
+        expect(emails[0]?.text).toContain('Substituir pastilhas.');
+        const edit = await app.inject({
+            method: 'PATCH',
+            url: '/service-orders/os-1/description',
+            payload: { description: 'Alteração após envio' },
+        });
+        expect(edit.statusCode).toBe(400);
+        expect(orders.get('os-1')?.description).toBe('Substituir pastilhas.');
+    });
+
+    it('rejects invalid evaluation descriptions without saving or sending a budget', async () => {
+        const { app, orders, serviceOrderRepository, emails, budgets } =
+            setup();
+        orders.set(
+            'os-1',
+            ServiceOrder.create({ id: 'os-1', description: 'Original' }),
+        );
+        for (const description of ['', ' \n ', null, 42]) {
+            for (const [method, url, extra] of [
+                ['PATCH', '/service-orders/os-1/description', {}],
+                [
+                    'POST',
+                    '/service-orders/os-1/awaiting-approval',
+                    { valueCents: 35000 },
+                ],
+            ] as const) {
+                const response = await app.inject({
+                    method,
+                    url,
+                    payload: { ...extra, description },
+                });
+                expect(response.statusCode).toBe(400);
+            }
+        }
+        const missingDescription = await app.inject({
+            method: 'PATCH',
+            url: '/service-orders/os-1/description',
+            payload: {},
+        });
+        expect(missingDescription.statusCode).toBe(400);
+        expect(serviceOrderRepository.save).not.toHaveBeenCalled();
+        expect(orders.get('os-1')?.description).toBe('Original');
+        expect(emails).toHaveLength(0);
+        expect(budgets.size).toBe(0);
+    });
+
+    it('returns 404 when updating the description of a missing order', async () => {
+        const { app, serviceOrderRepository } = setup();
+        const response = await app.inject({
+            method: 'PATCH',
+            url: '/service-orders/missing/description',
+            payload: { description: 'Diagnóstico' },
+        });
+        expect(response.statusCode).toBe(404);
+        expect(serviceOrderRepository.save).not.toHaveBeenCalled();
+    });
+
     it('notifies the customer to collect the vehicle only when the service is completed', async () => {
         const { app, orders, emails, busErrors } = setup();
         const order = ServiceOrder.create({
@@ -627,6 +755,7 @@ describe('Service Order HTTP integration', () => {
         expect(Object.keys(app.swagger().paths ?? {})).toEqual(
             expect.arrayContaining([
                 '/service-orders',
+                '/service-orders/{serviceOrderId}/description',
                 '/service-orders/{serviceOrderId}/supplies',
                 '/service-orders/{serviceOrderId}/supplies/{partCode}/usage',
                 '/service-orders/{serviceOrderId}/cancel',
@@ -713,9 +842,9 @@ describe('Service Order HTTP integration', () => {
                 }
             }
         }
-        expect(operations).toBe(11);
-        expect(bodies).toBe(4);
-        expect(documentedSchemas).toHaveLength(15);
+        expect(operations).toBe(12);
+        expect(bodies).toBe(5);
+        expect(documentedSchemas).toHaveLength(17);
         for (const schema of documentedSchemas) {
             const examples = schema.meta()?.examples;
             if (!Array.isArray(examples)) {
@@ -913,6 +1042,7 @@ describe('Service Order HTTP integration', () => {
 
         for (const [method, url] of [
             ['POST', '/service-orders'],
+            ['PATCH', '/service-orders/os-1/description'],
             ['GET', '/service-orders/os-1'],
             ['GET', '/service-orders/os-1/history'],
             ['POST', '/service-orders/os-1/supplies'],
@@ -949,6 +1079,8 @@ describe('Service Order HTTP integration', () => {
         );
 
         const forbiddenCases = [
+            ['PATCH', '/service-orders/os-1/description', 'jwt-atendente'],
+            ['PATCH', '/service-orders/os-1/description', 'jwt-estoquista'],
             ['POST', '/service-orders', 'jwt-mecanico'],
             ['POST', '/service-orders', 'jwt-estoquista'],
             ['POST', '/service-orders/os-1/cancel', 'jwt-mecanico'],

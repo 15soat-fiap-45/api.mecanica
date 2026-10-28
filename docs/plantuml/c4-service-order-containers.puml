@@ -9,19 +9,22 @@ Person(customer, "Cliente do Veiculo", "Proprietario do veiculo")
 
 System_Boundary(workshop, "API Oficina Mecanica") {
   Container(api, "API HTTP e Pagina de Orcamento", "Node.js / TypeScript / Fastify / Zod", "Executa Auth, Registry e Service Order no mesmo processo; serve public/orcamento.html; executa job periodico de expiracao de aprovacoes.")
-  ContainerDb(database, "Banco da oficina", "PostgreSQL 17", "Schema service_order: orders, supply_items, budgets, approval_requests, services, service_parts, order_services e order_status_history. Schema public: auth_users, cliente, veiculo e peca_insumo.")
+  ContainerDb(database, "Banco da oficina", "PostgreSQL 17", "Schema service_order: orders, supply_items, budgets, approval_requests e order_status_history. Schema public: auth_users, cliente e veiculo.")
 }
 
 System_Ext(smtp, "Servidor SMTP", "Infraestrutura de envio de e-mails")
 
-Rel(operator, api, "Envia comandos e consultas autenticadas de OS e catalogo", "HTTP/JSON + Bearer JWT")
+Rel(operator, api, "Avalia OS, registra descricao e valor, inclui insumos e consulta historico", "HTTP/JSON + Bearer JWT")
 Rel(customer, api, "Visualiza pagina de orcamento e envia decisao via token", "HTTP/HTML e JSON")
-Rel(api, database, "Persiste e consulta agregados, catalogo e historico com controle transacional e otimista", "SQL via Drizzle ORM / pg")
+Rel(api, database, "Persiste descricao da OS, agregados e historico com controle transacional e otimista", "SQL via Drizzle ORM / pg")
 Rel(api, smtp, "Envia notificacoes de aprovacao de orcamento e veiculo pronto", "SMTP / Nodemailer")
 
 note bottom of api
   Modulos, camadas, repositorios e InMemoryEventBus
   sao componentes internos deste processo.
+  A descricao da avaliacao usa a coluna existente orders.description.
+  Ela aparece na consulta da OS e no e-mail do orcamento.
+  A pagina HTML de aprovacao apenas confirma a decisao do cliente.
   Um timer interno (setInterval 60s) executa expirePending()
   para rejeitar orcamentos e OS com solicitacao de aprovacao expirada.
 end note

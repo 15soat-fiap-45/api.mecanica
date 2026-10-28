@@ -69,7 +69,7 @@ As regras estão em `src/auth/domain/services/access-policy.ts`:
 Nas rotas de Ordem de Serviço, a proteção é realizada de forma desacoplada pela porta `ActorResolver` (`src/service-order/application/ports/actor-resolver.ts`) e seu adaptador `TokenActorResolver` (`src/infra/token-actor-resolver.ts`):
 
 - `OS_CRIAR` (`ATENDENTE`, `GERENTE`): `POST /service-orders`, `POST /service-orders/:serviceOrderId/cancel` e `POST /service-orders/:serviceOrderId/deliver`.
-- `OS_CONCLUIR` (`MECANICO`, `GERENTE`): `POST /service-orders/:serviceOrderId/awaiting-approval`, `POST /service-orders/:serviceOrderId/start` e `POST /service-orders/:serviceOrderId/finish`.
+- `OS_CONCLUIR` (`MECANICO`, `GERENTE`): `PATCH /service-orders/:serviceOrderId/description`, `POST /service-orders/:serviceOrderId/awaiting-approval`, `POST /service-orders/:serviceOrderId/start` e `POST /service-orders/:serviceOrderId/finish`. A descrição pode ser atualizada apenas enquanto a OS está em `PENDING` (avaliação), inclusive no envio para aprovação pelo campo opcional `description`.
 - `ESTOQUE_BAIXAR` (`MECANICO`, `ESTOQUISTA`, `GERENTE`): `POST /service-orders/:serviceOrderId/supplies` e `POST /service-orders/:serviceOrderId/supplies/:partCode/usage`.
 - Qualquer usuário autenticado ativo (`ATENDENTE`, `MECANICO`, `ESTOQUISTA`, `GERENTE`): `GET /service-orders/:serviceOrderId` e `GET /service-orders/:serviceOrderId/history`.
 

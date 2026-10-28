@@ -3,32 +3,26 @@
 LAYOUT_LEFT_RIGHT()
 SHOW_PERSON_OUTLINE()
 
-Person(client, "Consumidor HTTP", "Chama a API por HTTP/JSON")
+Person(operator, "Operador Autenticado", "Usa Auth, Registry e Service Order conforme permissoes RBAC")
+Person(customer, "Cliente do Veiculo", "Confirma a decisao sobre o orcamento recebido por e-mail")
 
 System_Boundary(system, "API Oficina Mecanica") {
-    Container(api, "Processo da API", "Node.js / TypeScript / Fastify", "Servidor, Swagger, health check e error handler")
-    Container(registry_http, "Adaptador HTTP Registry", "Fastify + Zod", "POST/GET /customers e /vehicles")
-    Container(application, "Camada de aplicação", "Casos de uso", "Registry; e casos de uso de Service Order e Stock")
-    Container(domain, "Domínio modular", "DDD", "Registry, Service Order, Budget, Part Supply e Supply Reservation")
-    Container(event_bus, "Event Bus", "InMemoryEventBus", "Eventos no mesmo processo; sem durabilidade, retry ou DLQ")
-    Container(drizzle, "Persistência Registry", "Drizzle ORM", "Repositórios concretos de cliente e veículo")
+    Container(api, "Processo da API e Pagina de Orcamento", "Node.js / TypeScript / Fastify / Zod", "Auth, Registry e Service Order; Swagger, health check, public/orcamento.html e expiracao periodica de aprovacoes.")
+    ContainerDb(postgres, "Banco da oficina", "PostgreSQL 17", "public: auth_users, cliente e veiculo. service_order: orders, supply_items, budgets, approval_requests e order_status_history.")
 }
-System_Ext(postgres, "PostgreSQL", "Banco local/provisionado pelo Compose")
+System_Ext(smtp, "Servidor SMTP", "Entrega de notificacoes transacionais")
 
-Rel(client, registry_http, "HTTP/JSON")
-Rel(registry_http, application, "Valida e executa casos de uso")
-Rel(application, domain, "Cria agregados, VOs e eventos")
-Rel(application, drizzle, "Usa contratos de repositório")
-Rel(drizzle, postgres, "SQL")
-Rel(application, event_bus, "Publica eventos de domínio")
-Rel(event_bus, application, "Handlers internos de OS/Stock")
-Rel(api, registry_http, "Registra rotas")
-Rel(api, event_bus, "Cria Event Bus no bootstrap")
-Rel(api, postgres, "Health check SELECT 1")
+Rel(operator, api, "Autentica, cadastra/consulta e avalia OS; salva descricao e envia orcamento", "HTTP/JSON + Bearer JWT")
+Rel(customer, api, "Acessa pagina de confirmacao e aprova/recusa via token", "HTTP/HTML e JSON")
+Rel(api, postgres, "Persiste usuarios, clientes, veiculos e OS, incluindo description; transacoes e versao otimista", "SQL via Drizzle ORM / pg")
+Rel(api, smtp, "Envia descricao, valor e link do orcamento; notifica veiculo pronto", "SMTP / Nodemailer")
 
-note right of application
-    Service Order e Stock não possuem rotas HTTP
-    nem repositórios PostgreSQL concretos no estado atual.
+note bottom of api
+    Camadas, casos de uso, repositorios e InMemoryEventBus
+    sao componentes internos do mesmo processo.
+    UpdateServiceOrderDescription salva a avaliacao em PENDING;
+    AwaitBudgetApproval tambem aceita description opcional.
+    O timer de 60s expira solicitacoes pendentes de aprovacao.
 end note
 SHOW_LEGEND()
 @enduml
