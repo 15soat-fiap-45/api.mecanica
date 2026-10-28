@@ -10,6 +10,8 @@ import { ServiceOrderFinished } from './events/service-order-finished.js';
 import { ServiceOrderCancelled } from './events/service-order-cancelled.js';
 import { InvalidServiceOrderStatusException } from './value-objects/service-order-status.js';
 import { OrderAwaitingApproval } from './events/order-awaiting-approval.js';
+import { ServiceOrderExecutionStarted } from './events/service-order-execution-started.js';
+import { ServiceOrderDelivered } from './events/service-order-delivered.js';
 
 export class SupplyItemAlreadyAddedException extends DomainException {
     constructor(message = 'Supply item with this part code already added') {
@@ -198,6 +200,11 @@ export class ServiceOrder extends AggregateRoot<ServiceOrderId> {
 
     startExecution(): void {
         this._status = this._status.transitionTo('IN_PROGRESS');
+        this.record(
+            new ServiceOrderExecutionStarted({
+                aggregateId: this.id.value,
+            }),
+        );
     }
 
     finish(): void {
@@ -211,6 +218,11 @@ export class ServiceOrder extends AggregateRoot<ServiceOrderId> {
 
     deliver(): void {
         this._status = this._status.transitionTo('DELIVERED');
+        this.record(
+            new ServiceOrderDelivered({
+                aggregateId: this.id.value,
+            }),
+        );
     }
 
     cancel(): void {

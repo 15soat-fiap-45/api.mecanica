@@ -4,20 +4,19 @@ LAYOUT_LEFT_RIGHT()
 SHOW_PERSON_OUTLINE()
 
 Person(api_client, "Consumidor HTTP", "Cliente da API, ferramenta de integracao ou operador")
-System(api, "API Oficina Mecanica", "Monolito modular em TypeScript com Fastify. Expõe health check, Swagger e o contexto Registry.")
-System_Ext(postgres, "PostgreSQL", "Banco usado pelo Fastify/Drizzle. O schema mapeado pela aplicacao contém cliente, veiculo e servico.")
+System(api, "API Oficina Mecanica", "Monolito modular em TypeScript com Fastify. Expõe health check, Swagger, Registry, Auth, Service Order e Business Intelligence.")
+System_Ext(postgres, "PostgreSQL", "Banco usado pelo Fastify/Drizzle. Schemas: public, service_order e business_intelligence.")
 
-Rel(api_client, api, "HTTP/JSON", "GET /health, /docs\nPOST/GET /customers e /vehicles")
-Rel(api, postgres, "SQL", "SELECT/INSERT via Drizzle")
+Rel(api_client, api, "HTTP/JSON", "GET /health, /docs\nAuth (/auth/*, /users)\nRegistry (/customers, /vehicles)\nService Order (/service-orders/*, /budget-approvals/*)\nBI (/bi/*)")
+Rel(api, postgres, "SQL", "Drizzle ORM")
 
 note right of api
-    Contextos modelados no código:
+    Contextos conectados às rotas HTTP:
     - Registry: clientes e veículos
-    - Service Order: OS e orçamento
-    - Stock: peças, reservas e consumo
-
-    Apenas Registry está conectado às rotas HTTP
-    e aos repositórios Drizzle no bootstrap atual.
+    - Auth: login JWT, primeiro acesso e pré-cadastro
+    - Service Order: O.S., orçamentos, aprovações e histórico
+    - Business Intelligence: lead time de O.S. e reposição
+    - Stock: regras de estoque consumidas via EventBus
 end note
 
 SHOW_LEGEND()

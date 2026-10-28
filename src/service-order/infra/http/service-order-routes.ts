@@ -29,11 +29,7 @@ function getApprovalHtml(): string {
 
 const idSchema = z.string().trim().min(1).max(36);
 const orderParams = z.object({ serviceOrderId: idSchema });
-const valueCentsSchema = z
-    .number()
-    .int()
-    .min(0)
-    .max(Number.MAX_SAFE_INTEGER);
+const valueCentsSchema = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER);
 const partCodeSchema = z
     .string()
     .trim()
