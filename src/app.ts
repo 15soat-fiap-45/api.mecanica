@@ -11,12 +11,15 @@ import type { RegistryUseCases } from './registry/composition-root.js';
 import type { AuthController } from './auth/infra/http/auth-controller.js';
 import type { ServiceOrderUseCases } from './service-order/composition-root.js';
 import { registerServiceOrderRoutes } from './service-order/infra/http/service-order-routes.js';
+import type { BusinessIntelligenceUseCases } from './business-intelligence/composition-root.js';
+import { registerBusinessIntelligenceRoutes } from './business-intelligence/infra/http/bi-routes.js';
 import { jsonSchemaTransform } from 'fastify-type-provider-zod';
 
 export interface AppDependencies {
     registry?: RegistryUseCases;
     auth?: AuthController;
     serviceOrder?: ServiceOrderUseCases;
+    businessIntelligence?: BusinessIntelligenceUseCases;
 }
 
 export function buildApp(deps: AppDependencies = {}) {
@@ -106,6 +109,15 @@ export function buildApp(deps: AppDependencies = {}) {
     if (deps.serviceOrder) {
         app.register(async (serviceOrderApp) => {
             registerServiceOrderRoutes(serviceOrderApp, deps.serviceOrder!);
+        });
+    }
+
+    if (deps.businessIntelligence) {
+        app.register(async (biApp) => {
+            registerBusinessIntelligenceRoutes(
+                biApp,
+                deps.businessIntelligence!,
+            );
         });
     }
 

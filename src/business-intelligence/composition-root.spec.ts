@@ -6,6 +6,10 @@ import { UnitOfMeasure } from '../stock/domain/part-supply/value-objects/unit-of
 import { ServiceOrder } from '../service-order/domain/service-order/service-order.js';
 import { ReorderPointRestockPolicy } from './domain/restock-cycle/restock-cycle-policy.js';
 import { InvalidLeadTimePeriodError } from './application/use-cases/get-service-order-lead-time.js';
+import type {
+    StockMovementRecordedContract,
+    StockUpdatedContract,
+} from './application/contracts/stock-events.js';
 import { businessIntelligenceCompositionRoot } from './composition-root.js';
 import { InMemoryRestockCycleRepository } from './infra/persistence/in-memory-restock-cycle-repository.js';
 import { InMemoryServiceOrderTimelineRepository } from './infra/persistence/in-memory-service-order-timeline-repository.js';
@@ -196,7 +200,7 @@ describe('Business Intelligence projections and use cases (via EventBus)', () =>
         // 2) EXIT to 2 (opens cycle at t=10)
         // 3) EXIT to 0 (already open: ignored)
         // 4) ENTRY to 10 at t=70 (closes cycle -> 60 min)
-        await bus.publish([
+        const stockUpdatedEvents: StockUpdatedContract[] = [
             {
                 eventId: 's1',
                 eventName: 'stock.stock-updated',
@@ -241,14 +245,15 @@ describe('Business Intelligence projections and use cases (via EventBus)', () =>
                 previousQuantity: 0,
                 currentQuantity: 10,
             },
-        ]);
+        ];
+        await bus.publish(stockUpdatedEvents);
 
         // Part B via proposed `stock.movement-recorded`:
         // 1) EXIT to 1 at t=20 (opens cycle)
         // 2) ENTRY with reason MANUAL at t=30 (ignored by policy)
         // 3) ENTRY with reason PURCHASE to 8 at t=50 (closes cycle -> 30 min)
         // 4) EXIT to 0 at t=80 (leaves a new open cycle)
-        await bus.publish([
+        const movementRecordedEvents: StockMovementRecordedContract[] = [
             {
                 eventId: 'm1',
                 eventName: 'stock.movement-recorded',
@@ -301,7 +306,8 @@ describe('Business Intelligence projections and use cases (via EventBus)', () =>
                 quantityBefore: 8,
                 quantityAfter: 0,
             },
-        ]);
+        ];
+        await bus.publish(movementRecordedEvents);
 
         const report = await bi.getRestockLeadTime.execute({});
 
