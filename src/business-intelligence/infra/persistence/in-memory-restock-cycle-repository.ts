@@ -13,7 +13,10 @@ export class InMemoryRestockCycleRepository implements RestockCycleRepository {
     async findOpenByPartCode(partCode: string): Promise<RestockCycle | null> {
         const normalized = partCode.trim().toUpperCase();
         for (const snapshot of this.items.values()) {
-            if (snapshot.partCode === normalized && snapshot.closedAt === null) {
+            if (
+                snapshot.partCode === normalized &&
+                snapshot.closedAt === null
+            ) {
                 return RestockCycle.restore(snapshot);
             }
         }

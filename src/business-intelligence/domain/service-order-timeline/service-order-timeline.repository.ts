@@ -11,7 +11,5 @@ export interface ServiceOrderTimelineRepository {
     /** Timelines whose `finishedAt` falls within the period (inclusive). */
     findFinishedBetween(period: PeriodFilter): Promise<ServiceOrderTimeline[]>;
     /** Timelines whose `deliveredAt` falls within the period (inclusive). */
-    findDeliveredBetween(
-        period: PeriodFilter,
-    ): Promise<ServiceOrderTimeline[]>;
+    findDeliveredBetween(period: PeriodFilter): Promise<ServiceOrderTimeline[]>;
 }

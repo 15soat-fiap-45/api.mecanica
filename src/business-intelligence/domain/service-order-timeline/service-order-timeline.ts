@@ -37,7 +37,9 @@ export class ServiceOrderTimeline {
         });
     }
 
-    static restore(snapshot: ServiceOrderTimelineSnapshot): ServiceOrderTimeline {
+    static restore(
+        snapshot: ServiceOrderTimelineSnapshot,
+    ): ServiceOrderTimeline {
         return new ServiceOrderTimeline({ ...snapshot });
     }
 

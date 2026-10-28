@@ -66,7 +66,10 @@ export class DrizzleRestockCycleRepository implements RestockCycleRepository {
         const conditions: SQL[] = [isNotNull(biRestockCycles.closedAt)];
         if (filter.partCode) {
             conditions.push(
-                eq(biRestockCycles.partCode, filter.partCode.trim().toUpperCase()),
+                eq(
+                    biRestockCycles.partCode,
+                    filter.partCode.trim().toUpperCase(),
+                ),
             );
         }
         if (filter.from) {
@@ -88,7 +91,10 @@ export class DrizzleRestockCycleRepository implements RestockCycleRepository {
         const conditions: SQL[] = [isNull(biRestockCycles.closedAt)];
         if (filter?.partCode) {
             conditions.push(
-                eq(biRestockCycles.partCode, filter.partCode.trim().toUpperCase()),
+                eq(
+                    biRestockCycles.partCode,
+                    filter.partCode.trim().toUpperCase(),
+                ),
             );
         }
         const rows = await this.database

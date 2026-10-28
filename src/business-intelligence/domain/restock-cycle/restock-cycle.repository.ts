@@ -12,5 +12,7 @@ export interface RestockCycleRepository {
     /** Closed cycles whose `closedAt` falls within `[from, to]` (inclusive). */
     findClosedBetween(filter: RestockCycleFilter): Promise<RestockCycle[]>;
     /** Currently open cycles (optionally filtered by `partCode`). */
-    findOpen(filter?: { partCode?: string | undefined }): Promise<RestockCycle[]>;
+    findOpen(filter?: {
+        partCode?: string | undefined;
+    }): Promise<RestockCycle[]>;
 }

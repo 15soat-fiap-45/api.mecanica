@@ -37,13 +37,11 @@ export interface GetServiceOrderLeadTimeOutput {
 const collectNumbers = (values: (number | null)[]): number[] =>
     values.filter((value): value is number => value !== null);
 
-export class GetServiceOrderLeadTime
-    implements
-        UseCase<GetServiceOrderLeadTimeInput, GetServiceOrderLeadTimeOutput>
-{
-    constructor(
-        private readonly timelines: ServiceOrderTimelineRepository,
-    ) {}
+export class GetServiceOrderLeadTime implements UseCase<
+    GetServiceOrderLeadTimeInput,
+    GetServiceOrderLeadTimeOutput
+> {
+    constructor(private readonly timelines: ServiceOrderTimelineRepository) {}
 
     async execute(
         input: GetServiceOrderLeadTimeInput = {},

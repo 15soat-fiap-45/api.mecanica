@@ -9,7 +9,9 @@ import type { StockMovement } from './stock-movement.js';
 const at = (minutes: number) => new Date(Date.UTC(2026, 0, 1, 0, minutes));
 const MINUTE = 60_000;
 
-const makeMovement = (overrides: Partial<StockMovement> = {}): StockMovement => ({
+const makeMovement = (
+    overrides: Partial<StockMovement> = {},
+): StockMovement => ({
     partCode: 'PAST-FREIO-01',
     type: 'EXIT',
     quantity: 2,

@@ -6,12 +6,13 @@ Backend do Tech Challenge — FIAP, Fase 1, voltado à gestão de uma oficina me
 
 ## Contexto e objetivo
 
-O sistema modela quatro contextos principais:
+O sistema modela cinco contextos principais:
 
 - **Registry:** cadastro e consulta de clientes e veículos.
 - **Service Order:** ordens de serviço, orçamento, itens e eventos de domínio.
 - **Stock:** peças/insumos, entradas, reservas, consumo e baixa de estoque.
 - **Auth:** usuários, primeiro acesso, login JWT, papéis e pré-cadastro por gerente.
+- **Business Intelligence:** projeções orientadas a eventos para tempo médio de O.S. (lead time total, execução e entrega) e tempo médio de reposição de estoque (ver [`docs/business-intelligence.md`](docs/business-intelligence.md)).
 
 O documento oficial `Fase 1 - Tech Challenge.pdf` não está presente na árvore analisada; os requisitos acadêmicos considerados aqui são os fornecidos na especificação da tarefa.
 
@@ -233,6 +234,8 @@ O Fastify registra Swagger e Swagger UI em `/docs`. A especificação OpenAPI é
 | `POST` | `/service-orders/:serviceOrderId/cancel`                   | Cancela OS                                                                             | Bearer JWT (`OS_CRIAR`)                          |
 | `POST` | `/budget-approvals/decide`                                 | Confirma aprovação ou recusa do orçamento por token                                    | Pública (link de uso único enviado por e-mail)   |
 | `GET`  | `/orcamento/:token` e `/orcamento`                         | Página web de aprovação/recusa do orçamento                                            | Pública                                          |
+| `GET`  | `/bi/service-orders/lead-time`                             | Consulta tempo médio de OS (total, execução e entrega)                                 | Bearer JWT (`BI_VISUALIZAR` — `GERENTE`)         |
+| `GET`  | `/bi/stock/restock-lead-time`                              | Consulta tempo médio de reposição de estoque (geral e por peça)                        | Bearer JWT (`BI_VISUALIZAR` — `GERENTE`)         |
 | `GET`  | `/docs`                                                    | Interface Swagger UI                                                                   | Não                                              |
 
 A validação de payload usa Zod; erros de validação retornam HTTP 400 e exceções de aplicação/domínio são convertidas pelo error handler central em `src/app.ts`.

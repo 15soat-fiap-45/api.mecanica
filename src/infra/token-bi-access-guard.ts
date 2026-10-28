@@ -6,13 +6,11 @@ import type {
     BiPermission,
 } from '../business-intelligence/application/ports/bi-access-guard.js';
 
-export type BiTokenVerificationResult =
-    | {
-          id: string;
-          role?: RoleValue | undefined;
-          permissions?: readonly BiPermission[] | undefined;
-      }
-    | null;
+export type BiTokenVerificationResult = {
+    id: string;
+    role?: RoleValue | undefined;
+    permissions?: readonly BiPermission[] | undefined;
+} | null;
 
 export type BiTokenVerifier =
     | { verify(token: string): Promise<BiTokenVerificationResult> }

@@ -18,9 +18,7 @@ import type {
  *   `service-order.registered`.
  */
 export class ProjectServiceOrderTimeline {
-    constructor(
-        private readonly timelines: ServiceOrderTimelineRepository,
-    ) {}
+    constructor(private readonly timelines: ServiceOrderTimelineRepository) {}
 
     async onRegistered(event: ServiceOrderRegisteredContract): Promise<void> {
         await this.update(event.aggregateId, (timeline) =>

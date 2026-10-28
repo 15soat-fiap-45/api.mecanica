@@ -14,11 +14,7 @@ export interface StockUpdatedContract extends DomainEvent {
 }
 
 export type StockMovementReason =
-    | 'PURCHASE'
-    | 'SERVICE_ORDER'
-    | 'RESERVATION'
-    | 'MANUAL'
-    | 'RETURN';
+    'PURCHASE' | 'SERVICE_ORDER' | 'RESERVATION' | 'MANUAL' | 'RETURN';
 
 /**
  * Proposed contract for the stock-history feature being developed in another

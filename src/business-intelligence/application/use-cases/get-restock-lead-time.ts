@@ -28,9 +28,10 @@ export interface GetRestockLeadTimeOutput {
     byPart: PartRestockLeadTimeDto[];
 }
 
-export class GetRestockLeadTime
-    implements UseCase<GetRestockLeadTimeInput, GetRestockLeadTimeOutput>
-{
+export class GetRestockLeadTime implements UseCase<
+    GetRestockLeadTimeInput,
+    GetRestockLeadTimeOutput
+> {
     constructor(
         private readonly cycles: RestockCycleRepository,
         private readonly policy: RestockCyclePolicy,

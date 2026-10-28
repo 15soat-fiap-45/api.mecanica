@@ -32,9 +32,7 @@ const toRow = (snapshot: ServiceOrderTimelineSnapshot) => ({
     updatedAt: new Date(),
 });
 
-export class DrizzleServiceOrderTimelineRepository
-    implements ServiceOrderTimelineRepository
-{
+export class DrizzleServiceOrderTimelineRepository implements ServiceOrderTimelineRepository {
     constructor(private readonly database: typeof db = db) {}
 
     async findById(
@@ -66,7 +64,9 @@ export class DrizzleServiceOrderTimelineRepository
             isNotNull(biServiceOrderTimelines.finishedAt),
         ];
         if (period.from) {
-            conditions.push(gte(biServiceOrderTimelines.finishedAt, period.from));
+            conditions.push(
+                gte(biServiceOrderTimelines.finishedAt, period.from),
+            );
         }
         if (period.to) {
             conditions.push(lte(biServiceOrderTimelines.finishedAt, period.to));
