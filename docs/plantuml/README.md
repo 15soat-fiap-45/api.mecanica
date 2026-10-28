@@ -19,9 +19,6 @@ Os diagramas desta pasta descrevem o estado confirmado no código atual. A imple
 
 - Autenticadas via Bearer JWT + RBAC (`TokenActorResolver`):
   - `POST /service-orders` (`OS_CRIAR`)
-  - `POST /services` (`OS_CRIAR`)
-  - `GET /services` (autenticado)
-  - `POST /service-orders/:serviceOrderId/services` (`OS_CONCLUIR`)
   - `GET /service-orders/:serviceOrderId` (autenticado)
   - `GET /service-orders/:serviceOrderId/history` (autenticado)
   - `POST /service-orders/:serviceOrderId/supplies` (`ESTOQUE_BAIXAR`)
@@ -37,7 +34,7 @@ Os diagramas desta pasta descrevem o estado confirmado no código atual. A imple
 
 ## Banco
 
-`src/infra/database/schema.ts` mapeia no schema `public` (`auth_users`, `cliente`, `veiculo`, `servico`) e no schema `service_order` (`orders`, `supply_items`, `budgets`, `approval_requests`, `services`, `service_parts`, `order_services`, `order_status_history`).
+`src/infra/database/schema.ts` mapeia no schema `public` (`auth_users`, `cliente`, `veiculo`) e no schema `service_order` (`orders`, `supply_items`, `budgets`, `approval_requests`, `order_status_history`).
 
 ## Validação
 

@@ -25,10 +25,32 @@ export class SupplyItemNotFoundException extends DomainException {
     }
 }
 
+export class InvalidServiceOrderValueException extends DomainException {
+    constructor(
+        message = 'Service order value must be a non-negative integer number of cents',
+    ) {
+        super(message);
+        this.name = 'InvalidServiceOrderValueException';
+    }
+}
+
+function assertValidValueCents(valueCents: number | null): void {
+    if (
+        valueCents !== null &&
+        (typeof valueCents !== 'number' ||
+            Number.isNaN(valueCents) ||
+            !Number.isSafeInteger(valueCents) ||
+            valueCents < 0)
+    ) {
+        throw new InvalidServiceOrderValueException();
+    }
+}
+
 export interface ServiceOrderProps {
     id?: ServiceOrderId | string | undefined;
     description: string;
     vehicleId?: string | undefined;
+    valueCents?: number | null | undefined;
     status?: ServiceOrderStatus | undefined;
     items?: SupplyItem[] | undefined;
     version?: number | undefined;
@@ -37,6 +59,7 @@ export interface ServiceOrderProps {
 export class ServiceOrder extends AggregateRoot<ServiceOrderId> {
     description: string;
     readonly vehicleId: string | null;
+    private _valueCents: number | null;
     private _status: ServiceOrderStatus;
     private readonly _items: SupplyItem[];
 
@@ -47,14 +70,21 @@ export class ServiceOrder extends AggregateRoot<ServiceOrderId> {
         items: SupplyItem[],
         version = 0,
         vehicleId: string | null = null,
+        valueCents: number | null = null,
     ) {
         const serviceOrderId =
             id instanceof ServiceOrderId ? id : new ServiceOrderId(id);
         super(serviceOrderId, version);
+        assertValidValueCents(valueCents);
         this.description = description;
         this.vehicleId = vehicleId;
+        this._valueCents = valueCents;
         this._status = status;
         this._items = items;
+    }
+
+    get valueCents(): number | null {
+        return this._valueCents;
     }
 
     get status(): ServiceOrderStatus {
@@ -77,6 +107,7 @@ export class ServiceOrder extends AggregateRoot<ServiceOrderId> {
             props.items ?? [],
             props.version ?? 0,
             props.vehicleId ?? null,
+            props.valueCents ?? null,
         );
     }
 
@@ -89,6 +120,16 @@ export class ServiceOrder extends AggregateRoot<ServiceOrderId> {
             }),
         );
         return serviceOrder;
+    }
+
+    setValueCents(valueCents: number): void {
+        if (this._status.value !== 'PENDING') {
+            throw new InvalidServiceOrderStatusException(
+                `Cannot set value on a ${this._status.value} service order`,
+            );
+        }
+        assertValidValueCents(valueCents);
+        this._valueCents = valueCents;
     }
 
     addSupply(partCode: string, quantity: number): void {

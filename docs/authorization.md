@@ -3,7 +3,7 @@
 O módulo Auth usa senha com hash Argon2id para autenticar usuários, JWT para identificá-los nas requisições e papéis/permissões para decidir o que podem fazer. Nesta branch:
 
 - `POST /users` exige JWT e permissão `USUARIO_PRE_CADASTRAR` (`GERENTE`).
-- As rotas de Ordem de Serviço (`/service-orders/*`) e Catálogo de Serviços (`/services`) exigem JWT Bearer válido (`401 Unauthorized` quando ausente/inválido/inativo) e validam a permissão correspondente ao papel (`403 Forbidden` quando o usuário não possui a permissão exigida).
+- As rotas de Ordem de Serviço (`/service-orders/*`) exigem JWT Bearer válido (`401 Unauthorized` quando ausente/inválido/inativo) e validam a permissão correspondente ao papel (`403 Forbidden` quando o usuário não possui a permissão exigida).
 - As rotas de aprovação de orçamento pelo cliente (`POST /budget-approvals/decide`, `GET /orcamento/:token` e `GET /orcamento`) são públicas para acesso via link de e-mail.
 - As rotas de Registry (`/customers` e `/vehicles`) continuam públicas.
 
@@ -66,21 +66,21 @@ As regras estão em `src/auth/domain/services/access-policy.ts`:
 | `ESTOQUISTA` | `ESTOQUE_BAIXAR`                                                  |
 | `GERENTE`    | Todas as anteriores, `USUARIO_PRE_CADASTRAR`, `USUARIO_GERENCIAR` |
 
-Nas rotas de Ordem de Serviço e Catálogo de Serviços, a proteção é realizada de forma desacoplada pela porta `ActorResolver` (`src/service-order/application/ports/actor-resolver.ts`) e seu adaptador `TokenActorResolver` (`src/infra/token-actor-resolver.ts`):
+Nas rotas de Ordem de Serviço, a proteção é realizada de forma desacoplada pela porta `ActorResolver` (`src/service-order/application/ports/actor-resolver.ts`) e seu adaptador `TokenActorResolver` (`src/infra/token-actor-resolver.ts`):
 
-- `OS_CRIAR` (`ATENDENTE`, `GERENTE`): `POST /service-orders`, `POST /service-orders/:serviceOrderId/cancel`, `POST /service-orders/:serviceOrderId/deliver` e `POST /services`.
-- `OS_CONCLUIR` (`MECANICO`, `GERENTE`): `POST /service-orders/:serviceOrderId/services`, `POST /service-orders/:serviceOrderId/awaiting-approval`, `POST /service-orders/:serviceOrderId/start` e `POST /service-orders/:serviceOrderId/finish`.
+- `OS_CRIAR` (`ATENDENTE`, `GERENTE`): `POST /service-orders`, `POST /service-orders/:serviceOrderId/cancel` e `POST /service-orders/:serviceOrderId/deliver`.
+- `OS_CONCLUIR` (`MECANICO`, `GERENTE`): `POST /service-orders/:serviceOrderId/awaiting-approval`, `POST /service-orders/:serviceOrderId/start` e `POST /service-orders/:serviceOrderId/finish`.
 - `ESTOQUE_BAIXAR` (`MECANICO`, `ESTOQUISTA`, `GERENTE`): `POST /service-orders/:serviceOrderId/supplies` e `POST /service-orders/:serviceOrderId/supplies/:partCode/usage`.
-- Qualquer usuário autenticado ativo (`ATENDENTE`, `MECANICO`, `ESTOQUISTA`, `GERENTE`): `GET /services`, `GET /service-orders/:serviceOrderId` e `GET /service-orders/:serviceOrderId/history`.
+- Qualquer usuário autenticado ativo (`ATENDENTE`, `MECANICO`, `ESTOQUISTA`, `GERENTE`): `GET /service-orders/:serviceOrderId` e `GET /service-orders/:serviceOrderId/history`.
 
 ## Erros e limites atuais
 
-| Situação                                                                             | Resposta |
-| ------------------------------------------------------------------------------------ | -------- |
-| Corpo inválido                                                                       | `400`    |
-| Credenciais incorretas; Bearer ausente/inválido em `/service-orders/*` e `/services` | `401`    |
-| Usuário sem a permissão exigida na rota (`403 Forbidden`)                            | `403`    |
-| E-mail já cadastrado em `/users`                                                     | `409`    |
-| Mais de cinco tentativas por minuto, por IP e por rota, em login ou primeiro acesso  | `429`    |
+| Situação                                                                | Resposta |
+| ----------------------------------------------------------------------- | -------- |
+| Corpo inválido                                                          | `400`    |
+| Credenciais incorretas; Bearer ausente/inválido em `/service-orders/*`  | `401`    |
+| Usuário sem a permissão exigida na rota (`403 Forbidden`)               | `403`    |
+| E-mail já cadastrado em `/users`                                        | `409`    |
+| Mais de cinco tentativas por minuto, por IP e por rota, em login ou primeiro acesso | `429`    |
 
 O limitador usa memória local do processo, portanto não soma as tentativas entre várias instâncias da API.

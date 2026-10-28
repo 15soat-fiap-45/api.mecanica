@@ -6,7 +6,6 @@ actor "Operador Autenticado" as Operator
 actor "Cliente do Veiculo" as Customer
 participant "Fastify / Zod" as HTTP
 participant AwaitBudgetApproval as AwaitUC
-participant DrizzleServiceCatalog as Catalog
 participant DrizzleServiceOrderRepository as OrderRepo
 participant InMemoryEventBus as Bus
 participant SendBudgetApprovalEmail as EmailHandler
@@ -17,17 +16,14 @@ participant MoveServiceOrderToApproved as ApproveHandler
 database "PostgreSQL" as DB
 
 == 1. Envio da OS para Aprovacao de Orcamento ==
-Operator -> HTTP: POST /service-orders/:id/awaiting-approval (Bearer JWT)
-HTTP -> AwaitUC: execute({ serviceOrderId })
+Operator -> HTTP: POST /service-orders/:id/awaiting-approval { valueCents? } (Bearer JWT)
+HTTP -> AwaitUC: execute({ serviceOrderId, valueCents })
 AwaitUC -> OrderRepo: findById(serviceOrderId)
 OrderRepo -> DB: SELECT orders LEFT JOIN supply_items
 DB --> OrderRepo: ServiceOrder (PENDING)
-AwaitUC -> Catalog: forOrder(serviceOrderId)
-Catalog -> DB: SELECT order_services, service_parts
-DB --> Catalog: servicos atribuidos
-AwaitUC -> AwaitUC: cria Budget (soma valueCents) e chama order.awaitApproval(budget.id)
+AwaitUC -> AwaitUC: atualiza order.setValueCents(valueCents) se informado, cria Budget(order.valueCents) e chama order.awaitApproval(budget.id)
 AwaitUC -> OrderRepo: save(order, budget)
-OrderRepo -> DB: TX: UPDATE orders (AWAITING_APPROVAL), INSERT budgets (PENDING), INSERT order_status_history
+OrderRepo -> DB: TX: UPDATE orders (AWAITING_APPROVAL, value_cents), INSERT budgets (PENDING), INSERT order_status_history
 DB --> OrderRepo: COMMIT
 AwaitUC -> Bus: publish([OrderAwaitingApproval])
 Bus -> EmailHandler: handle(OrderAwaitingApproval)

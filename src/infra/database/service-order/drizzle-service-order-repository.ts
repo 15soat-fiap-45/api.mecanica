@@ -87,7 +87,7 @@ export class DrizzleServiceOrderRepository implements ServiceOrderRepository {
                     ${order.id.value},
                     ${order.status.value},
                     COALESCE(
-                        ${budget ? budget.totalCents : null}::bigint,
+                        ${budget ? budget.totalCents : order.valueCents}::bigint,
                         (
                             SELECT h.value_cents
                             FROM service_order.order_status_history h

@@ -31,6 +31,7 @@ package "Schema service_order" {
         --
         description : TEXT
         vehicle_id : VARCHAR(36) nullable
+        value_cents : BIGINT nullable
         status : VARCHAR(20)
         version : INTEGER
     }
@@ -68,27 +69,6 @@ package "Schema service_order" {
         rejection_reason : TEXT nullable
     }
 
-    entity "services" as catalog_services {
-        * id : BIGINT <<PK, identity>>
-        --
-        title : VARCHAR(20)
-        description : VARCHAR(200) nullable
-        value_cents : BIGINT
-    }
-
-    entity "service_parts" as service_parts {
-        * service_id : BIGINT <<PK, FK>>
-        * part_id : BIGINT <<PK>>
-    }
-
-    entity "order_services" as order_services {
-        * order_id : VARCHAR(36) <<PK, FK>>
-        * service_id : BIGINT <<PK, FK>>
-        --
-        title : VARCHAR(20)
-        value_cents : BIGINT
-    }
-
     entity "order_status_history" as order_status_history {
         * id : BIGINT <<PK, identity>>
         --
@@ -106,8 +86,5 @@ orders ||--o{ supply_items : contem
 orders ||--o{ budgets : gera
 orders ||--o{ approval_requests : solicita aprovacao
 budgets ||--o{ approval_requests : vinculado a
-catalog_services ||--o{ service_parts : requer pecas
-orders ||--o{ order_services : possui servicos
-catalog_services ||--o{ order_services : referenciado em
 orders ||--o{ order_status_history : audita transicoes
 @enduml

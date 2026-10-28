@@ -9,7 +9,6 @@ import { OrderAwaitingApproval } from './domain/service-order/events/order-await
 import { SendBudgetApprovalEmail } from './application/handlers/send-budget-approval-email.js';
 import { AwaitBudgetApproval } from './application/use-cases/await-budget-approval.js';
 import { DecideBudgetApproval } from './application/use-cases/decide-budget-approval.js';
-import type { ServiceCatalog } from './application/ports/service-catalog.js';
 import type { ActorResolver } from './application/ports/actor-resolver.js';
 import { ChangeServiceOrderStatus } from './application/use-cases/change-service-order-status.js';
 import { SendVehicleReadyEmail } from './application/handlers/send-vehicle-ready-email.js';
@@ -46,7 +45,6 @@ export interface ServiceOrderDependencies {
     emailSender: EmailSender;
     frontendUrl: string;
     approvalTokenTtlMinutes: number;
-    serviceCatalog: ServiceCatalog;
     actorResolver?: ActorResolver | undefined;
 }
 
@@ -64,14 +62,18 @@ export interface ServiceOrderUseCases {
     startExecution: ChangeServiceOrderStatus;
     finishServiceOrder: ChangeServiceOrderStatus;
     deliverServiceOrder: ChangeServiceOrderStatus;
-    serviceCatalog: ServiceCatalog;
     findServiceOrder: {
         execute(input: { serviceOrderId: string }): Promise<{
             id: string;
             vehicleId: string | null;
             description: string;
             status: string;
-            services: Awaited<ReturnType<ServiceCatalog['forOrder']>>;
+            valueCents: number | null;
+            supplies: {
+                partCode: string;
+                quantity: number;
+                used: boolean;
+            }[];
         }>;
     };
     findServiceOrderHistory: {
@@ -150,10 +152,8 @@ export function serviceOrderCompositionRoot(
         awaitBudgetApproval: new AwaitBudgetApproval(
             deps.serviceOrderRepository,
             deps.budgetRepository,
-            deps.serviceCatalog,
             eventBus,
         ),
-        serviceCatalog: deps.serviceCatalog,
         startExecution: new ChangeServiceOrderStatus(
             deps.serviceOrderRepository,
             eventBus,
@@ -179,9 +179,12 @@ export function serviceOrderCompositionRoot(
                     vehicleId: order.vehicleId,
                     description: order.description,
                     status: order.status.value,
-                    services: await deps.serviceCatalog.forOrder(
-                        order.id.value,
-                    ),
+                    valueCents: order.valueCents,
+                    supplies: order.items.map((item) => ({
+                        partCode: item.partCode,
+                        quantity: item.quantity,
+                        used: item.used,
+                    })),
                 };
             },
         },
