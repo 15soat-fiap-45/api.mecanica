@@ -22,7 +22,11 @@ import { RegistryVehicleContactLookup } from './infra/registry-vehicle-contact-l
 import { TokenActorResolver } from './infra/token-actor-resolver.js';
 import { SmtpEmailSender } from './service-order/infra/email/smtp-email-sender.js';
 import { readEmailConfig } from './service-order/infra/email/email.config.js';
-import { DrizzleServiceCatalog } from './infra/database/service-order/drizzle-service-catalog.js';
+import { businessIntelligenceCompositionRoot } from './business-intelligence/composition-root.js';
+import { ReorderPointRestockPolicy } from './business-intelligence/domain/restock-cycle/restock-cycle-policy.js';
+import { DrizzleServiceOrderTimelineRepository } from './infra/database/business-intelligence/drizzle-service-order-timeline-repository.js';
+import { DrizzleRestockCycleRepository } from './infra/database/business-intelligence/drizzle-restock-cycle-repository.js';
+import { TokenBiAccessGuard } from './infra/token-bi-access-guard.js';
 
 const initialManagerPassword = process.env.INITIAL_MANAGER_PASSWORD;
 if (!initialManagerPassword || initialManagerPassword.trim() === '') {
@@ -59,7 +63,6 @@ const serviceOrder = serviceOrderCompositionRoot(eventBus, {
     serviceOrderRepository: new DrizzleServiceOrderRepository(),
     budgetRepository: new DrizzleBudgetRepository(),
     approvalRequestRepository: approvalRequests,
-    serviceCatalog: new DrizzleServiceCatalog(),
     vehicleContacts: new RegistryVehicleContactLookup(
         new DrizzleVehicleRepository(),
         new DrizzleCustomerRepository(),
@@ -69,7 +72,16 @@ const serviceOrder = serviceOrderCompositionRoot(eventBus, {
     frontendUrl: emailConfig.frontendUrl,
     approvalTokenTtlMinutes: emailConfig.ttlMinutes,
 });
-const app = buildApp({ registry, auth, serviceOrder });
+const reorderPoint = Number(process.env.BI_REORDER_POINT ?? 0);
+const businessIntelligence = businessIntelligenceCompositionRoot(eventBus, {
+    timelineRepository: new DrizzleServiceOrderTimelineRepository(),
+    restockCycleRepository: new DrizzleRestockCycleRepository(),
+    restockPolicy: new ReorderPointRestockPolicy(
+        Number.isInteger(reorderPoint) && reorderPoint >= 0 ? reorderPoint : 0,
+    ),
+    accessGuard: new TokenBiAccessGuard(resolveAuthenticatedUser),
+});
+const app = buildApp({ registry, auth, serviceOrder, businessIntelligence });
 let expiryInterval: ReturnType<typeof setInterval> | undefined;
 app.addHook('onClose', async () => {
     if (expiryInterval) clearInterval(expiryInterval);

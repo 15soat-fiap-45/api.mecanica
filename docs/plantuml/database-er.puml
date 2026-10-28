@@ -31,6 +31,7 @@ package "Schema service_order" {
         --
         description : TEXT
         vehicle_id : VARCHAR(36) nullable
+        value_cents : BIGINT nullable
         status : VARCHAR(20)
         version : INTEGER
     }
@@ -68,27 +69,6 @@ package "Schema service_order" {
         rejection_reason : TEXT nullable
     }
 
-    entity "services" as catalog_services {
-        * id : BIGINT <<PK, identity>>
-        --
-        title : VARCHAR(20)
-        description : VARCHAR(200) nullable
-        value_cents : BIGINT
-    }
-
-    entity "service_parts" as service_parts {
-        * service_id : BIGINT <<PK, FK>>
-        * part_id : BIGINT <<PK>>
-    }
-
-    entity "order_services" as order_services {
-        * order_id : VARCHAR(36) <<PK, FK>>
-        * service_id : BIGINT <<PK, FK>>
-        --
-        title : VARCHAR(20)
-        value_cents : BIGINT
-    }
-
     entity "order_status_history" as order_status_history {
         * id : BIGINT <<PK, identity>>
         --
@@ -100,14 +80,42 @@ package "Schema service_order" {
     }
 }
 
+package "Schema business_intelligence" {
+    entity "service_order_timeline" as service_order_timeline {
+        * service_order_id : VARCHAR(36) <<PK>>
+        --
+        registered_at : TIMESTAMPTZ nullable
+        execution_started_at : TIMESTAMPTZ nullable
+        finished_at : TIMESTAMPTZ nullable
+        delivered_at : TIMESTAMPTZ nullable
+        cancelled_at : TIMESTAMPTZ nullable
+        updated_at : TIMESTAMPTZ
+    }
+
+    entity "restock_cycle" as restock_cycle {
+        * id : VARCHAR(36) <<PK>>
+        --
+        part_code : VARCHAR(50)
+        opened_at : TIMESTAMPTZ
+        closed_at : TIMESTAMPTZ nullable
+        quantity_at_open : INTEGER
+        restocked_quantity : INTEGER nullable
+    }
+}
+
 cliente ||--o{ veiculo : possui
 veiculo ||..o{ orders : referencia logica (vehicle_id)
 orders ||--o{ supply_items : contem
 orders ||--o{ budgets : gera
 orders ||--o{ approval_requests : solicita aprovacao
 budgets ||--o{ approval_requests : vinculado a
-catalog_services ||--o{ service_parts : requer pecas
-orders ||--o{ order_services : possui servicos
-catalog_services ||--o{ order_services : referenciado em
 orders ||--o{ order_status_history : audita transicoes
+
+orders ||..o{ service_order_timeline : projecao analitica (sem FK fisica)
+supply_items ||..o{ restock_cycle : projecao por part_code (sem FK fisica)
+
+note bottom of service_order_timeline
+  Projecao de leitura do modulo Business Intelligence alimentada exclusivamente
+  via eventos do barramento. Sem FKs transcontextuais para garantir isolamento.
+end note
 @enduml

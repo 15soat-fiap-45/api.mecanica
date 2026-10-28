@@ -2,8 +2,8 @@
 -- Script PostgreSQL - Modelo Relacional para Oficina Mecânica
 -- =========================================================
 -- Tabelas principais:
---   CLIENTE, VEICULO, SERVICO, PECA_INSUMO, MARCA_PECA_INSUMO,
---   CATEGORIA_PECA, USUARIO, ORDEM_SERVICO, SERVICOS_OS,
+--   CLIENTE, VEICULO, PECA_INSUMO, MARCA_PECA_INSUMO,
+--   CATEGORIA_PECA, USUARIO, ORDEM_SERVICO,
 --   INSUMOS_OS, ORCAMENTO, ESTOQUE, MOVIMENTO_ESTOQUE,
 --   OS_STATUS_HISTORICO
 -- =========================================================
@@ -34,16 +34,6 @@ CREATE TABLE veiculo (
     CONSTRAINT fk_veiculo_cliente
         FOREIGN KEY (cliente_id)
         REFERENCES cliente(cliente_id)
-);
-
--- ---------------------------------------------------------
--- SERVICO (catálogo de serviços)
--- ---------------------------------------------------------
-CREATE TABLE servico (
-    servico_id  BIGSERIAL PRIMARY KEY,
-    titulo      VARCHAR(20) NOT NULL,
-    descricao   VARCHAR(200),
-    valor       BIGINT NOT NULL  -- valor em centavos, por exemplo
 );
 
 -- ---------------------------------------------------------
@@ -123,27 +113,6 @@ CREATE TABLE ordem_servico (
     CONSTRAINT fk_os_usuario_criacao
         FOREIGN KEY (usuario_criacao_id)
         REFERENCES usuario(usuario_id)
-);
-
--- ---------------------------------------------------------
--- SERVICOS_OS (serviços vinculados a uma OS)
--- ---------------------------------------------------------
-CREATE TABLE servicos_os (
-    os_id          BIGINT NOT NULL,
-    servico_id     BIGINT NOT NULL,
-    quantidade     NUMERIC(10,2) NOT NULL DEFAULT 1,
-    valor_unitario BIGINT NOT NULL,
-    valor_total    BIGINT NOT NULL,
-    observacao     TEXT,
-    CONSTRAINT pk_servicos_os
-        PRIMARY KEY (os_id, servico_id),
-    CONSTRAINT fk_servicos_os_os
-        FOREIGN KEY (os_id)
-        REFERENCES ordem_servico(os_id)
-        ON DELETE CASCADE,
-    CONSTRAINT fk_servicos_os_servico
-        FOREIGN KEY (servico_id)
-        REFERENCES servico(servico_id)
 );
 
 -- ---------------------------------------------------------

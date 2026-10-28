@@ -13,7 +13,6 @@ it.skipIf(!process.env.TEST_DATABASE_URL || !process.env.TEST_MAILHOG_URL)(
             { DrizzleVehicleRepository },
             { DrizzleServiceOrderRepository },
             { DrizzleBudgetRepository },
-            { DrizzleServiceCatalog },
             { DrizzleApprovalRequestRepository },
             { RegistryVehicleContactLookup },
             { TokenActorResolver },
@@ -21,7 +20,7 @@ it.skipIf(!process.env.TEST_DATABASE_URL || !process.env.TEST_MAILHOG_URL)(
             { serviceOrderCompositionRoot },
             { InMemoryEventBus },
             { SmtpEmailSender },
-            { eq, sql },
+            { eq },
         ] = await Promise.all([
             import('../../../app.js'),
             import('../../../infra/database/connection.js'),
@@ -30,7 +29,6 @@ it.skipIf(!process.env.TEST_DATABASE_URL || !process.env.TEST_MAILHOG_URL)(
             import('../../../infra/database/registry/drizzle-vehicle-repository.js'),
             import('../../../infra/database/service-order/drizzle-service-order-repository.js'),
             import('../../../infra/database/service-order/drizzle-budget-repository.js'),
-            import('../../../infra/database/service-order/drizzle-service-catalog.js'),
             import('../../../infra/database/service-order/drizzle-approval-request-repository.js'),
             import('../../../infra/registry-vehicle-contact-lookup.js'),
             import('../../../infra/token-actor-resolver.js'),
@@ -53,7 +51,6 @@ it.skipIf(!process.env.TEST_DATABASE_URL || !process.env.TEST_MAILHOG_URL)(
         const serviceOrder = serviceOrderCompositionRoot(bus, {
             serviceOrderRepository: new DrizzleServiceOrderRepository(),
             budgetRepository: new DrizzleBudgetRepository(),
-            serviceCatalog: new DrizzleServiceCatalog(),
             approvalRequestRepository: new DrizzleApprovalRequestRepository(),
             vehicleContacts: new RegistryVehicleContactLookup(
                 vehicles,
@@ -139,45 +136,20 @@ it.skipIf(!process.env.TEST_DATABASE_URL || !process.env.TEST_MAILHOG_URL)(
             });
             expect(created.statusCode).toBe(201);
             const orderId = created.json().id as string;
-            await expect(
-                serviceOrder.serviceCatalog.create({
-                    title: 'Inválido',
-                    description: null,
-                    valueCents: 100,
-                    partIds: [999999999],
-                }),
-            ).rejects.toThrow();
-            const firstPart = await db.execute<{ item_id: string }>(
-                sql`INSERT INTO peca_insumo (nome, valor) VALUES ('Peça A', 100) RETURNING item_id`,
-            );
-            const secondPart = await db.execute<{ item_id: string }>(
-                sql`INSERT INTO peca_insumo (nome, valor) VALUES ('Peça B', 200) RETURNING item_id`,
-            );
-            const partIds = [
-                Number(firstPart.rows[0]!.item_id),
-                Number(secondPart.rows[0]!.item_id),
-            ];
-            for (const [title, valueCents] of [
-                ['Diagnóstico', 4000],
-                ['Reparo', 8345],
-            ] as const) {
-                const service = await serviceOrder.serviceCatalog.create({
-                    title,
-                    description: null,
-                    valueCents,
-                    partIds: title === 'Reparo' ? partIds : [],
-                });
-                await serviceOrder.serviceCatalog.assign(orderId, service.id);
-            }
-            const assignedServices =
-                await serviceOrder.serviceCatalog.forOrder(orderId);
-            expect(assignedServices).toHaveLength(2);
-            expect(assignedServices[1]?.partIds).toEqual(partIds);
+
+            const addSupply = await app.inject({
+                method: 'POST',
+                url: `/service-orders/${orderId}/supplies`,
+                headers: mechanicHeaders,
+                payload: { partCode: 'PAST-FREIO-01', quantity: 2 },
+            });
+            expect(addSupply.statusCode).toBe(201);
 
             const awaiting = await app.inject({
                 method: 'POST',
                 url: `/service-orders/${orderId}/awaiting-approval`,
                 headers: mechanicHeaders,
+                payload: { valueCents: 12345 },
             });
             expect(awaiting.statusCode).toBe(200);
             const [quotedBudget] = await db
@@ -261,14 +233,11 @@ it.skipIf(!process.env.TEST_DATABASE_URL || !process.env.TEST_MAILHOG_URL)(
                 });
                 expect(response.statusCode).toBe(201);
                 const id = response.json().id as string;
-                await serviceOrder.serviceCatalog.assign(
-                    id,
-                    assignedServices[0]!.id,
-                );
                 const waiting = await app.inject({
                     method: 'POST',
                     url: `/service-orders/${id}/awaiting-approval`,
                     headers: mechanicHeaders,
+                    payload: { valueCents: 4000 },
                 });
                 expect(waiting.statusCode).toBe(200);
                 return id;

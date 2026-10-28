@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+    InvalidServiceOrderValueException,
     ServiceOrder,
     SupplyItemAlreadyAddedException,
     SupplyItemNotFoundException,
@@ -271,6 +272,43 @@ describe('ServiceOrder Aggregate Root', () => {
         expect(() => os.deliver()).toThrow(InvalidServiceOrderStatusException);
     });
 
+    it('should record ServiceOrderExecutionStarted when execution starts', () => {
+        const os = ServiceOrder.create(makeProps());
+        os.approve();
+
+        os.startExecution();
+
+        const events = os.pullEvents();
+        expect(events).toHaveLength(1);
+        expect(events[0]?.eventName).toBe('service-order.execution-started');
+        expect(events[0]?.aggregateId).toBe('os-1');
+    });
+
+    it('should record ServiceOrderDelivered when the order is delivered', () => {
+        const os = ServiceOrder.create(makeProps());
+        os.approve();
+        os.startExecution();
+        os.finish();
+        os.pullEvents();
+
+        os.deliver();
+
+        const events = os.pullEvents();
+        expect(events).toHaveLength(1);
+        expect(events[0]?.eventName).toBe('service-order.delivered');
+        expect(events[0]?.aggregateId).toBe('os-1');
+    });
+
+    it('should not record events when a transition is rejected', () => {
+        const os = ServiceOrder.create(makeProps());
+
+        expect(() => os.startExecution()).toThrow(
+            InvalidServiceOrderStatusException,
+        );
+        expect(() => os.deliver()).toThrow(InvalidServiceOrderStatusException);
+        expect(os.pullEvents()).toHaveLength(0);
+    });
+
     it('should compare service orders by identity using AggregateRoot.equals()', () => {
         const os1 = ServiceOrder.create(makeProps());
         const os2 = ServiceOrder.create(
@@ -280,5 +318,43 @@ describe('ServiceOrder Aggregate Root', () => {
 
         expect(os1.equals(os2)).toBe(true);
         expect(os1.equals(os3)).toBe(false);
+    });
+
+    it('should support optional valueCents on creation and updating via setValueCents while PENDING', () => {
+        const osWithoutValue = ServiceOrder.create(makeProps());
+        expect(osWithoutValue.valueCents).toBeNull();
+
+        osWithoutValue.setValueCents(15000);
+        expect(osWithoutValue.valueCents).toBe(15000);
+
+        const osWithValue = ServiceOrder.create(
+            makeProps({ valueCents: 25000 }),
+        );
+        expect(osWithValue.valueCents).toBe(25000);
+        osWithValue.setValueCents(30000);
+        expect(osWithValue.valueCents).toBe(30000);
+    });
+
+    it('should reject invalid valueCents on creation or setValueCents', () => {
+        for (const invalid of [-1, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+            expect(() =>
+                ServiceOrder.create(makeProps({ valueCents: invalid })),
+            ).toThrow(InvalidServiceOrderValueException);
+        }
+
+        const os = ServiceOrder.create(makeProps());
+        for (const invalid of [-1, 1.5, Number.NaN]) {
+            expect(() => os.setValueCents(invalid)).toThrow(
+                InvalidServiceOrderValueException,
+            );
+        }
+    });
+
+    it('should not allow setValueCents when order is not PENDING', () => {
+        const os = ServiceOrder.create(makeProps({ valueCents: 10000 }));
+        os.awaitApproval('budget-1');
+        expect(() => os.setValueCents(20000)).toThrow(
+            InvalidServiceOrderStatusException,
+        );
     });
 });

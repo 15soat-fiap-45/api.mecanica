@@ -13,6 +13,7 @@ export function serviceOrderFromRow(
         id: row.id,
         description: row.description,
         vehicleId: row.vehicleId ?? undefined,
+        valueCents: row.valueCents ?? null,
         status: ServiceOrderStatus.create(row.status),
         version: row.version,
         items: items.map((item) => SupplyItem.create(item)),
@@ -26,6 +27,7 @@ export function serviceOrderToRow(
         id: order.id.value,
         description: order.description,
         vehicleId: order.vehicleId,
+        valueCents: order.valueCents,
         status: order.status.value,
         version: order.version + 1,
     };

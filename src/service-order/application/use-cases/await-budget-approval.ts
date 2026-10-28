@@ -4,7 +4,6 @@ import type { EventBus } from '../../../shared/application/event-bus.js';
 import { ApplicationException } from '../../../shared/application/application-exception.js';
 import { ServiceOrderNotFoundError } from './add-supply-to-service-order.js';
 import { Budget } from '../../domain/budget/budget.js';
-import type { ServiceCatalog } from '../ports/service-catalog.js';
 
 export class InvalidOrderBudgetError extends ApplicationException {
     constructor() {
@@ -16,25 +15,35 @@ export class AwaitBudgetApproval {
     constructor(
         private readonly orders: ServiceOrderRepository,
         private readonly budgets: BudgetRepository,
-        private readonly services: ServiceCatalog,
         private readonly bus: EventBus,
     ) {}
 
     async execute(input: {
         serviceOrderId: string;
+        valueCents?: number | undefined;
     }): Promise<{ status: string }> {
         const order = await this.orders.findById(input.serviceOrderId);
         if (!order) throw new ServiceOrderNotFoundError();
         if (!order.status.canTransitionTo('AWAITING_APPROVAL'))
             throw new InvalidOrderBudgetError();
-        const services = await this.services.forOrder(order.id.value);
-        if (!services.length) throw new InvalidOrderBudgetError();
-        const totalCents = services.reduce(
-            (total, service) => total + service.valueCents,
-            0,
-        );
-        if (!Number.isSafeInteger(totalCents))
+        if (input.valueCents !== undefined) {
+            if (
+                typeof input.valueCents !== 'number' ||
+                !Number.isSafeInteger(input.valueCents) ||
+                input.valueCents < 0
+            ) {
+                throw new InvalidOrderBudgetError();
+            }
+            order.setValueCents(input.valueCents);
+        }
+        const totalCents = order.valueCents;
+        if (
+            totalCents === null ||
+            !Number.isSafeInteger(totalCents) ||
+            totalCents < 0
+        ) {
             throw new InvalidOrderBudgetError();
+        }
         const budget = Budget.create({
             serviceOrderId: order.id.value,
             totalCents,

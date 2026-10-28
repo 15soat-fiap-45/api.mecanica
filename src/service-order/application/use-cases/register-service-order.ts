@@ -14,6 +14,7 @@ export class VehicleNotFoundError extends ApplicationException {
 export interface RegisterServiceOrderInput {
     description: string;
     vehicleId: string;
+    valueCents?: number | null | undefined;
 }
 
 export interface RegisterServiceOrderOutput {
@@ -21,6 +22,7 @@ export interface RegisterServiceOrderOutput {
     description: string;
     status: string;
     vehicleId: string;
+    valueCents: number | null;
 }
 
 export class RegisterServiceOrder implements UseCase<
@@ -44,6 +46,7 @@ export class RegisterServiceOrder implements UseCase<
         const serviceOrder = ServiceOrder.register({
             description: input.description,
             vehicleId: input.vehicleId,
+            valueCents: input.valueCents,
         });
 
         await this.serviceOrderRepository.save(serviceOrder);
@@ -57,6 +60,7 @@ export class RegisterServiceOrder implements UseCase<
             description: serviceOrder.description,
             status: serviceOrder.status.value,
             vehicleId: input.vehicleId,
+            valueCents: serviceOrder.valueCents,
         };
     }
 }

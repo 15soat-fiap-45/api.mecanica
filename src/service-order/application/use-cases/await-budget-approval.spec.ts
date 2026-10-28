@@ -3,40 +3,19 @@ import { ServiceOrder } from '../../domain/service-order/service-order.js';
 import { AwaitBudgetApproval } from './await-budget-approval.js';
 
 describe('AwaitBudgetApproval', () => {
-    const order = () =>
+    const order = (valueCents: number | null = null) =>
         ServiceOrder.create({
             id: 'os-1',
             description: 'Freios',
             vehicleId: 'vehicle-1',
+            valueCents,
         });
-    const services = (
-        rows = [
-            {
-                id: 1,
-                title: 'Diagnóstico',
-                valueCents: 10000,
-                description: null,
-                partIds: [],
-            },
-            {
-                id: 2,
-                title: 'Reparo',
-                valueCents: 25000,
-                description: null,
-                partIds: [],
-            },
-        ],
-    ) => ({
-        create: vi.fn(),
-        assign: vi.fn(),
-        list: vi.fn(),
-        forOrder: vi.fn(async () => rows),
-    });
 
-    it('adds prices of multiple services, saves the budget and order atomically before announcing approval', async () => {
+    it('uses valueCents provided in the input, saves the budget and order atomically before announcing approval', async () => {
         const os = order();
         const saveOrder = vi.fn(async (savedOrder, budget) => {
             expect(savedOrder.status.value).toBe('AWAITING_APPROVAL');
+            expect(savedOrder.valueCents).toBe(35000);
             expect(budget?.totalCents).toBe(35000);
         });
         const saveBudget = vi.fn();
@@ -52,24 +31,42 @@ describe('AwaitBudgetApproval', () => {
                 findByServiceOrderId: vi.fn(),
                 save: saveBudget,
             },
-            services(),
             { publish, subscribe: vi.fn() },
-        ).execute({ serviceOrderId: 'os-1' });
+        ).execute({ serviceOrderId: 'os-1', valueCents: 35000 });
         expect(publish).toHaveBeenCalledOnce();
     });
 
-    it('does not allow an empty quote to be sent', async () => {
+    it('uses valueCents already defined on the order when omitted in the input', async () => {
+        const os = order(22000);
+        const saveOrder = vi.fn(async (savedOrder, budget) => {
+            expect(savedOrder.status.value).toBe('AWAITING_APPROVAL');
+            expect(savedOrder.valueCents).toBe(22000);
+            expect(budget?.totalCents).toBe(22000);
+        });
+        const saveBudget = vi.fn();
+        await new AwaitBudgetApproval(
+            { findById: vi.fn(async () => os), save: saveOrder },
+            {
+                findById: vi.fn(),
+                findByServiceOrderId: vi.fn(),
+                save: saveBudget,
+            },
+            { publish: vi.fn(), subscribe: vi.fn() },
+        ).execute({ serviceOrderId: 'os-1' });
+        expect(saveOrder).toHaveBeenCalledOnce();
+    });
+
+    it('does not allow an order without valueCents to be sent for approval', async () => {
         const saveOrder = vi.fn();
         const saveBudget = vi.fn();
         await expect(
             new AwaitBudgetApproval(
-                { findById: vi.fn(async () => order()), save: saveOrder },
+                { findById: vi.fn(async () => order(null)), save: saveOrder },
                 {
                     findById: vi.fn(),
                     findByServiceOrderId: vi.fn(),
                     save: saveBudget,
                 },
-                services([]),
                 { publish: vi.fn(), subscribe: vi.fn() },
             ).execute({ serviceOrderId: 'os-1' }),
         ).rejects.toThrow();
