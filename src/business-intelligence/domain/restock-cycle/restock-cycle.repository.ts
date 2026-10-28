@@ -9,6 +9,7 @@ export interface RestockCycleFilter {
 export interface RestockCycleRepository {
     findOpenByPartCode(partCode: string): Promise<RestockCycle | null>;
     save(cycle: RestockCycle): Promise<void>;
+    delete(id: string): Promise<void>;
     /** Closed cycles whose `closedAt` falls within `[from, to]` (inclusive). */
     findClosedBetween(filter: RestockCycleFilter): Promise<RestockCycle[]>;
     /** Currently open cycles (optionally filtered by `partCode`). */

@@ -1,7 +1,11 @@
 import { AggregateRoot } from '../../../shared/domain/aggregate-root.js';
 import { PartSupplyId } from './part-supply-id.js';
 import { PartSupplyRegistered } from './events/part-supply-registered.js';
-import { StockUpdated } from './events/stock-updated.js';
+import {
+    type StockEntryReason,
+    type StockExitReason,
+    StockUpdated,
+} from './events/stock-updated.js';
 import type { PartCode } from '../../../shared/domain/part-code.js';
 import { Quantity } from './value-objects/quantity.js';
 import type { UnitOfMeasure } from './value-objects/unit-of-measure.js';
@@ -72,7 +76,10 @@ export class PartSupply extends AggregateRoot<PartSupplyId> {
         return partSupply;
     }
 
-    registerEntry(quantity: Quantity | number): void {
+    registerEntry(
+        quantity: Quantity | number,
+        reason: StockEntryReason = 'STOCK_ENTRY',
+    ): void {
         const moved =
             quantity instanceof Quantity ? quantity : Quantity.create(quantity);
         const previous = this._quantity;
@@ -82,6 +89,7 @@ export class PartSupply extends AggregateRoot<PartSupplyId> {
                 aggregateId: this.id.value,
                 partCode: this.partCode.value,
                 movementType: 'ENTRY',
+                reason,
                 movedQuantity: moved.value,
                 previousQuantity: previous.value,
                 currentQuantity: this._quantity.value,
@@ -89,7 +97,10 @@ export class PartSupply extends AggregateRoot<PartSupplyId> {
         );
     }
 
-    deduct(quantity: Quantity | number): void {
+    deduct(
+        quantity: Quantity | number,
+        reason: StockExitReason = 'RESERVATION',
+    ): void {
         const moved =
             quantity instanceof Quantity ? quantity : Quantity.create(quantity);
         const previous = this._quantity;
@@ -99,6 +110,7 @@ export class PartSupply extends AggregateRoot<PartSupplyId> {
                 aggregateId: this.id.value,
                 partCode: this.partCode.value,
                 movementType: 'EXIT',
+                reason,
                 movedQuantity: moved.value,
                 previousQuantity: previous.value,
                 currentQuantity: this._quantity.value,

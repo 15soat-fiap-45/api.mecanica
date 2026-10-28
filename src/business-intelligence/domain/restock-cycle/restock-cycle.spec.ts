@@ -74,6 +74,39 @@ describe('ReorderPointRestockPolicy', () => {
         ).toBe(false);
     });
 
+    it('discards instead of closing a cycle when returned stock lifts it above the reorder point', () => {
+        const policy = new ReorderPointRestockPolicy(0);
+        const returned = makeMovement({
+            type: 'ENTRY',
+            quantityAfter: 2,
+            reason: 'RETURN',
+        });
+        expect(policy.closesCycle(returned)).toBe(false);
+        expect(policy.voidsCycle(returned)).toBe(true);
+        expect(
+            policy.voidsCycle(
+                makeMovement({
+                    type: 'ENTRY',
+                    quantityAfter: 2,
+                    reason: 'PURCHASE',
+                }),
+            ),
+        ).toBe(false);
+    });
+
+    it('keeps the cycle when returned stock stays at or below the reorder point', () => {
+        const policy = new ReorderPointRestockPolicy(3);
+        expect(
+            policy.voidsCycle(
+                makeMovement({
+                    type: 'ENTRY',
+                    quantityAfter: 3,
+                    reason: 'RETURN',
+                }),
+            ),
+        ).toBe(false);
+    });
+
     it('rejects negative or non-integer reorder points', () => {
         for (const invalid of [-1, 1.5, Number.NaN]) {
             expect(() => new ReorderPointRestockPolicy(invalid)).toThrow(

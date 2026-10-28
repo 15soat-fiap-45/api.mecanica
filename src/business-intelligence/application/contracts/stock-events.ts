@@ -8,6 +8,8 @@ export interface StockUpdatedContract extends DomainEvent {
     readonly eventName: 'stock.stock-updated';
     readonly partCode: string;
     readonly movementType: 'ENTRY' | 'EXIT';
+    readonly reason?:
+        'STOCK_ENTRY' | 'RESERVATION' | 'RESERVATION_CANCELLED' | undefined;
     readonly movedQuantity: number;
     readonly previousQuantity: number;
     readonly currentQuantity: number;

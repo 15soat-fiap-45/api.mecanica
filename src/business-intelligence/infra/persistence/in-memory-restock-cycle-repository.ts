@@ -28,6 +28,10 @@ export class InMemoryRestockCycleRepository implements RestockCycleRepository {
         this.items.set(snapshot.id, snapshot);
     }
 
+    async delete(id: string): Promise<void> {
+        this.items.delete(id);
+    }
+
     async findClosedBetween(
         filter: RestockCycleFilter,
     ): Promise<RestockCycle[]> {

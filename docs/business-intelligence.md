@@ -131,6 +131,7 @@ Como o módulo de histórico de alterações de estoque ainda está em desenvolv
 - **Implementação Padrão:** `ReorderPointRestockPolicy(reorderPoint)`.
 - **Configuração:** O ponto de reposição padrão é `0` (reabastecimento após ruptura total de estoque), configurável dinamicamente via variável de ambiente `BI_REORDER_POINT`.
 - **Ajustes manuais:** Entradas com motivo `MANUAL` (provenientes de inventário ou contagem física) não encerram ciclos de reposição de compras.
+- **Devoluções (`RETURN`):** Quando uma reserva é cancelada, a peça volta ao estoque sem ter havido reposição. Essa entrada nunca encerra o ciclo; se ela elevar o saldo acima do ponto de reposição, o ciclo aberto é **descartado** (a falta acabou sem compra e não entra na média).
 
 ---
 
@@ -152,13 +153,14 @@ O BI já está preparado para consumir **dois formatos de evento** através do a
 
 #### A. Evento Atual (`stock.stock-updated`)
 
-Emitido pelo agregado `PartSupply` nas operações de entrada (`registerEntry`) e saída (`deduct`):
+Emitido pelo agregado `PartSupply` nas operações de entrada (`registerEntry`) e saída (`deduct`). O campo `reason` identifica a origem da movimentação e é traduzido pelo adaptador (`STOCK_ENTRY` → `PURCHASE`, `RESERVATION` → `RESERVATION`, `RESERVATION_CANCELLED` → `RETURN`):
 
 ```ts
 interface StockUpdatedContract extends DomainEvent {
     readonly eventName: 'stock.stock-updated';
     readonly partCode: string;
     readonly movementType: 'ENTRY' | 'EXIT';
+    readonly reason?: 'STOCK_ENTRY' | 'RESERVATION' | 'RESERVATION_CANCELLED';
     readonly movedQuantity: number;
     readonly previousQuantity: number;
     readonly currentQuantity: number;

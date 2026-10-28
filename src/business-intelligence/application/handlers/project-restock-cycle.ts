@@ -11,6 +11,8 @@ import type { StockMovement } from '../../domain/restock-cycle/stock-movement.js
  *   while a cycle is already open are ignored.
  * - An inward movement that satisfies `policy.closesCycle` closes the open
  *   cycle (if any); otherwise it is a no-op.
+ * - A movement that satisfies `policy.voidsCycle` discards the open cycle,
+ *   so it never counts towards the restock lead time.
  */
 export class ProjectRestockCycle {
     constructor(
@@ -29,6 +31,11 @@ export class ProjectRestockCycle {
                 quantityAtOpen: movement.quantityAfter,
             });
             await this.cycles.save(cycle);
+            return;
+        }
+
+        if (this.policy.voidsCycle(movement)) {
+            await this.cycles.delete(open.id);
             return;
         }
 

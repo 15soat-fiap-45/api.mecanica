@@ -60,6 +60,12 @@ export class DrizzleRestockCycleRepository implements RestockCycleRepository {
             });
     }
 
+    async delete(id: string): Promise<void> {
+        await this.database
+            .delete(biRestockCycles)
+            .where(eq(biRestockCycles.id, id));
+    }
+
     async findClosedBetween(
         filter: RestockCycleFilter,
     ): Promise<RestockCycle[]> {

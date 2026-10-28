@@ -29,6 +29,35 @@ describe('stock-movement-adapters', () => {
         });
     });
 
+    it('maps the stock.stock-updated reason into the neutral vocabulary', () => {
+        const base = {
+            eventId: 'evt-3',
+            eventName: 'stock.stock-updated' as const,
+            aggregateId: 'part-1',
+            occurredOn: new Date('2026-03-01T13:00:00.000Z'),
+            partCode: 'PAST-FREIO-01',
+            movementType: 'ENTRY' as const,
+            movedQuantity: 2,
+            previousQuantity: 0,
+            currentQuantity: 2,
+        };
+
+        expect(
+            fromStockUpdated({ ...base, reason: 'RESERVATION_CANCELLED' })
+                .reason,
+        ).toBe('RETURN');
+        expect(
+            fromStockUpdated({ ...base, reason: 'STOCK_ENTRY' }).reason,
+        ).toBe('PURCHASE');
+        expect(
+            fromStockUpdated({
+                ...base,
+                movementType: 'EXIT',
+                reason: 'RESERVATION',
+            }).reason,
+        ).toBe('RESERVATION');
+    });
+
     it('adapts stock.movement-recorded into StockMovement preserving reason and movementId', () => {
         const occurredOn = new Date('2026-03-01T14:00:00.000Z');
         const movement = fromStockMovementRecorded({

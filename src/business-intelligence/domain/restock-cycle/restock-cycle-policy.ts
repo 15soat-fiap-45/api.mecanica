@@ -22,6 +22,8 @@ export interface RestockCyclePolicy {
     readonly name: string;
     opensCycle(movement: StockMovement): boolean;
     closesCycle(movement: StockMovement): boolean;
+    /** The open cycle is discarded: the shortage ended without a restock. */
+    voidsCycle(movement: StockMovement): boolean;
     describe(): { name: string; [key: string]: unknown };
 }
 
@@ -33,6 +35,9 @@ export interface RestockCyclePolicy {
  *   `reorderPoint`.
  * - Manual adjustments with reason `MANUAL` (when provided by the future
  *   stock-history event) do not close a restock cycle.
+ * - Stock coming back with reason `RETURN` (e.g. a cancelled reservation)
+ *   is not a restock: if it lifts the stock above `reorderPoint` the open
+ *   cycle is discarded instead of closed.
  */
 export class ReorderPointRestockPolicy implements RestockCyclePolicy {
     readonly name = 'REORDER_POINT';
@@ -54,7 +59,20 @@ export class ReorderPointRestockPolicy implements RestockCyclePolicy {
     }
 
     closesCycle(movement: StockMovement): boolean {
-        if (movement.reason === 'MANUAL') return false;
+        if (movement.reason === 'MANUAL' || movement.reason === 'RETURN') {
+            return false;
+        }
+        return this.liftsAboveReorderPoint(movement);
+    }
+
+    voidsCycle(movement: StockMovement): boolean {
+        return (
+            movement.reason === 'RETURN' &&
+            this.liftsAboveReorderPoint(movement)
+        );
+    }
+
+    private liftsAboveReorderPoint(movement: StockMovement): boolean {
         return (
             movement.type === 'ENTRY' &&
             movement.quantityAfter > this.reorderPoint

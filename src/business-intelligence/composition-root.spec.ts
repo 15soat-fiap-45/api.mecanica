@@ -371,4 +371,49 @@ describe('Business Intelligence projections and use cases (via EventBus)', () =>
         expect(report.byPart[0]?.partCode).toBe('FILT-AR-01');
         expect(report.byPart[0]?.openCycleSince).toBeNull();
     });
+
+    it('discards the open cycle when a cancelled reservation returns the stock', async () => {
+        const { bus, bi } = setup(0);
+
+        const part = PartSupply.register({
+            id: 'part-returned',
+            description: 'Pastilha de freio',
+            partCode: PartCode.create('PAST-FREIO-01'),
+            quantity: 2,
+            unitOfMeasure: UnitOfMeasure.create('UNIT'),
+        });
+        part.deduct(2); // reservation reaches 0 -> opens cycle
+        part.registerEntry(2, 'RESERVATION_CANCELLED'); // stock comes back
+        await bus.publish(part.pullEvents());
+
+        const afterReturn = await bi.getRestockLeadTime.execute({});
+        expect(afterReturn.overall.count).toBe(0);
+        expect(afterReturn.byPart).toEqual([]);
+
+        part.registerEntry(5); // a later restock has no open cycle to close
+        await bus.publish(part.pullEvents());
+
+        const afterEntry = await bi.getRestockLeadTime.execute({});
+        expect(afterEntry.overall.count).toBe(0);
+    });
+
+    it('keeps the cycle open when a returned reservation does not lift the stock above the reorder point', async () => {
+        const { bus, bi } = setup(3);
+
+        const part = PartSupply.register({
+            id: 'part-partial-return',
+            description: 'Filtro de óleo',
+            partCode: PartCode.create('FILT-OLEO-01'),
+            quantity: 4,
+            unitOfMeasure: UnitOfMeasure.create('UNIT'),
+        });
+        part.deduct(4); // 0 <= 3 -> opens cycle
+        part.registerEntry(2, 'RESERVATION_CANCELLED'); // 2 <= 3 -> still short
+        part.registerEntry(5); // 7 > 3 -> real restock closes the cycle
+        await bus.publish(part.pullEvents());
+
+        const report = await bi.getRestockLeadTime.execute({});
+        expect(report.overall.count).toBe(1);
+        expect(report.byPart[0]?.openCycleSince).toBeNull();
+    });
 });

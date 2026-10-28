@@ -1,8 +1,18 @@
 import type { StockMovement } from '../../domain/restock-cycle/stock-movement.js';
 import type {
+    StockMovementReason,
     StockMovementRecordedContract,
     StockUpdatedContract,
 } from '../contracts/stock-events.js';
+
+const stockUpdatedReasons: Record<
+    NonNullable<StockUpdatedContract['reason']>,
+    StockMovementReason
+> = {
+    STOCK_ENTRY: 'PURCHASE',
+    RESERVATION: 'RESERVATION',
+    RESERVATION_CANCELLED: 'RETURN',
+};
 
 /**
  * Adapts the current `stock.stock-updated` event into the neutral
@@ -16,6 +26,7 @@ export function fromStockUpdated(event: StockUpdatedContract): StockMovement {
         quantityBefore: event.previousQuantity,
         quantityAfter: event.currentQuantity,
         occurredOn: new Date(event.occurredOn),
+        ...(event.reason && { reason: stockUpdatedReasons[event.reason] }),
     };
 }
 

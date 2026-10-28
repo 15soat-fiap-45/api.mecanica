@@ -73,7 +73,10 @@ export class CancelReservation implements UseCase<
             }
 
             reservation.cancel();
-            partSupply.registerEntry(reservation.quantity);
+            partSupply.registerEntry(
+                reservation.quantity,
+                'RESERVATION_CANCELLED',
+            );
 
             await this.partSupplyRepository.save(partSupply);
             await this.reservationRepository.save(reservation);
