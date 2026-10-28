@@ -272,6 +272,43 @@ describe('ServiceOrder Aggregate Root', () => {
         expect(() => os.deliver()).toThrow(InvalidServiceOrderStatusException);
     });
 
+    it('should record ServiceOrderExecutionStarted when execution starts', () => {
+        const os = ServiceOrder.create(makeProps());
+        os.approve();
+
+        os.startExecution();
+
+        const events = os.pullEvents();
+        expect(events).toHaveLength(1);
+        expect(events[0]?.eventName).toBe('service-order.execution-started');
+        expect(events[0]?.aggregateId).toBe('os-1');
+    });
+
+    it('should record ServiceOrderDelivered when the order is delivered', () => {
+        const os = ServiceOrder.create(makeProps());
+        os.approve();
+        os.startExecution();
+        os.finish();
+        os.pullEvents();
+
+        os.deliver();
+
+        const events = os.pullEvents();
+        expect(events).toHaveLength(1);
+        expect(events[0]?.eventName).toBe('service-order.delivered');
+        expect(events[0]?.aggregateId).toBe('os-1');
+    });
+
+    it('should not record events when a transition is rejected', () => {
+        const os = ServiceOrder.create(makeProps());
+
+        expect(() => os.startExecution()).toThrow(
+            InvalidServiceOrderStatusException,
+        );
+        expect(() => os.deliver()).toThrow(InvalidServiceOrderStatusException);
+        expect(os.pullEvents()).toHaveLength(0);
+    });
+
     it('should compare service orders by identity using AggregateRoot.equals()', () => {
         const os1 = ServiceOrder.create(makeProps());
         const os2 = ServiceOrder.create(
