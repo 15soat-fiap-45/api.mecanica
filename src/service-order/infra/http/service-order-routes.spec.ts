@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { InjectOptions } from 'fastify';
 import { buildApp } from '../../../app.js';
 import { InMemoryEventBus } from '../../../shared/application/in-memory-event-bus.js';
 import type { DomainEvent } from '../../../shared/domain/domain-event.js';
@@ -50,7 +51,9 @@ function setup(
             .at(-1);
         list.push({
             status,
-            valueCents: orderBudget ? orderBudget.totalCents : null,
+            valueCents: orderBudget
+                ? orderBudget.totalCents
+                : (orders.get(orderId)?.valueCents ?? null),
             changedBy: actorContext.getStore() ?? null,
             recordedAt: new Date(),
         });
@@ -186,20 +189,6 @@ function setup(
     const serviceOrder = serviceOrderCompositionRoot(bus, {
         serviceOrderRepository,
         budgetRepository,
-        serviceCatalog: {
-            create: vi.fn(async (input) => ({ ...input, id: 1 })),
-            list: vi.fn(async () => []),
-            assign: vi.fn(async () => {}),
-            forOrder: vi.fn(async () => [
-                {
-                    id: 1,
-                    title: 'Freios',
-                    description: null,
-                    valueCents: 12345,
-                    partIds: [],
-                },
-            ]),
-        },
         approvalRequestRepository: approvals,
         vehicleContacts: {
             findByVehicleId: vi.fn(async (id) =>
@@ -219,9 +208,11 @@ function setup(
     const app = buildApp({ serviceOrder });
     if (options.defaultAuthorization) {
         const originalInject = app.inject.bind(app);
-        app.inject = ((opts: Parameters<typeof app.inject>[0]) => {
-            if (typeof opts === 'string') return originalInject(opts);
-            const url = opts.url ?? '';
+        app.inject = ((opts?: InjectOptions | string) => {
+            if (!opts || typeof opts === 'string') {
+                return originalInject(opts as string);
+            }
+            const url = typeof opts.url === 'string' ? opts.url : '';
             const isPublic =
                 url.startsWith('/budget-approvals/') ||
                 url.startsWith('/orcamento') ||
@@ -274,6 +265,7 @@ describe('Service Order HTTP integration', () => {
             description: 'Troca de óleo',
             status: 'PENDING',
             vehicleId: 'vehicle-1',
+            valueCents: null,
         });
         expect(order.id).not.toBe('caller-id');
         expect(orders.has(order.id)).toBe(true);
@@ -316,7 +308,7 @@ describe('Service Order HTTP integration', () => {
     });
 
     it('approves the budget through the bus, then allows recording supply usage', async () => {
-        const { app, orders, budgets, events, emails } = setup();
+        const { app, orders, events, emails } = setup();
         const order = ServiceOrder.create({
             id: 'os-1',
             description: 'Freios',
@@ -325,19 +317,11 @@ describe('Service Order HTTP integration', () => {
         order.addSupply('PAST-01', 2);
         order.pullEvents();
         orders.set('os-1', order);
-        budgets.set(
-            'budget-1',
-            Budget.create({
-                id: 'budget-1',
-                serviceOrderId: 'os-1',
-                totalCents: 12345,
-            }),
-        );
 
         const approved = await app.inject({
             method: 'POST',
             url: '/service-orders/os-1/awaiting-approval',
-            payload: { budgetId: 'budget-1' },
+            payload: { valueCents: 12345 },
         });
         expect(approved.statusCode).toBe(200);
         expect(approved.json()).toEqual({ status: 'AWAITING_APPROVAL' });
@@ -401,29 +385,22 @@ describe('Service Order HTTP integration', () => {
                 id: 'os-1',
                 vehicleId: 'vehicle-1',
                 description: 'Freios',
-            }),
-        );
-        budgets.set(
-            'budget-1',
-            Budget.create({
-                id: 'budget-1',
-                serviceOrderId: 'os-1',
-                totalCents: 12345,
+                valueCents: 12345,
             }),
         );
         emailSender.send.mockRejectedValueOnce(new Error('SMTP down'));
         const response = await app.inject({
             method: 'POST',
             url: '/service-orders/os-1/awaiting-approval',
-            payload: { budgetId: 'budget-1' },
         });
         expect(response.statusCode).toBe(200);
         expect(orders.get('os-1')?.status.value).toBe('AWAITING_APPROVAL');
         expect(busErrors).toHaveBeenCalledOnce();
         expect([...requests.values()][0]?.sentAt).toBeNull();
+        const createdBudgetId = [...budgets.values()][0]!.id.value;
         await serviceOrder.resendBudgetApproval.execute({
             serviceOrderId: 'os-1',
-            budgetId: 'budget-1',
+            budgetId: createdBudgetId,
         });
         expect(emails).toHaveLength(1);
         expect(
@@ -443,18 +420,10 @@ describe('Service Order HTTP integration', () => {
                 description: 'Freios',
             }),
         );
-        budgets.set(
-            'budget-1',
-            Budget.create({
-                id: 'budget-1',
-                serviceOrderId: 'os-1',
-                totalCents: 12345,
-            }),
-        );
         await app.inject({
             method: 'POST',
             url: '/service-orders/os-1/awaiting-approval',
-            payload: { budgetId: 'budget-1' },
+            payload: { valueCents: 12345 },
         });
         const token = emails[0]!.text.match(
             /orcamento\/([A-Za-z0-9_-]{43})/,
@@ -629,13 +598,15 @@ describe('Service Order HTTP integration', () => {
         expect(baseRoute.body).toContain('Oficina Mecânica');
     });
 
-    it('lists an order with its associated services and moves it through execution and delivery', async () => {
+    it('lists an order with its associated supplies and valueCents and moves it through execution and delivery', async () => {
         const { app, orders, emails } = setup();
         const order = ServiceOrder.create({
             id: 'os-1',
             vehicleId: 'vehicle-1',
             description: 'Freios',
+            valueCents: 12345,
         });
+        order.addSupply('PAST-01', 2);
         order.approve();
         orders.set('os-1', order);
         const listed = await app.inject({
@@ -643,7 +614,14 @@ describe('Service Order HTTP integration', () => {
             url: '/service-orders/os-1',
         });
         expect(listed.statusCode).toBe(200);
-        expect(listed.json().services).toHaveLength(1);
+        expect(listed.json()).toEqual({
+            id: 'os-1',
+            vehicleId: 'vehicle-1',
+            description: 'Freios',
+            status: 'APPROVED',
+            valueCents: 12345,
+            supplies: [{ partCode: 'PAST-01', quantity: 2, used: false }],
+        });
         for (const [path, status] of [
             ['start', 'IN_PROGRESS'],
             ['finish', 'COMPLETED'],
@@ -661,34 +639,28 @@ describe('Service Order HTTP integration', () => {
         ).toBe(true);
     });
 
-    it('accepts several services from a reusable catalog without requiring an existing budget id', async () => {
-        const { app, orders } = setup();
-        orders.set(
-            'os-1',
-            ServiceOrder.create({
-                id: 'os-1',
-                vehicleId: 'vehicle-1',
-                description: 'Freios',
-            }),
-        );
+    it('accepts valueCents at order creation and transitions to awaiting approval without requiring an existing budget id', async () => {
+        const { app, budgets } = setup();
         const created = await app.inject({
             method: 'POST',
-            url: '/services',
-            payload: { title: 'Freios', valueCents: 12345, partIds: [1, 2] },
+            url: '/service-orders',
+            payload: {
+                description: 'Freios',
+                vehicleId: 'vehicle-1',
+                valueCents: 12345,
+            },
         });
         expect(created.statusCode).toBe(201);
-        const assigned = await app.inject({
-            method: 'POST',
-            url: '/service-orders/os-1/services',
-            payload: { serviceId: created.json().id },
-        });
-        expect(assigned.statusCode).toBe(201);
+        expect(created.json().valueCents).toBe(12345);
+        const orderId = created.json().id as string;
+
         const awaiting = await app.inject({
             method: 'POST',
-            url: '/service-orders/os-1/awaiting-approval',
+            url: `/service-orders/${orderId}/awaiting-approval`,
         });
         expect(awaiting.statusCode).toBe(200);
         expect(awaiting.json().status).toBe('AWAITING_APPROVAL');
+        expect([...budgets.values()][0]?.totalCents).toBe(12345);
     });
 
     it('returns the chronological status history with inspection value and actor once quoted', async () => {
@@ -707,6 +679,7 @@ describe('Service Order HTTP integration', () => {
             method: 'POST',
             url: `/service-orders/${orderId}/awaiting-approval`,
             headers: mecanicoHeaders,
+            payload: { valueCents: 12345 },
         });
         const token = emails[0]!.text.match(
             /orcamento\/([A-Za-z0-9_-]{43})/,
@@ -773,9 +746,6 @@ describe('Service Order HTTP integration', () => {
 
         for (const [method, url] of [
             ['POST', '/service-orders'],
-            ['POST', '/services'],
-            ['GET', '/services'],
-            ['POST', '/service-orders/os-1/services'],
             ['GET', '/service-orders/os-1'],
             ['GET', '/service-orders/os-1/history'],
             ['POST', '/service-orders/os-1/supplies'],
@@ -800,7 +770,7 @@ describe('Service Order HTTP integration', () => {
         expect(serviceOrderRepository.save).not.toHaveBeenCalled();
     });
 
-    it('enforces role permissions with 403 Forbidden across service-order and catalog routes', async () => {
+    it('enforces role permissions with 403 Forbidden across service-order routes', async () => {
         const { app, orders } = setup({ defaultAuthorization: undefined });
         orders.set(
             'os-1',
@@ -814,14 +784,10 @@ describe('Service Order HTTP integration', () => {
         const forbiddenCases = [
             ['POST', '/service-orders', 'jwt-mecanico'],
             ['POST', '/service-orders', 'jwt-estoquista'],
-            ['POST', '/services', 'jwt-mecanico'],
-            ['POST', '/services', 'jwt-estoquista'],
             ['POST', '/service-orders/os-1/cancel', 'jwt-mecanico'],
             ['POST', '/service-orders/os-1/cancel', 'jwt-estoquista'],
             ['POST', '/service-orders/os-1/deliver', 'jwt-mecanico'],
             ['POST', '/service-orders/os-1/deliver', 'jwt-estoquista'],
-            ['POST', '/service-orders/os-1/services', 'jwt-atendente'],
-            ['POST', '/service-orders/os-1/services', 'jwt-estoquista'],
             ['POST', '/service-orders/os-1/awaiting-approval', 'jwt-atendente'],
             [
                 'POST',
@@ -863,13 +829,6 @@ describe('Service Order HTTP integration', () => {
             'jwt-estoquista',
             'jwt-gerente',
         ]) {
-            const listServices = await app.inject({
-                method: 'GET',
-                url: '/services',
-                headers: { authorization: `Bearer ${token}` },
-            });
-            expect(listServices.statusCode).toBe(200);
-
             const getOrder = await app.inject({
                 method: 'GET',
                 url: '/service-orders/os-1',
@@ -887,6 +846,7 @@ describe('Service Order HTTP integration', () => {
                 id: 'os-1',
                 description: 'Freios',
                 vehicleId: 'vehicle-1',
+                valueCents: 12345,
             }),
         );
         vi.mocked(serviceOrderRepository.save).mockRejectedValueOnce(
@@ -940,6 +900,7 @@ describe('Service Order HTTP integration', () => {
         await app.inject({
             method: 'POST',
             url: `/service-orders/${cancelledViaHttpId}/awaiting-approval`,
+            payload: { valueCents: 12345 },
         });
         await app.inject({
             method: 'POST',

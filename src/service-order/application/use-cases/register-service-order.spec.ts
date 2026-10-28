@@ -40,6 +40,7 @@ describe('RegisterServiceOrder Use Case', () => {
         expect(result.description).toBe('Troca de pastilhas e fluido de freio');
         expect(result.status).toBe('PENDING');
         expect(result.vehicleId).toBe('vehicle-1');
+        expect(result.valueCents).toBeNull();
         expect(repository.save).toHaveBeenCalledTimes(1);
         expect(eventBus.publish).toHaveBeenCalledTimes(1);
         expect(eventBus.publish).toHaveBeenCalledWith(
@@ -50,6 +51,19 @@ describe('RegisterServiceOrder Use Case', () => {
                 }),
             ]),
         );
+    });
+
+    it('should register a service order with an initial valueCents when provided', async () => {
+        const repository = makeRepository();
+        const useCase = new RegisterServiceOrder(repository, contacts);
+
+        const result = await useCase.execute({
+            ...validInput,
+            valueCents: 18500,
+        });
+
+        expect(result.valueCents).toBe(18500);
+        expect(repository.save).toHaveBeenCalledTimes(1);
     });
 
     it('should always generate the id (a caller-chosen id could overwrite an existing order on retry)', async () => {

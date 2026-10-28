@@ -22,7 +22,6 @@ import { RegistryVehicleContactLookup } from './infra/registry-vehicle-contact-l
 import { TokenActorResolver } from './infra/token-actor-resolver.js';
 import { SmtpEmailSender } from './service-order/infra/email/smtp-email-sender.js';
 import { readEmailConfig } from './service-order/infra/email/email.config.js';
-import { DrizzleServiceCatalog } from './infra/database/service-order/drizzle-service-catalog.js';
 
 const initialManagerPassword = process.env.INITIAL_MANAGER_PASSWORD;
 if (!initialManagerPassword || initialManagerPassword.trim() === '') {
@@ -58,7 +57,6 @@ const serviceOrder = serviceOrderCompositionRoot(eventBus, {
     serviceOrderRepository: new DrizzleServiceOrderRepository(),
     budgetRepository: new DrizzleBudgetRepository(),
     approvalRequestRepository: approvalRequests,
-    serviceCatalog: new DrizzleServiceCatalog(),
     vehicleContacts: new RegistryVehicleContactLookup(
         new DrizzleVehicleRepository(),
         new DrizzleCustomerRepository(),

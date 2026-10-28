@@ -50,15 +50,6 @@ export const veiculo = pgTable('veiculo', {
         .references(() => cliente.clienteId),
 });
 
-export const servico = pgTable('servico', {
-    servicoId: bigint('servico_id', { mode: 'number' })
-        .generatedByDefaultAsIdentity()
-        .primaryKey(),
-    titulo: varchar('titulo', { length: 20 }).notNull(),
-    descricao: varchar('descricao', { length: 200 }),
-    valor: bigint('valor', { mode: 'number' }).notNull(),
-});
-
 // Context-owned tables; the legacy public schema uses a different OS model.
 export const serviceOrderSchema = pgSchema('service_order');
 
@@ -68,6 +59,7 @@ export const serviceOrders = serviceOrderSchema.table(
         id: varchar('id', { length: 36 }).primaryKey(),
         description: text('description').notNull(),
         vehicleId: varchar('vehicle_id', { length: 36 }),
+        valueCents: bigint('value_cents', { mode: 'number' }),
         status: varchar('status', { length: 20 }).notNull().default('PENDING'),
         version: integer('version').notNull().default(0),
     },
@@ -75,6 +67,10 @@ export const serviceOrders = serviceOrderSchema.table(
         check(
             'orders_status_check',
             sql`${table.status} IN ('PENDING', 'AWAITING_APPROVAL', 'REJECTED', 'APPROVED', 'IN_PROGRESS', 'PAUSED', 'COMPLETED', 'DELIVERED', 'CANCELLED')`,
+        ),
+        check(
+            'orders_value_cents_check',
+            sql`${table.valueCents} IS NULL OR ${table.valueCents} >= 0`,
         ),
     ],
 );
@@ -143,53 +139,6 @@ export const approvalRequests = serviceOrderSchema.table(
         check(
             'approval_decision_check',
             sql`${table.decision} IS NULL OR ${table.decision} IN ('approved', 'rejected')`,
-        ),
-    ],
-);
-
-export const catalogServices = serviceOrderSchema.table(
-    'services',
-    {
-        id: bigint('id', { mode: 'number' })
-            .generatedByDefaultAsIdentity()
-            .primaryKey(),
-        title: varchar('title', { length: 20 }).notNull(),
-        description: varchar('description', { length: 200 }),
-        valueCents: bigint('value_cents', { mode: 'number' }).notNull(),
-    },
-    (table) => [
-        check('services_value_cents_check', sql`${table.valueCents} >= 0`),
-    ],
-);
-
-export const serviceParts = serviceOrderSchema.table(
-    'service_parts',
-    {
-        serviceId: bigint('service_id', { mode: 'number' })
-            .notNull()
-            .references(() => catalogServices.id),
-        partId: bigint('part_id', { mode: 'number' }).notNull(),
-    },
-    (table) => [primaryKey({ columns: [table.serviceId, table.partId] })],
-);
-
-export const orderServices = serviceOrderSchema.table(
-    'order_services',
-    {
-        orderId: varchar('order_id', { length: 36 })
-            .notNull()
-            .references(() => serviceOrders.id, { onDelete: 'cascade' }),
-        serviceId: bigint('service_id', { mode: 'number' })
-            .notNull()
-            .references(() => catalogServices.id),
-        title: varchar('title', { length: 20 }).notNull(),
-        valueCents: bigint('value_cents', { mode: 'number' }).notNull(),
-    },
-    (table) => [
-        primaryKey({ columns: [table.orderId, table.serviceId] }),
-        check(
-            'order_services_value_cents_check',
-            sql`${table.valueCents} >= 0`,
         ),
     ],
 );

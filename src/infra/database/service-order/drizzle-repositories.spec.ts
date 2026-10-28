@@ -183,6 +183,7 @@ describe('Drizzle ServiceOrderRepository', () => {
                 'os-1',
                 'Freios',
                 'vehicle-1',
+                '12345',
                 'IN_PROGRESS',
                 4,
                 'os-1',
@@ -194,6 +195,7 @@ describe('Drizzle ServiceOrderRepository', () => {
                 'os-1',
                 'Freios',
                 'vehicle-1',
+                '12345',
                 'IN_PROGRESS',
                 4,
                 'os-1',
@@ -210,6 +212,7 @@ describe('Drizzle ServiceOrderRepository', () => {
         expect(order?.status.value).toBe('IN_PROGRESS');
         expect(order?.version).toBe(4);
         expect(order?.vehicleId).toBe('vehicle-1');
+        expect(order?.valueCents).toBe(12345);
         expect(
             order?.items.map((item) => ({
                 partCode: item.partCode,
@@ -224,12 +227,24 @@ describe('Drizzle ServiceOrderRepository', () => {
 
     it('rehydrates orders without items', async () => {
         const { database } = databaseWith(() => [
-            ['os-1', 'Freios', null, 'PENDING', 1, null, null, null, null],
+            [
+                'os-1',
+                'Freios',
+                null,
+                null,
+                'PENDING',
+                1,
+                null,
+                null,
+                null,
+                null,
+            ],
         ]);
         const order = await new DrizzleServiceOrderRepository(
             database,
         ).findById('os-1');
         expect(order?.items).toEqual([]);
+        expect(order?.valueCents).toBeNull();
     });
 
     it('returns null for a missing order', async () => {

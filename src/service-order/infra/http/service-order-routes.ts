@@ -29,10 +29,10 @@ function getApprovalHtml(): string {
 
 const idSchema = z.string().trim().min(1).max(36);
 const orderParams = z.object({ serviceOrderId: idSchema });
-const serviceIdSchema = z
+const valueCentsSchema = z
     .number()
     .int()
-    .positive()
+    .min(0)
     .max(Number.MAX_SAFE_INTEGER);
 const partCodeSchema = z
     .string()
@@ -106,6 +106,7 @@ export function registerServiceOrderRoutes(
                 body: z.object({
                     description: z.string().trim().min(1),
                     vehicleId: idSchema,
+                    valueCents: valueCentsSchema.nullable().optional(),
                 }),
                 response: {
                     201: z.object({
@@ -113,6 +114,7 @@ export function registerServiceOrderRoutes(
                         description: z.string(),
                         status: z.string(),
                         vehicleId: z.string(),
+                        valueCents: valueCentsSchema.nullable(),
                     }),
                 },
             },
@@ -122,79 +124,6 @@ export function registerServiceOrderRoutes(
                 request.body,
             );
             return reply.code(201).send(order);
-        },
-    );
-
-    typedApp.post(
-        '/services',
-        {
-            preValidation: requireAuth('OS_CRIAR'),
-            schema: {
-                tags: ['Service orders'],
-                body: z.object({
-                    title: z.string().trim().min(1).max(20),
-                    description: z.string().max(200).nullable().optional(),
-                    valueCents: z
-                        .number()
-                        .int()
-                        .min(0)
-                        .max(Number.MAX_SAFE_INTEGER),
-                    partIds: z.array(serviceIdSchema).default([]),
-                }),
-                response: {
-                    201: z.object({
-                        id: serviceIdSchema,
-                        title: z.string(),
-                        description: z.string().nullable(),
-                        valueCents: z.number(),
-                        partIds: z.array(serviceIdSchema),
-                    }),
-                },
-            },
-        },
-        async (request, reply) =>
-            reply.code(201).send(
-                await useCases.serviceCatalog.create({
-                    ...request.body,
-                    description: request.body.description ?? null,
-                }),
-            ),
-    );
-
-    typedApp.get(
-        '/services',
-        {
-            preValidation: requireAuth(),
-            schema: { tags: ['Service orders'] },
-        },
-        async () => useCases.serviceCatalog.list(),
-    );
-
-    typedApp.post(
-        '/service-orders/:serviceOrderId/services',
-        {
-            preValidation: requireAuth('OS_CONCLUIR'),
-            schema: {
-                tags: ['Service orders'],
-                params: orderParams,
-                body: z.object({ serviceId: serviceIdSchema }),
-                response: {
-                    201: z.object({
-                        serviceOrderId: z.string(),
-                        serviceId: serviceIdSchema,
-                    }),
-                },
-            },
-        },
-        async (request, reply) => {
-            await useCases.serviceCatalog.assign(
-                request.params.serviceOrderId,
-                request.body.serviceId,
-            );
-            return reply.code(201).send({
-                serviceOrderId: request.params.serviceOrderId,
-                serviceId: request.body.serviceId,
-            });
         },
     );
 
@@ -311,6 +240,11 @@ export function registerServiceOrderRoutes(
             schema: {
                 tags: ['Service orders'],
                 params: orderParams,
+                body: z
+                    .object({
+                        valueCents: valueCentsSchema.optional(),
+                    })
+                    .nullish(),
                 response: {
                     200: z.object({
                         status: z.string(),
@@ -318,7 +252,11 @@ export function registerServiceOrderRoutes(
                 },
             },
         },
-        async (request) => useCases.awaitBudgetApproval.execute(request.params),
+        async (request) =>
+            useCases.awaitBudgetApproval.execute({
+                serviceOrderId: request.params.serviceOrderId,
+                valueCents: request.body?.valueCents,
+            }),
     );
 
     for (const [path, useCase, permission] of [
