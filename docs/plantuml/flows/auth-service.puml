@@ -75,7 +75,7 @@ else Requisição válida
 end
 
 note over API,DB
-    Rota registrada no bootstrap por buildApp({registry, auth}).
+    Rota registrada no bootstrap por buildApp({registry, auth, serviceOrder, businessIntelligence}).
     A senha temporária é devolvida em claro somente na resposta.
 end note
 @enduml
@@ -143,7 +143,7 @@ else Dentro do limite
 end
 
 note over API,DB
-    Rota registrada no bootstrap por buildApp({registry, auth}).
+    Rota registrada no bootstrap por buildApp({registry, auth, serviceOrder, businessIntelligence}).
     Primeiro acesso usa POST /auth/first-access (fluxo separado).
 end note
 @enduml

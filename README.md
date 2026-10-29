@@ -29,8 +29,9 @@ O documento oficial `Fase 1 - Tech Challenge.pdf` não está presente na árvore
 | Histórico de fases da OS                              | **Implementado e validado via integração E2E** | Tabela `service_order.order_status_history` (`status`, `value_cents`, `changed_by`, `recorded_at`) e `GET /service-orders/:id/history` |
 | Orçamento e aprovação/rejeição                        | **Implementado e validado via integração E2E** | Persistência atômica orçamento+OS, envio de link único por e-mail (MailHog/SMTP), aprovação, recusa, revogação e expiração             |
 | Estoque e reservas                                    | **Parcialmente implementado**                  | Agregados, casos de uso, handlers e testes existem; não há endpoints nem repositórios PostgreSQL correspondentes                       |
-| CRUD completo de clientes, veículos, serviços e peças | **Pendente / parcial**                         | Foram encontradas operações de criação e consulta de clientes, veículos e serviços; atualização e exclusão não estão expostas          |
-| Autenticação JWT e autorização administrativa         | **Isolamento preparado via Porta/Adaptador**   | `ActorResolver` + `TokenActorResolver` desacoplados prontos para receber `JoseTokenService` / `ResolveAuthenticatedUser`               |
+| CRUD de clientes e veículos                          | **Implementado**                               | Clientes e veículos possuem cadastro, consulta, atualização e exclusão; as rotas exigem JWT e permissão `CLIENTE_EDITAR`              |
+| CRUD de serviços e peças                             | **Pendente / parcial**                         | Há operações de criação e consulta de serviços; atualização, exclusão e persistência completa de peças ainda não estão expostas      |
+| Autenticação JWT e autorização administrativa         | **Implementado**                              | `ActorResolver` + `TokenActorResolver` protegem Registry e Service Order; `USUARIO_PRE_CADASTRAR` permanece restrita ao `GERENTE`     |
 | Dockerfile da aplicação e Docker Compose completo     | **Pendente**                                   | Existe Compose para PostgreSQL/MailHog e SonarQube, mas não para a aplicação                                                           |
 
 ## Arquitetura e DDD
@@ -136,9 +137,10 @@ APPROVAL_TOKEN_TTL_MINUTES=<validade do link de aprovação em minutos>
 DATABASE_URL=<opcional; tem prioridade sobre as variáveis individuais>
 INITIAL_MANAGER_PASSWORD=<senha temporária do gerente inicial; obrigatória>
 JWT_SECRET=<chave de assinatura JWT; obrigatória, com pelo menos 32 bytes>
+BI_REORDER_POINT=<opcional; ponto de reposição usado pelo módulo de BI, padrão 0>
 ```
 
-As duas últimas variáveis são usadas pelo bootstrap da aplicação; podem ser definidas no ambiente do processo. `src/infra/database/connection.ts` também carrega `infra/postgres/.env` no desenvolvimento. O arquivo `.env` real não deve ser publicado; não use os valores de exemplo como senhas reais.
+`INITIAL_MANAGER_PASSWORD` e `JWT_SECRET` são obrigatórias para iniciar a aplicação. `BI_REORDER_POINT` é opcional e tem padrão `0`. `src/infra/database/connection.ts` também carrega `infra/postgres/.env` no desenvolvimento. O arquivo `.env` real não deve ser publicado; substitua todos os valores de exemplo, principalmente as senhas e a chave JWT.
 
 ## Banco de dados
 
@@ -149,7 +151,9 @@ Há duas representações no banco:
 - `src/infra/database/schema.ts` contém tabelas Drizzle para cliente, veículo e serviço, além do schema `service_order` para OS (`orders`), itens (`supply_items`), orçamentos (`budgets`), solicitações de aprovação (`approval_requests`), catálogo de serviços (`services`, `service_parts`, `order_services`) e histórico de fases da OS (`order_status_history`).
 - `infra/postgres/init/01-schema.sql` contém o modelo legado em `public` (incluindo `peca_insumo`, validada ao vincular peças a serviços do catálogo, e `os_status_historico`).
 
-Os scripts SQL em `infra/postgres/init/` (`01-schema.sql` a `05-order-status-history.sql`) são executados automaticamente quando o volume do PostgreSQL é criado pela primeira vez. Os scripts disponíveis são:
+Os scripts SQL em `infra/postgres/init/` (`01-schema.sql` a `06-business-intelligence.sql`) são executados automaticamente quando o volume do PostgreSQL é criado pela primeira vez. As migrações do Drizzle em `drizzle/` são separadas e criam/atualizam a tabela de usuários da autenticação.
+
+Os comandos disponíveis para o banco são:
 
 ```bash
 npm run db:generate
@@ -163,22 +167,35 @@ Os repositórios Drizzle de OS, orçamento, catálogo de serviços e aprovação
 
 ## Execução local
 
-Inicie o banco e o MailHog:
+Após instalar as dependências, configure o ambiente e inicie o banco e o MailHog:
 
 ```bash
+cp infra/postgres/.env.example infra/postgres/.env
+# edite infra/postgres/.env e troque os valores de exemplo
+npm install
 cd infra/postgres
 docker compose up -d
 cd ../..
 npm run db:migrate
 ```
 
+O `docker compose up -d` executa os scripts de `infra/postgres/init/` somente
+quando o volume `postgres_data` é criado. O `npm run db:migrate` é necessário
+para aplicar as migrações versionadas do Drizzle, inclusive a tabela
+`auth_users`. Em um volume já existente, não conte com os scripts de init para
+aplicar alterações; use as instruções incrementais de
+[`infra/postgres/README.md`](infra/postgres/README.md).
+
 Depois, os scripts do projeto são:
 
 ```bash
 npm run dev          # desenvolvimento; executa src/index.ts em watch
 npm run build        # compila para dist/
-npm start            # executa dist/index.js
+npm start             # executa dist/index.js; rode npm run build antes
 ```
+
+Com a API em execução, verifique `http://localhost:3000/health`. A interface
+web do MailHog fica em `http://localhost:8025`.
 
 O bootstrap HTTP existente é `src/index.ts`. A aplicação usa `HOST=0.0.0.0` e `PORT=3000` por padrão, podendo receber essas variáveis pelo ambiente, além de executar periodicamente `expirePending` para expirar solicitações de aprovação vencidas. A inicialização depende de uma conexão PostgreSQL válida, de `INITIAL_MANAGER_PASSWORD` não vazia e de `JWT_SECRET` com pelo menos 32 bytes; sem essas variáveis, ela falha antes de abrir a porta.
 
@@ -218,10 +235,14 @@ O Fastify registra Swagger e Swagger UI em `/docs`. A especificação OpenAPI é
 | `POST` | `/auth/first-access`                                       | Troca a senha temporária no primeiro acesso                                            | Não (rate-limit: 5/min por IP)                   |
 | `POST` | `/auth/login`                                              | Autentica usuário ativo e emite JWT HS256 (4h)                                         | Não (rate-limit: 5/min por IP)                   |
 | `POST` | `/users`                                                   | Pré-cadastra usuário com senha temporária                                              | Bearer JWT (`USUARIO_PRE_CADASTRAR` — `GERENTE`) |
-| `POST` | `/customers`                                               | Cadastra cliente                                                                       | Não                                              |
-| `GET`  | `/customers/:cpfCnpj`                                      | Consulta cliente por CPF/CNPJ                                                          | Não                                              |
-| `POST` | `/vehicles`                                                | Cadastra veículo vinculado a cliente                                                   | Não                                              |
-| `GET`  | `/vehicles/:plate`                                         | Consulta veículo por placa                                                             | Não                                              |
+| `POST` | `/customers`                                               | Cadastra cliente                                                                       | Bearer JWT (`CLIENTE_EDITAR` — `ATENDENTE` ou `GERENTE`) |
+| `GET`  | `/customers/:cpfCnpj`                                      | Consulta cliente por CPF/CNPJ                                                          | Bearer JWT (`CLIENTE_EDITAR` — `ATENDENTE` ou `GERENTE`) |
+| `PATCH`| `/customers/:cpfCnpj`                                      | Atualiza somente e-mail e telefone; nome e CPF/CNPJ são imutáveis após o cadastro     | Bearer JWT (`CLIENTE_EDITAR`)                   |
+| `DELETE`| `/customers/:cpfCnpj`                                     | Exclui cliente sem veículos vinculados                                                  | Bearer JWT (`CLIENTE_EDITAR` — `ATENDENTE` ou `GERENTE`) |
+| `POST` | `/vehicles`                                                | Cadastra veículo vinculado a cliente                                                   | Bearer JWT (`CLIENTE_EDITAR` — `ATENDENTE` ou `GERENTE`) |
+| `GET`  | `/vehicles/:plate`                                         | Consulta veículo por placa                                                             | Bearer JWT (`CLIENTE_EDITAR` — `ATENDENTE` ou `GERENTE`) |
+| `PATCH`| `/vehicles/:id`                                             | Atualiza somente a cor; demais dados do veículo são imutáveis após o cadastro         | Bearer JWT (`CLIENTE_EDITAR` — `ATENDENTE` ou `GERENTE`) |
+| `DELETE`| `/vehicles/:id`                                            | Exclui veículo                                                                         | Bearer JWT (`CLIENTE_EDITAR` — `ATENDENTE` ou `GERENTE`) |
 | `POST` | `/service-orders`                                          | Cadastra OS (`description`, `vehicleId`, `valueCents` opcional)                        | Bearer JWT (`OS_CRIAR`)                          |
 | `GET`  | `/service-orders/:serviceOrderId`                          | Consulta OS (`valueCents` e insumos `supplies` associados)                             | Bearer JWT (qualquer papel ativo)                |
 | `GET`  | `/service-orders/:serviceOrderId/history`                  | Consulta histórico de fases da OS (`status`, `valueCents`, `changedBy` e `recordedAt`) | Bearer JWT (qualquer papel ativo)                |
@@ -239,6 +260,8 @@ O Fastify registra Swagger e Swagger UI em `/docs`. A especificação OpenAPI é
 | `GET`  | `/docs`                                                    | Interface Swagger UI                                                                   | Não                                              |
 
 A validação de payload usa Zod; erros de validação retornam HTTP 400 e exceções de aplicação/domínio são convertidas pelo error handler central em `src/app.ts`.
+
+No Registry, a atualização de cliente aceita somente `email` e `tel`. O nome e o CPF/CNPJ não podem ser alterados após o cadastro. A atualização de veículo aceita somente `color`; modelo, ano, marca, placa, cliente vinculado e ID são imutáveis. A exclusão de um cliente com veículos vinculados retorna HTTP 409.
 
 Os controllers de OS usam `DrizzleServiceOrderRepository`, `DrizzleBudgetRepository`, `DrizzleApprovalRequestRepository` e a mesma instância de `InMemoryEventBus` usada no cadastro. A OS guarda `vehicleId` e `valueCents` (informado manualmente no cadastro ou antes de enviar para aprovação); `RegistryVehicleContactLookup` valida a existência do veículo e consulta o contato do cliente. Ao acionar `POST /service-orders/:serviceOrderId/awaiting-approval`, o orçamento é gerado a partir do `valueCents` da OS e persistido (`PENDING`) **atomicamente na mesma transação** que a transição da OS para `AWAITING_APPROVAL`; em seguida, o evento `service-order.awaiting-approval` emite um token de uso único por e-mail (persistindo apenas o hash SHA-256 em `service_order.approval_requests`). A decisão é confirmada via `POST /budget-approvals/decide` (`approved` ou `rejected`), atualizando orçamento e OS. Cancelar uma OS (`POST /service-orders/:serviceOrderId/cancel`) revoga na mesma transação quaisquer solicitações de aprovação pendentes, e a rotina periódica `expirePending` filtra ordens em `AWAITING_APPROVAL` antes do limite de lote (`LIMIT 100`). Ao finalizar a OS (`POST /service-orders/:serviceOrderId/finish`), o evento `service-order.finished` envia o e-mail informando que o veículo está pronto para retirada. Todas as mudanças de fase são gravadas em `service_order.order_status_history` com data (`recordedAt`), valor (`valueCents`) e autor da transição (`changedBy`, resolvido via `ActorResolver` / `TokenActorResolver` a partir do header `Authorization: Bearer <jwt>`). Conflitos de versão retornam HTTP 409.
 
@@ -301,7 +324,7 @@ drizzle/                           # migrações versionadas de auth_users
 
 - O Event Bus é in-process/in-memory; não há durabilidade, retry automático, DLQ ou replay.
 - A consistência entre contextos é eventual e os handlers são preparados para idempotência em cenários específicos.
-- A API HTTP cobre autenticação/pré-cadastro (`auth`), cadastro de clientes/veículos (`registry`), catálogo de serviços e ciclo completo da OS (criação, associação de serviços, insumos, envio de orçamento para aprovação, decisão de aprovação/recusa por token, consulta de histórico de fases com autor via `ActorResolver` / `TokenActorResolver`, início, finalização, entrega e cancelamento) e health check.
+- A API HTTP cobre autenticação/pré-cadastro (`auth`), CRUD protegido de clientes e veículos (`registry`), catálogo de serviços e ciclo completo da OS (criação, associação de serviços, insumos, envio de orçamento para aprovação, decisão de aprovação/recusa por token, consulta de histórico de fases com autor via `ActorResolver` / `TokenActorResolver`, início, finalização, entrega e cancelamento) e health check.
 - Não há Dockerfile da API nem Compose completo da aplicação.
 
 ## Links e informações da entrega
@@ -310,12 +333,19 @@ drizzle/                           # migrações versionadas de auth_users
 - Vídeo de apresentação: **[PREENCHER: inserir link público do YouTube]**
 - Documentação DDD: **[PREENCHER: inserir link público ou manter os caminhos locais acima]**
 - Grupo: **[PREENCHER]**
-- Integrantes e RMs: **[PREENCHER]**
-- Usuário do Discord: **[PREENCHER]**
-- Branch entregue: `feat/service-order-integration`
-- Commit analisado: **[PREENCHER: registrar o commit da entrega]**
-- Versão da entrega: **[PREENCHER]**
+- Integrantes e RMs:
+    - Eric de Sousa Sampaio - rm377720
+    - Isabelly Pinheiro Serra - rm377614
+    - Luis Henrique de Barros - rm377625
+    - Thiago André Alloa - rm377950
+- Usuário do Discord:
+    - Eric de Sousa Sampaio - ericsampaio.
+    - Isabelly Serra - isabelbs
+    - Luis Henrique de Barros - luisao0680
+    - Thiago Ulloa - tafareid
+- Branch entregue: `main`
 
 ## Status da documentação
 
 README elaborado a partir da árvore do repositório, `package.json`, configurações TypeScript/Drizzle, código de domínio/aplicação, rotas, testes, Docker e documentação existente. Os placeholders devem ser preenchidos manualmente antes da entrega acadêmica final.
+

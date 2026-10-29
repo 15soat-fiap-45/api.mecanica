@@ -73,4 +73,8 @@ export class Vehicle extends AggregateRoot<VehicleId> {
         );
         return vehicle;
     }
+
+    update(color: string): void {
+        this.color = color;
+    }
 }

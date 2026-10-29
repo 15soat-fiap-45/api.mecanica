@@ -1,11 +1,16 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 
-export type ServiceOrderPermission =
-    'OS_CRIAR' | 'OS_CONCLUIR' | 'ESTOQUE_BAIXAR';
+export type ApplicationPermission =
+    'CLIENTE_EDITAR' | 'OS_CRIAR' | 'OS_CONCLUIR' | 'ESTOQUE_BAIXAR';
+
+export type ServiceOrderPermission = Exclude<
+    ApplicationPermission,
+    'CLIENTE_EDITAR'
+>;
 
 export interface AuthenticatedActor {
     readonly id: string;
-    can(permission: ServiceOrderPermission): boolean;
+    can(permission: ApplicationPermission): boolean;
 }
 
 export interface ActorResolver {

@@ -11,7 +11,7 @@ Ordem sugerida:
 5. `deployment.puml`
 6. fluxos em `flows/`
 
-Os fluxos HTTP detalhados atualmente incluem o cadastro de cliente e os fluxos de Auth (`POST /users` e `POST /auth/login`). O diagrama de ordem de serviço representa somente os casos de uso e handlers internos, pois ainda não existem rotas HTTP para esse contexto.
+Os fluxos HTTP detalhados atualmente incluem o cadastro protegido de cliente, com JWT e permissão `CLIENTE_EDITAR`, e os fluxos de Auth (`POST /users` e `POST /auth/login`). O diagrama de ordem de serviço representa as rotas HTTP implementadas, incluindo autenticação, aprovação por token e transições de status.
 
 Para exportar com a CLI PlantUML:
 

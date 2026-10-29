@@ -7,7 +7,7 @@ Person(operator, "Operador Autenticado", "Comandos e consultas de OS")
 Person(customer, "Cliente do Veiculo", "Aprova ou recusa orcamento via token")
 
 Container_Boundary(api, "API HTTP - processo Node.js / Fastify") {
-  Component(http, "Adaptador HTTP Service Order", "Fastify / Zod", "registerServiceOrderRoutes: 11 rotas (8 autenticadas com RBAC via actorContext e 3 publicas de orcamento).")
+  Component(http, "Adaptador HTTP Service Order", "Fastify / Zod", "registerServiceOrderRoutes: 13 rotas (10 autenticadas com RBAC via actorContext e 3 publicas de orcamento).")
   Component(orders, "Casos de uso de OS", "TypeScript / Application", "RegisterServiceOrder, AddSupplyToServiceOrder, RegisterSupplyUsage, ChangeServiceOrderStatus (start/finish/deliver), CancelServiceOrder e consultas de OS/historico.")
   Component(budget_uc, "Casos de uso de Orcamento", "TypeScript / Application", "AwaitBudgetApproval e DecideBudgetApproval (e ApproveBudget legado).")
   Component(domain, "Dominio Service Order", "TypeScript / DDD", "Agregados ServiceOrder e Budget; entidade ApprovalRequest; SupplyItem, tokens, VOs de status e eventos.")

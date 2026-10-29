@@ -6,13 +6,15 @@ SHOW_PERSON_OUTLINE()
 Person(api_client, "Consumidor HTTP", "Cliente da API, ferramenta de integracao ou operador")
 System(api, "API Oficina Mecanica", "Monolito modular em TypeScript com Fastify. Expõe health check, Swagger, Registry, Auth, Service Order e Business Intelligence.")
 System_Ext(postgres, "PostgreSQL", "Banco usado pelo Fastify/Drizzle. Schemas: public, service_order e business_intelligence.")
+System_Ext(smtp, "Servidor SMTP / MailHog", "Entrega e-mails transacionais de aprovação e veículo pronto para retirada.")
 
-Rel(api_client, api, "HTTP/JSON", "GET /health, /docs\nAuth (/auth/*, /users)\nRegistry (/customers, /vehicles)\nService Order (/service-orders/*, /budget-approvals/*)\nBI (/bi/*)")
+Rel(api_client, api, "HTTP/JSON", "GET /health, /docs\nAuth (/auth/*, /users)\nRegistry CRUD (/customers, /vehicles) + Bearer JWT/RBAC\nService Order (/service-orders/*, /budget-approvals/*)\nBI (/bi/*)")
 Rel(api, postgres, "SQL", "Drizzle ORM")
+Rel(api, smtp, "E-mail transacional", "Nodemailer / SMTP")
 
 note right of api
     Contextos conectados às rotas HTTP:
-    - Registry: clientes e veículos
+    - Registry: CRUD protegido de clientes e veículos; CLIENTE_EDITAR
     - Auth: login JWT, primeiro acesso e pré-cadastro
     - Service Order: O.S., orçamentos, aprovações e histórico
     - Business Intelligence: lead time de O.S. e reposição

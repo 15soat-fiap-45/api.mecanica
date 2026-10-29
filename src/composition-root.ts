@@ -59,6 +59,7 @@ export function compositionRoot(
     const registry = registryCompositionRoot(eventBus, {
         customerRepository: deps.customerRepository,
         vehicleRepository: deps.vehicleRepository,
+        actorResolver: deps.actorResolver,
     });
 
     // Use cases

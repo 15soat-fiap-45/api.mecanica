@@ -55,6 +55,7 @@ const eventBus = new InMemoryEventBus({
 const registry = registryCompositionRoot(eventBus, {
     customerRepository: new DrizzleCustomerRepository(),
     vehicleRepository: new DrizzleVehicleRepository(),
+    actorResolver: new TokenActorResolver(resolveAuthenticatedUser),
 });
 const emailConfig = readEmailConfig();
 const approvalRequests = new DrizzleApprovalRequestRepository();

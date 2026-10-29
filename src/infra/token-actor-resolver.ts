@@ -1,9 +1,9 @@
 import { rolePermissions } from '../auth/domain/services/access-policy.js';
 import type { RoleValue } from '../auth/domain/user/value-objects/role.js';
 import type {
+    ApplicationPermission,
     ActorResolver,
     AuthenticatedActor,
-    ServiceOrderPermission,
 } from '../service-order/application/ports/actor-resolver.js';
 
 export type VerifiedTokenResult =
@@ -11,7 +11,7 @@ export type VerifiedTokenResult =
     | {
           id: string;
           role?: RoleValue;
-          permissions?: readonly ServiceOrderPermission[];
+          permissions?: readonly ApplicationPermission[];
       }
     | null;
 

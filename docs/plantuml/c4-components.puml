@@ -4,27 +4,32 @@ LAYOUT_LEFT_RIGHT()
 
 Container_Boundary(api, "Processo Fastify") {
     Component(fastify, "Fastify", "HTTP framework", "Cria a aplicação e recebe requests")
-    Component(routes, "registry-routes", "Fastify + Zod", "POST/GET /customers e /vehicles")
+    Component(routes, "registry-routes", "Fastify + Zod", "CRUD /customers e /vehicles; todas as rotas exigem Bearer JWT e CLIENTE_EDITAR")
     Component(error_handler, "Error handler", "Fastify", "Mapeia validação, aplicação e domínio para HTTP")
-    Component(use_cases, "Registry use cases", "Application", "Register/Find Customer e Vehicle")
-    Component(aggregates, "Registry domain", "Domain", "Customer, Vehicle e value objects")
-    Component(repositories, "Registry repositories", "Ports", "CustomerRepository e VehicleRepository")
-    Component(drizzle_adapters, "Drizzle repositories", "Infrastructure", "Persistência de cliente e veículo")
-    Component(event_bus, "InMemoryEventBus", "Shared application", "Publica eventos de registro")
+    Component(use_cases, "Registry use cases", "Application", "Register/Find/Update/Delete Customer e Vehicle")
+    Component(aggregates, "Registry domain", "Domain", "Customer, Vehicle e value objects; regras de campos imutáveis")
+    Component(repositories, "Registry repositories", "Ports", "CustomerRepository e VehicleRepository com save/update/delete/find")
+    Component(drizzle_adapters, "Drizzle repositories", "Infrastructure", "Persistência e conflitos de cliente e veículo")
+    Component(actor_resolver, "TokenActorResolver", "Auth adapter", "Valida JWT e resolve o usuário/papel para CLIENTE_EDITAR")
+    Component(event_bus, "InMemoryEventBus", "Shared application", "Publica eventos de domínio entre contextos")
     Component(swagger, "Swagger / Swagger UI", "Fastify plugins", "OpenAPI; UI em /docs")
     Component(health, "Health check", "Fastify route", "GET /health executa SELECT 1")
 }
-Container_Boundary(other_contexts, "Módulos internos sem adaptador HTTP") {
+Container_Boundary(other_contexts, "Outros módulos e componentes do monólito") {
+    Component(auth, "Auth", "Domain + application", "Primeiro acesso, login JWT e pré-cadastro restrito ao GERENTE")
     Component(service_order, "Service Order", "Domain + application", "OS, Budget e handlers de aprovação")
     Component(stock, "Stock", "Domain + application", "PartSupply, reservas, consumo e baixa")
+    Component(bi, "Business Intelligence", "Domain + application", "Projeções de timeline e reposição; consultas protegidas por BI_VISUALIZAR")
 }
-System_Ext(postgres, "PostgreSQL", "Tabelas mapeadas pelo Drizzle: cliente, veiculo e servico")
+System_Ext(postgres, "PostgreSQL", "Tabelas mapeadas pelo Drizzle: auth_users, cliente, veiculo, service_order e business_intelligence")
 
 Rel(fastify, routes, "registra")
 Rel(fastify, error_handler, "configura")
 Rel(fastify, swagger, "registra")
 Rel(fastify, health, "registra")
 Rel(routes, use_cases, "executa")
+Rel(routes, actor_resolver, "autentica e autoriza")
+Rel(actor_resolver, auth, "consulta usuário e permissões")
 Rel(use_cases, aggregates, "cria e valida")
 Rel(use_cases, repositories, "usa")
 Rel(repositories, drizzle_adapters, "implementado por")
@@ -32,10 +37,12 @@ Rel(drizzle_adapters, postgres, "SQL via Drizzle")
 Rel(use_cases, event_bus, "publica")
 Rel(event_bus, service_order, "eventos de OS/orçamento")
 Rel(event_bus, stock, "eventos de reservas/consumo")
+Rel(event_bus, bi, "eventos de projeção")
 Rel(health, postgres, "SELECT 1")
 
 note right of other_contexts
-    O bootstrap HTTP instancia somente o Registry.
+    O bootstrap HTTP instancia Auth, Registry, Service Order e BI.
+    Registry expõe CRUD protegido por JWT/RBAC.
     OS e Stock são compostos por contratos de repositório.
 end note
 SHOW_LEGEND()
