@@ -1,7 +1,7 @@
 import { InvalidEmailException } from './invalid-email-exception.js';
 
 export class Email {
-    private static readonly REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    private static readonly REGEX = /^[^\s@]+@[^\s@.]+\.[^\s@]+$/;
 
     private readonly _value: string;
 
