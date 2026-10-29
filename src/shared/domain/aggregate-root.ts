@@ -39,6 +39,10 @@ export abstract class AggregateRoot<TId extends Identifier> {
         return pending;
     }
 
+    get pendingEvents(): readonly DomainEvent[] {
+        return this.events;
+    }
+
     equals(other?: AggregateRoot<TId>): boolean {
         return !!other && this.id.equals(other.id);
     }

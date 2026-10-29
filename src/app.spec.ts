@@ -161,3 +161,44 @@ describe('buildApp error handling', () => {
         }
     });
 });
+
+describe('buildApp OpenAPI documentation', () => {
+    it('includes Stock request and response examples', async () => {
+        const execute = async (input: unknown) => input;
+        const app = buildApp({
+            stock: {
+                registerPartSupply: { execute },
+                registerStockEntry: { execute },
+                reserveSupply: { execute },
+                cancelReservation: { execute },
+                writeOffStock: { execute },
+            },
+        } as never);
+
+        try {
+            await app.ready();
+            const paths = app.swagger().paths;
+            if (!paths) {
+                throw new Error('OpenAPI paths were not generated');
+            }
+            const operation = JSON.parse(
+                JSON.stringify(paths['/stock/parts']?.post),
+            );
+            const requestExample =
+                operation.requestBody.content['application/json'].example;
+            const responseExample =
+                operation.responses['201'].content['application/json'].example;
+
+            expect(requestExample).toMatchObject({
+                partCode: 'PAST-FREIO-01',
+                quantity: 10,
+            });
+            expect(responseExample).toMatchObject({
+                partCode: 'PAST-FREIO-01',
+                quantity: 10,
+            });
+        } finally {
+            await app.close();
+        }
+    });
+});

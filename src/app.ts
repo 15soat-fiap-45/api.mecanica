@@ -2,6 +2,7 @@ import Fastify from 'fastify';
 import { sql } from 'drizzle-orm';
 import swagger from '@fastify/swagger';
 import swaggerUi from '@fastify/swagger-ui';
+import { jsonSchemaTransform } from 'fastify-type-provider-zod';
 import type { FastifyError } from 'fastify';
 import { db, pool } from './infra/database/connection.js';
 import { ApplicationException } from './shared/application/application-exception.js';
@@ -9,15 +10,17 @@ import { DomainException } from './shared/domain/domain-exception.js';
 import { registerRegistryRoutes } from './registry/infra/http/registry-routes.js';
 import type { RegistryUseCases } from './registry/composition-root.js';
 import type { AuthController } from './auth/infra/http/auth-controller.js';
+import { registerStockRoutes } from './stock/infra/http/stock-routes.js';
+import type { StockUseCases } from './composition-root.js';
 import type { ServiceOrderUseCases } from './service-order/composition-root.js';
 import { registerServiceOrderRoutes } from './service-order/infra/http/service-order-routes.js';
 import type { BusinessIntelligenceUseCases } from './business-intelligence/composition-root.js';
 import { registerBusinessIntelligenceRoutes } from './business-intelligence/infra/http/bi-routes.js';
-import { jsonSchemaTransform } from 'fastify-type-provider-zod';
 
 export interface AppDependencies {
     registry?: RegistryUseCases;
     auth?: AuthController;
+    stock?: StockUseCases;
     serviceOrder?: ServiceOrderUseCases;
     businessIntelligence?: BusinessIntelligenceUseCases;
 }
@@ -28,6 +31,7 @@ export function buildApp(deps: AppDependencies = {}) {
     });
 
     app.register(swagger, {
+        transform: jsonSchemaTransform,
         openapi: {
             info: {
                 title: 'API Oficina Mecânica',
@@ -48,7 +52,6 @@ export function buildApp(deps: AppDependencies = {}) {
                 },
             },
         },
-        transform: jsonSchemaTransform,
     });
     app.register(swaggerUi, { routePrefix: '/docs' });
 
@@ -120,6 +123,11 @@ export function buildApp(deps: AppDependencies = {}) {
         });
     }
     if (deps.auth) deps.auth.register(app);
+    if (deps.stock) {
+        app.register(async (stockApp) => {
+            registerStockRoutes(stockApp, deps.stock!);
+        });
+    }
 
     if (deps.serviceOrder) {
         app.register(async (serviceOrderApp) => {

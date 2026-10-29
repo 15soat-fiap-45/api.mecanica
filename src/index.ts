@@ -14,6 +14,13 @@ import { registryCompositionRoot } from './registry/composition-root.js';
 import { DrizzleCustomerRepository } from './infra/database/registry/drizzle-customer-repository.js';
 import { DrizzleVehicleRepository } from './infra/database/registry/drizzle-vehicle-repository.js';
 import { InMemoryEventBus } from './shared/application/in-memory-event-bus.js';
+import {
+    stockCompositionRoot,
+} from './composition-root.js';
+import {
+    DrizzlePartSupplyRepository,
+    DrizzleSupplyReservationRepository,
+} from './infra/database/stock/drizzle-stock-repositories.js';
 import { serviceOrderCompositionRoot } from './service-order/composition-root.js';
 import { DrizzleServiceOrderRepository } from './infra/database/service-order/drizzle-service-order-repository.js';
 import { DrizzleBudgetRepository } from './infra/database/service-order/drizzle-budget-repository.js';
@@ -81,7 +88,17 @@ const businessIntelligence = businessIntelligenceCompositionRoot(eventBus, {
     ),
     accessGuard: new TokenBiAccessGuard(resolveAuthenticatedUser),
 });
-const app = buildApp({ registry, auth, serviceOrder, businessIntelligence });
+const stock = stockCompositionRoot(eventBus, {
+    partSupplyRepository: new DrizzlePartSupplyRepository(db),
+    reservationRepository: new DrizzleSupplyReservationRepository(db),
+});
+const app = buildApp({
+    registry,
+    auth,
+    stock,
+    serviceOrder,
+    businessIntelligence,
+});
 let expiryInterval: ReturnType<typeof setInterval> | undefined;
 app.addHook('onClose', async () => {
     if (expiryInterval) clearInterval(expiryInterval);
