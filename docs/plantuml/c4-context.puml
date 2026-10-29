@@ -9,7 +9,7 @@ System(api, "API Oficina Mecanica", "Monolito modular em TypeScript com Fastify.
 System_Ext(postgres, "PostgreSQL", "Banco usado pelo Fastify/Drizzle. Schemas: public, service_order e business_intelligence.")
 System_Ext(smtp, "Servidor SMTP", "Entrega e-mails de orcamento e veiculo pronto para retirada")
 
-Rel(operator, api, "Autentica, cadastra clientes/veiculos e gerencia OS", "HTTP/JSON + ******")
+Rel(operator, api, "Autentica, mantem clientes/veiculos (CRUD), gerencia OS e consulta BI", "HTTP/JSON + ******")
 Rel(customer, api, "Acessa /orcamento/:token e confirma decisao em /budget-approvals/decide", "HTTP/HTML e JSON")
 Rel(api, postgres, "SQL", "Drizzle ORM")
 Rel(api, smtp, "Envia descricao da OS, valor e link de aprovacao; notifica conclusao", "SMTP / Nodemailer")
@@ -17,7 +17,7 @@ Rel(smtp, customer, "Entrega notificacoes", "E-mail HTML/Texto")
 
 note right of api
     Contextos conectados às rotas HTTP:
-    - Registry: clientes e veículos
+    - Registry: CRUD protegido de clientes e veículos; CLIENTE_EDITAR
     - Auth: login JWT, primeiro acesso e pré-cadastro
     - Service Order: O.S., orçamentos, aprovações e histórico
     - Business Intelligence: lead time de O.S. e reposição

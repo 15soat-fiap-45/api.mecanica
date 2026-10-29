@@ -25,6 +25,27 @@ export class DrizzleVehicleRepository implements VehicleRepository {
         }
     }
 
+    async update(vehicle: Vehicle): Promise<void> {
+        try {
+            await this.database
+                .update(veiculo)
+                .set(vehicleToRow(vehicle))
+                .where(eq(veiculo.veiculoId, vehicle.id.value));
+        } catch (error) {
+            if (isUniqueConstraintViolation(error)) {
+                throw new RegistryAlreadyExistsError('vehicle');
+            }
+            throw error;
+        }
+    }
+
+    async delete(id: VehicleId | string): Promise<void> {
+        const vehicleId = typeof id === 'string' ? VehicleId.create(id) : id;
+        await this.database
+            .delete(veiculo)
+            .where(eq(veiculo.veiculoId, vehicleId.value));
+    }
+
     async findById(id: VehicleId | string): Promise<Vehicle | null> {
         const vehicleId = typeof id === 'string' ? VehicleId.create(id) : id;
         const rows = await this.database

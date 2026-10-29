@@ -5,13 +5,16 @@ autonumber
 actor Client as "Consumidor HTTP"
 participant API as "Fastify"
 participant Route as "registry-routes"
+participant Actor as "TokenActorResolver"
 participant UseCase as "RegisterCustomer"
 participant Repo as "CustomerRepository"
 participant DB as "Drizzle / PostgreSQL"
 participant Bus as "InMemoryEventBus"
 
-Client -> API: POST /customers\n{cpfCnpj, name, email, tel}
-API -> Route: valida body com Zod
+Client -> API: POST /customers\nAuthorization: Bearer <jwt>\n{cpfCnpj, name, email, tel}
+API -> Route: valida headers e body com Zod
+Route -> Actor: resolve e verifica CLIENTE_EDITAR
+Actor --> Route: usuário ATENDENTE ou GERENTE
 Route -> UseCase: execute(input)
 UseCase -> Repo: findByCpfCnpj(CpfCnpj)
 Repo -> DB: SELECT cliente por cliente_id
@@ -36,7 +39,8 @@ else Novo cliente
 end
 
 note over API,DB
-    Não há JWT, senha, cache, e-mail ou fila neste fluxo.
-    Validação Zod inválida retorna 400.
+    A rota exige JWT Bearer válido e permissão CLIENTE_EDITAR.
+    Validação Zod inválida retorna 400; token ausente/inválido retorna 401;
+    usuário sem permissão retorna 403.
 end note
 @enduml

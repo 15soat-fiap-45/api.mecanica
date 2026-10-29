@@ -12,6 +12,7 @@ import { Argon2PasswordHasher } from './auth/infra/security/argon2-password-hash
 import { JoseTokenService } from './auth/infra/security/jose-token-service.js';
 import { SecurePasswordGenerator } from './auth/infra/security/secure-password-generator.js';
 import { buildApp } from './app.js';
+import { CustomerHasVehiclesError } from './infra/database/registry/registry-persistence-errors.js';
 
 vi.mock('./infra/database/connection.js', () => ({
     db: { execute: async () => [] },
@@ -93,6 +94,29 @@ describe('buildApp auth routes', () => {
 });
 
 describe('buildApp error handling', () => {
+    it('returns 409 when a customer still has linked vehicles', async () => {
+        const app = buildApp();
+        app.get('/customer-with-vehicles', async () => {
+            throw new CustomerHasVehiclesError();
+        });
+
+        try {
+            const response = await app.inject({
+                method: 'GET',
+                url: '/customer-with-vehicles',
+            });
+
+            expect(response.statusCode).toBe(409);
+            expect(response.json()).toEqual({
+                error: 'CustomerHasVehiclesError',
+                message:
+                    'Cannot delete customer while vehicles are linked to it.',
+            });
+        } finally {
+            await app.close();
+        }
+    });
+
     it('preserves valid client-error status codes from Fastify errors', async () => {
         const app = buildApp();
         app.get('/client-error', async () => {

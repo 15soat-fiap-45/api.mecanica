@@ -5,7 +5,7 @@ O módulo Auth usa senha com hash Argon2id para autenticar usuários, JWT para i
 - `POST /users` exige JWT e permissão `USUARIO_PRE_CADASTRAR` (`GERENTE`).
 - As rotas de Ordem de Serviço (`/service-orders/*`) exigem JWT Bearer válido (`401 Unauthorized` quando ausente/inválido/inativo) e validam a permissão correspondente ao papel (`403 Forbidden` quando o usuário não possui a permissão exigida).
 - As rotas de aprovação de orçamento pelo cliente (`POST /budget-approvals/decide`, `GET /orcamento/:token` e `GET /orcamento`) são públicas para acesso via link de e-mail.
-- As rotas de Registry (`/customers` e `/vehicles`) continuam públicas.
+- As rotas de Registry (`/customers` e `/vehicles`) exigem JWT Bearer válido e a permissão `CLIENTE_EDITAR` (`ATENDENTE` ou `GERENTE`).
 
 ## Antes de usar
 

@@ -6,6 +6,8 @@ import { db } from '../connection.js';
 import { cliente } from '../schema.js';
 import { customerFromRow, customerToRow } from './registry-mappers.js';
 import {
+    CustomerHasVehiclesError,
+    isForeignKeyViolation,
     isUniqueConstraintViolation,
     RegistryAlreadyExistsError,
 } from './registry-persistence-errors.js';
@@ -19,6 +21,28 @@ export class DrizzleCustomerRepository implements CustomerRepository {
         } catch (error) {
             if (isUniqueConstraintViolation(error)) {
                 throw new RegistryAlreadyExistsError('customer');
+            }
+            throw error;
+        }
+    }
+
+    async update(customer: Customer): Promise<void> {
+        await this.database
+            .update(cliente)
+            .set(customerToRow(customer))
+            .where(eq(cliente.clienteId, customer.cpfCnpj.value));
+    }
+
+    async delete(cpfCnpj: CpfCnpj | string): Promise<void> {
+        const document =
+            typeof cpfCnpj === 'string' ? CpfCnpj.create(cpfCnpj) : cpfCnpj;
+        try {
+            await this.database
+                .delete(cliente)
+                .where(eq(cliente.clienteId, document.value));
+        } catch (error) {
+            if (isForeignKeyViolation(error)) {
+                throw new CustomerHasVehiclesError();
             }
             throw error;
         }

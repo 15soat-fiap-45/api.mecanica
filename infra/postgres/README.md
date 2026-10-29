@@ -40,6 +40,7 @@ init/02-service-order.sql
 init/03-budget-approval.sql
 init/04-service-catalog-and-status.sql
 init/05-order-status-history.sql
+init/06-business-intelligence.sql
 ```
 
 Esse script cria o modelo relacional da oficina.
@@ -70,8 +71,10 @@ docker compose exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB
 
 O MailHog recebe mensagens SMTP na porta 1025 e disponibiliza a caixa de
 entrada em http://localhost:8025. Para iniciar a API, configure no ambiente
-`SMTP_HOST`, `SMTP_PORT`, `SMTP_FROM`, `FRONTEND_URL` e
-`APPROVAL_TOKEN_TTL_MINUTES` (inteiro positivo, em minutos). `SMTP_USER`,
+`SMTP_HOST`, `SMTP_PORT`, `SMTP_FROM`, `FRONTEND_URL`,
+`APPROVAL_TOKEN_TTL_MINUTES` (inteiro positivo, em minutos),
+`INITIAL_MANAGER_PASSWORD` e `JWT_SECRET` (com pelo menos 32 bytes).
+`SMTP_USER`,
 `SMTP_PASS` e `SMTP_SECURE=true` são opcionais para um provedor SMTP real.
 O frontend deve exibir a página `/orcamento/:token` e confirmar a decisão via
 `POST /budget-approvals/decide`; abrir o link não registra a decisão.

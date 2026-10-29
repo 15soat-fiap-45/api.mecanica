@@ -26,6 +26,8 @@ describe('FindVehicleByPlate Use Case', () => {
     it('should return vehicle output when vehicle is found', async () => {
         const repository: VehicleRepository = {
             save: vi.fn(),
+            update: vi.fn(),
+            delete: vi.fn(),
             findById: vi.fn(),
             findByPlate: vi.fn().mockResolvedValue(mockVehicle),
         };
@@ -48,6 +50,8 @@ describe('FindVehicleByPlate Use Case', () => {
     it('should throw VehicleNotFoundError when vehicle is not found', async () => {
         const repository: VehicleRepository = {
             save: vi.fn(),
+            update: vi.fn(),
+            delete: vi.fn(),
             findById: vi.fn(),
             findByPlate: vi.fn().mockResolvedValue(null),
         };
@@ -61,6 +65,8 @@ describe('FindVehicleByPlate Use Case', () => {
     it('should throw InvalidPlateException when plate format is invalid', async () => {
         const repository: VehicleRepository = {
             save: vi.fn(),
+            update: vi.fn(),
+            delete: vi.fn(),
             findById: vi.fn(),
             findByPlate: vi.fn(),
         };

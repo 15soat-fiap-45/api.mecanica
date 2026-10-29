@@ -10,11 +10,20 @@ Os diagramas desta pasta descrevem o estado confirmado no código atual. A imple
 - `c4-service-order-code.puml`: agregados, entidades, value objects e contratos de repositório de `service-order`.
 - `database-er.puml`: tabelas do schema Drizzle atual (`public`, `service_order` e `business_intelligence`).
 - `deployment.puml`: execução atual com processo Node.js e PostgreSQL.
-- `flows/client-registration.puml`: fluxo real de `POST /customers`.
+- `flows/client-registration.puml`: fluxo real de `POST /customers` com JWT e permissão `CLIENTE_EDITAR`.
 - `flows/auth-service.puml`: pré-cadastro e login registrados pelo controller Auth.
 - `flows/service-order.puml`: registro/revisão da descrição durante a avaliação e solicitação de aprovação de orçamento por e-mail/token.
 - `flows/bi-metrics.puml`: fluxo de projeção orientada a eventos e consulta de métricas de BI.
 - `flows/states.puml`: estados implementados para OS, orçamento, reserva e estoque.
+
+## Rotas de Registry
+
+- Todas as rotas de `/customers` e `/vehicles` exigem Bearer JWT válido e a permissão `CLIENTE_EDITAR` (`ATENDENTE` ou `GERENTE`).
+- Clientes: `POST`, `GET`, `PATCH` e `DELETE`.
+- Veículos: `POST`, `GET`, `PATCH` e `DELETE`.
+- Cliente: a atualização aceita somente `email` e `tel`; nome e CPF/CNPJ são imutáveis.
+- Veículo: a atualização aceita somente `color`; modelo, ano, marca, placa, cliente vinculado e ID são imutáveis.
+- A exclusão de cliente com veículos vinculados retorna conflito HTTP `409`.
 
 ## Rotas de Service Order
 
@@ -48,7 +57,7 @@ Mecânico e gerente podem registrar e revisar `description` na própria OS duran
 
 ## Banco
 
-`src/infra/database/schema.ts` mapeia no schema `public` (`auth_users`, `cliente`, `veiculo`), no schema `service_order` (`orders`, `supply_items`, `budgets`, `approval_requests`, `order_status_history`) e no schema `business_intelligence` (`service_order_timeline`, `restock_cycle`).
+`src/infra/database/schema.ts` mapeia no schema `public` (`auth_users`, `cliente`, `veiculo`), no schema `service_order` (`orders`, `supply_items`, `budgets`, `approval_requests`, `order_status_history`) e no schema `business_intelligence` (`service_order_timeline`, `restock_cycle`). As tabelas legadas de estoque e o modelo legado de O.S. ficam nos scripts SQL de `infra/postgres/init/`, mas não são repositórios Drizzle dos módulos atuais.
 
 ## Validação
 

@@ -4,7 +4,7 @@ title C1 - Contexto da API Oficina Mecanica - foco em Service Order
 LAYOUT_LEFT_RIGHT()
 SHOW_PERSON_OUTLINE()
 
-Person(operator, "Operador Autenticado", "Atendente, mecanico ou gerente autenticado via JWT com permissoes RBAC (OS_CRIAR, OS_CONCLUIR, ESTOQUE_BAIXAR)")
+Person(operator, "Operador Autenticado", "Atendente, mecanico, estoquista ou gerente autenticado via JWT com permissoes RBAC")
 Person(customer, "Cliente do Veiculo", "Proprietario do veiculo que recebe notificacoes por e-mail e decide sobre o orcamento")
 System(workshop, "API Oficina Mecanica", "Gerencia ordens de servico, insumos, valores manuais, historico de status e aprovacao de orcamentos.")
 System_Ext(smtp, "Servidor SMTP", "Entrega e-mails transacionais de aprovacao de orcamento e de veiculo pronto para retirada.")

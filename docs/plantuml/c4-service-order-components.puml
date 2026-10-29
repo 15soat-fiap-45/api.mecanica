@@ -9,7 +9,7 @@ Person(customer, "Cliente do Veiculo", "Aprova ou recusa orcamento via token")
 Container_Boundary(api, "API HTTP - processo Node.js / Fastify") {
   Component(http, "Adaptador HTTP Service Order", "Fastify / Zod", "registerServiceOrderRoutes: 14 rotas (11 autenticadas via ActorResolver e 3 publicas de orcamento). PATCH de descricao exige OS_CONCLUIR.")
   Component(orders, "Casos de uso de OS", "TypeScript / Application", "RegisterServiceOrder, UpdateServiceOrderDescription, AddSupplyToServiceOrder, RegisterSupplyUsage, ChangeServiceOrderStatus (start/finish/deliver), CancelServiceOrder e consultas de OS/historico.")
-  Component(budget_uc, "Casos de uso de Orcamento", "TypeScript / Application", "AwaitBudgetApproval (valueCents e description opcionais) e DecideBudgetApproval.")
+  Component(budget_uc, "Casos de uso de Orcamento", "TypeScript / Application", "AwaitBudgetApproval (valueCents e description opcionais) e DecideBudgetApproval (e ApproveBudget legado).")
   Component(domain, "Dominio Service Order", "TypeScript / DDD", "Agregados ServiceOrder e Budget; entidade ApprovalRequest; SupplyItem, tokens, VOs de status e eventos.")
   Component(ports, "Portas do Modulo", "Interfaces TypeScript", "ServiceOrderRepository, BudgetRepository, ApprovalRequestRepository, VehicleContactLookup, ActorResolver e EmailSender.")
   Component(db_adapters, "Adaptadores Drizzle Service Order", "Drizzle ORM / Infrastructure", "DrizzleServiceOrderRepository, DrizzleBudgetRepository e DrizzleApprovalRequestRepository.")
