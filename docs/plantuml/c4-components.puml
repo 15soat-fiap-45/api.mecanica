@@ -3,41 +3,62 @@
 LAYOUT_LEFT_RIGHT()
 
 Container_Boundary(api, "Processo Fastify") {
-    Component(fastify, "Fastify / Bootstrap", "src/app.ts e src/index.ts", "Registra Auth, Registry, Service Order, Business Intelligence, Swagger, health check e error handler")
+    Component(fastify, "Fastify / Bootstrap", "src/app.ts e src/index.ts", "Registra Auth, Registry, Stock, Service Order, Business Intelligence, Swagger, health check e error handler")
     Component(auth, "Auth", "HTTP / Application / Domain", "Primeiro acesso, login JWT, usuarios e resolucao de atores/permissoes")
     Component(registry, "Registry", "HTTP / Application / Domain", "CRUD de clientes e veiculos protegido por JWT e CLIENTE_EDITAR; cliente altera so email/tel e veiculo so color")
+    Component(stock_http, "Rotas Stock", "Fastify / Zod", "/stock/parts, /stock/entries, /stock/reservations e /stock/write-offs protegidos por ESTOQUE_GERENCIAR")
+    Component(stock, "Stock", "Application / Domain", "RegisterPartSupply, RegisterStockEntry, ReserveSupply, WriteOffStock e CancelReservation")
+    Component(stock_handlers, "Handlers Stock", "Application", "CheckAvailability, WriteOffReservedSupplies, ReleaseReservedSupplies e ConsumeUsedSupply")
     Component(service_http, "Rotas Service Order", "Fastify / Zod", "Comandos e consultas autenticados de OS; pagina publica e decisao de orcamento")
     Component(service_order, "Service Order", "Application / Domain", "UpdateServiceOrderDescription (PENDING), ciclo da OS, insumos, historico, AwaitBudgetApproval e DecideBudgetApproval")
-    Component(actor, "TokenActorResolver", "Infrastructure", "Autentica JWT via Auth e verifica RBAC; CLIENTE_EDITAR no Registry e OS_CONCLUIR para descricao e envio de orcamento")
+    Component(bi_http, "Rotas Business Intelligence", "Fastify / Zod", "GET /bi/service-orders/lead-time e GET /bi/stock/restock-lead-time")
+    Component(bi, "Business Intelligence", "Application / Domain", "GetServiceOrderLeadTime, GetRestockLeadTime e ReorderPointRestockPolicy (BI_REORDER_POINT)")
+    Component(bi_handlers, "Handlers de Projecao BI", "Application", "ProjectServiceOrderTimeline e ProjectRestockCycle (via adaptadores de eventos de estoque)")
+    Component(actor, "TokenActorResolver", "Infrastructure", "Autentica JWT via Auth e verifica RBAC; CLIENTE_EDITAR no Registry, ESTOQUE_GERENCIAR no Stock e OS_CONCLUIR para descricao e envio de orcamento")
+    Component(bi_guard, "TokenBiAccessGuard", "Infrastructure", "Autentica JWT via Auth e exige BI_VISUALIZAR")
     Component(contact, "RegistryVehicleContactLookup", "Infrastructure", "Consulta contato do cliente a partir do veiculo")
-    Component(drizzle, "Repositorios Drizzle", "Infrastructure", "Usuarios, clientes, veiculos, OS, orcamentos e solicitacoes de aprovacao")
+    Component(drizzle, "Repositorios Drizzle", "Infrastructure", "Usuarios, clientes, veiculos, pecas/estoque/reservas, OS, orcamentos, aprovacoes e projecoes BI")
     Component(event_bus, "InMemoryEventBus", "Shared application", "Entrega sequencial no processo; publica eventos e isola falhas dos handlers")
     Component(handlers, "Handlers Service Order", "Application", "MoveServiceOrderToApproved, SendBudgetApprovalEmail e SendVehicleReadyEmail")
     Component(email, "SmtpEmailSender", "Nodemailer", "Envia e-mails de orcamento com descricao da OS e de veiculo pronto")
     Component(expiry, "Job de Expiracao", "setInterval / Bootstrap", "Invoca expirePending() a cada 60s")
 }
-ContainerDb(postgres, "Banco da oficina", "PostgreSQL 17", "Schemas public e service_order")
-System_Ext(smtp, "Servidor SMTP", "Entrega de e-mails")
+ContainerDb(postgres, "Banco da oficina", "PostgreSQL 17", "Schemas public, service_order e business_intelligence")
+System_Ext(smtp, "Servidor SMTP", "Entrega de e-mails (MailHog em ambiente local)")
 
 Rel(fastify, auth, "Registra controller")
 Rel(fastify, registry, "Registra rotas")
+Rel(fastify, stock_http, "Registra rotas")
 Rel(fastify, service_http, "Registra rotas")
+Rel(fastify, bi_http, "Registra rotas")
 Rel(fastify, expiry, "Inicia e encerra timer")
 Rel(service_http, actor, "Autentica e autoriza")
 Rel(registry, actor, "Autentica e autoriza")
+Rel(stock_http, actor, "Autentica e autoriza")
+Rel(bi_http, bi_guard, "Autentica e autoriza")
 Rel(actor, auth, "Resolve ator e permissoes")
+Rel(bi_guard, auth, "Resolve ator e permissoes")
+Rel(stock_http, stock, "Executa casos de uso")
 Rel(service_http, service_order, "Executa casos de uso")
+Rel(bi_http, bi, "Executa consultas")
 Rel(service_order, contact, "Valida veiculo e consulta contato")
 Rel(contact, registry, "Consulta veiculo e cliente")
 Rel(auth, drizzle, "Persiste usuarios")
 Rel(registry, drizzle, "Persiste clientes e veiculos")
+Rel(stock, drizzle, "Persiste pecas, saldo e reservas")
 Rel(service_order, drizzle, "Persiste e consulta agregados e historico")
+Rel(bi, drizzle, "Consulta timelines e ciclos de reposicao")
 Rel(service_order, event_bus, "Publica eventos de OS/orcamento")
 Rel(registry, event_bus, "Publica eventos de cadastro")
-Rel(event_bus, handlers, "Entrega eventos")
+Rel(stock, event_bus, "Publica eventos de estoque")
+Rel(event_bus, handlers, "Entrega eventos de orcamento/OS")
+Rel(event_bus, stock_handlers, "Entrega eventos de OS (insumos, finalizada, cancelada)")
+Rel(event_bus, bi_handlers, "Entrega eventos de OS e de estoque")
 Rel(handlers, drizzle, "Busca e atualiza OS/orcamento/aprovacao")
 Rel(handlers, contact, "Consulta destinatario")
 Rel(handlers, email, "Envia notificacao")
+Rel(stock_handlers, stock, "Reserva, baixa, libera e consome insumos")
+Rel(bi_handlers, drizzle, "Atualiza projecoes analiticas")
 Rel(expiry, drizzle, "Expira aprovacoes pendentes")
 Rel(drizzle, postgres, "SQL via Drizzle / pg")
 Rel(email, smtp, "Envia mensagem", "SMTP")
@@ -45,8 +66,14 @@ Rel(email, smtp, "Envia mensagem", "SMTP")
 note bottom of service_order
     A descricao da avaliacao substitui orders.description enquanto PENDING.
     A edicao isolada nao publica evento nem altera o status.
-    Stock permanece sem handlers ativados no bootstrap atual.
     O detalhamento do modulo esta em c4-service-order-components.puml.
+end note
+
+note bottom of bi_handlers
+    Stock e BI reagem a eventos de Service Order sem importar classes
+    desse contexto: os contratos de evento sao declarados localmente.
+    Consistencia entre contextos e eventual (uma transacao por handler).
+    O detalhamento do modulo BI esta em c4-bi-components.puml.
 end note
 SHOW_LEGEND()
 @enduml
