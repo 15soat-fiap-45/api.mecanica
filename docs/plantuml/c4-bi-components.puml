@@ -16,7 +16,7 @@ Container_Boundary(api, "API HTTP - processo Node.js / Fastify") {
   Component(auth_adapter, "Adaptador de Acesso BI", "TokenBiAccessGuard", "Valida JWT e checa permissao BI_VISUALIZAR de forma desacoplada.")
   Component(bus, "Event Bus compartilhado", "EventBus / InMemoryEventBus", "Barramento in-process para recebimento de eventos de dominio.")
   Component(handlers, "Handlers de Projecao BI", "TypeScript / Application", "ProjectServiceOrderTimeline (5 eventos de OS) e ProjectRestockCycle (movimentos de estoque).")
-  Component(stock_adapters, "Adaptadores de Estoque", "StockMovementAdapters", "Converte stock.stock-updated e stock.movement-recorded para StockMovement.")
+  Component(stock_adapters, "Adaptadores de Estoque", "StockMovementAdapters", "Converte stock.movement-recorded (e stock.stock-updated, não assinado) para StockMovement.")
 }
 
 ContainerDb(database, "Banco da oficina", "PostgreSQL 17", "Schema business_intelligence: service_order_timeline e restock_cycle")
@@ -33,7 +33,7 @@ Rel(lead_time_uc, domain_timeline, "Extrai duracoes e calcula DurationStats", "T
 Rel(restock_uc, domain_restock, "Calcula duracoes de ciclos e DurationStats", "TypeScript")
 
 Rel(bus, handlers, "Entrega eventos de OS e Estoque", "handle(event)")
-Rel(handlers, stock_adapters, "Normaliza evento de estoque para StockMovement", "fromStockUpdated / fromStockMovementRecorded")
+Rel(handlers, stock_adapters, "Normaliza evento de estoque para StockMovement", "fromStockMovementRecorded")
 Rel(handlers, domain_timeline, "Registra marcos (registered, started, finished, delivered, cancelled)", "markX(occurredOn)")
 Rel(handlers, domain_restock, "Abre ou fecha ciclo conforme RestockCyclePolicy", "opensCycle / closesCycle")
 Rel(handlers, ports, "Salva projecoes no banco", "save(timeline) / save(cycle)")

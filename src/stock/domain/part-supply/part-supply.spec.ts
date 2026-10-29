@@ -51,7 +51,7 @@ describe('PartSupply Aggregate Root', () => {
         expect(part.pullEvents()).toHaveLength(0);
     });
 
-    it('should increase stock and record StockUpdated on registerEntry()', () => {
+    it('should increase stock and record StockUpdated and StockMovementRecorded on registerEntry()', () => {
         const part = PartSupply.create(makeProps());
         part.pullEvents();
 
@@ -59,7 +59,7 @@ describe('PartSupply Aggregate Root', () => {
 
         expect(part.quantity.value).toBe(15);
         const events = part.pullEvents();
-        expect(events).toHaveLength(1);
+        expect(events).toHaveLength(2);
         expect(events[0]?.eventName).toBe('stock.stock-updated');
         expect(events[0]).toMatchObject({
             movementType: 'ENTRY',
@@ -68,9 +68,18 @@ describe('PartSupply Aggregate Root', () => {
             previousQuantity: 10,
             currentQuantity: 15,
         });
+        expect(events[1]?.eventName).toBe('stock.movement-recorded');
+        expect(events[1]).toMatchObject({
+            movementType: 'ENTRY',
+            reason: 'PURCHASE',
+            quantity: 5,
+            quantityBefore: 10,
+            quantityAfter: 15,
+        });
+        expect(events[1]).toHaveProperty('movementId');
     });
 
-    it('should decrease stock and record StockUpdated on deduct()', () => {
+    it('should decrease stock and record StockUpdated and StockMovementRecorded on deduct()', () => {
         const part = PartSupply.create(makeProps());
         part.pullEvents();
 
@@ -78,13 +87,21 @@ describe('PartSupply Aggregate Root', () => {
 
         expect(part.quantity.value).toBe(6);
         const events = part.pullEvents();
-        expect(events).toHaveLength(1);
+        expect(events).toHaveLength(2);
         expect(events[0]).toMatchObject({
             movementType: 'EXIT',
             reason: 'RESERVATION',
             movedQuantity: 4,
             previousQuantity: 10,
             currentQuantity: 6,
+        });
+        expect(events[1]).toMatchObject({
+            eventName: 'stock.movement-recorded',
+            movementType: 'EXIT',
+            reason: 'RESERVATION',
+            quantity: 4,
+            quantityBefore: 10,
+            quantityAfter: 6,
         });
     });
 

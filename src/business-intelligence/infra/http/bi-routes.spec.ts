@@ -3,7 +3,7 @@ import { buildApp } from '../../../app.js';
 import type { RoleValue } from '../../../auth/domain/user/value-objects/role.js';
 import { TokenBiAccessGuard } from '../../../infra/token-bi-access-guard.js';
 import { InMemoryEventBus } from '../../../shared/application/in-memory-event-bus.js';
-import type { StockUpdatedContract } from '../../application/contracts/stock-events.js';
+import type { StockMovementRecordedContract } from '../../application/contracts/stock-events.js';
 import { businessIntelligenceCompositionRoot } from '../../composition-root.js';
 import { InMemoryRestockCycleRepository } from '../persistence/in-memory-restock-cycle-repository.js';
 import { InMemoryServiceOrderTimelineRepository } from '../persistence/in-memory-service-order-timeline-repository.js';
@@ -172,28 +172,32 @@ describe('Business Intelligence HTTP routes', () => {
     it('returns restock lead-time metrics for GERENTE and validates partCode', async () => {
         const { app, bus } = setupApp();
 
-        const stockEvents: StockUpdatedContract[] = [
+        const stockEvents: StockMovementRecordedContract[] = [
             {
                 eventId: 's1',
-                eventName: 'stock.stock-updated',
+                movementId: 'mov-1',
+                eventName: 'stock.movement-recorded',
                 aggregateId: 'part-1',
                 occurredOn: at(0),
                 partCode: 'PAST-FREIO-01',
                 movementType: 'EXIT',
-                movedQuantity: 2,
-                previousQuantity: 2,
-                currentQuantity: 0,
+                reason: 'RESERVATION',
+                quantity: 2,
+                quantityBefore: 2,
+                quantityAfter: 0,
             },
             {
                 eventId: 's2',
-                eventName: 'stock.stock-updated',
+                movementId: 'mov-2',
+                eventName: 'stock.movement-recorded',
                 aggregateId: 'part-1',
                 occurredOn: at(90),
                 partCode: 'PAST-FREIO-01',
                 movementType: 'ENTRY',
-                movedQuantity: 10,
-                previousQuantity: 0,
-                currentQuantity: 10,
+                reason: 'PURCHASE',
+                quantity: 10,
+                quantityBefore: 0,
+                quantityAfter: 10,
             },
         ];
         await bus.publish(stockEvents);

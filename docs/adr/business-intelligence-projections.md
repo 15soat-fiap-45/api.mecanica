@@ -47,7 +47,7 @@ Para atender a esses requisitos dentro de uma arquitetura modular baseada em Dom
 - **Zero acoplamento de schema:** O BI não lê nem referencia tabelas de outros domínios; não há chaves estrangeiras transcontextuais.
 - **Contratos orientados ao consumidor (_Consumer-Driven Contracts_):** O BI declara localmente apenas os campos de que necessita nos eventos.
 - **Consultas analíticas rápidas:** As métricas são calculadas sobre tabelas de projeção enxutas (`service_order_timeline` e `restock_cycle`), com índices temporais específicos.
-- **Desacoplamento do histórico de estoque:** Permite criar uma estratégia provisória plugável (`RestockCyclePolicy`) consumindo `stock.stock-updated`, e deixar pronto o adaptador para `stock.movement-recorded` assim que a outra equipe finalizar o histórico.
+- **Desacoplamento do histórico de estoque:** Permite criar uma estratégia provisória plugável (`RestockCyclePolicy`) consumindo o evento de estoque. Inicialmente isso foi feito com `stock.stock-updated`; hoje o `PartSupply` publica `stock.movement-recorded`, que o BI passou a assinar no lugar do primeiro.
 
 **Contras:**
 
@@ -66,12 +66,12 @@ Adotar a **Abordagem B: Projeções Dedicadas Orientadas a Eventos**.
     - Nenhuma constraint `FOREIGN KEY` aponta para schemas externos (`service_order` ou `public`).
 
 2. **Consumo Desacoplado via `EventBus`:**
-    - O BI assina eventos do barramento in-process (`service-order.registered`, `service-order.execution-started`, `service-order.finished`, `service-order.delivered`, `service-order.cancelled`, `stock.stock-updated` e `stock.movement-recorded`).
+    - O BI assina eventos do barramento in-process (`service-order.registered`, `service-order.execution-started`, `service-order.finished`, `service-order.delivered`, `service-order.cancelled` e `stock.movement-recorded`). O `stock.stock-updated` não é assinado, porque o estoque emite os dois eventos para a mesma movimentação.
     - Apenas o BI conhece suas projeções. Os emissores não sabem que o BI existe.
 
 3. **Estratégia Plugável para Reposição (`RestockCyclePolicy`):**
     - Criação da interface de política `RestockCyclePolicy` com implementação padrão `ReorderPointRestockPolicy(reorderPoint)`.
-    - Permite que o módulo funcione imediatamente utilizando o evento existente `stock.stock-updated`, mantendo a porta aberta para o contrato `stock.movement-recorded` sem alterar use cases nem o modelo de domínio do BI.
+    - Permite que o módulo funcione imediatamente utilizando o evento de estoque, e a troca de `stock.stock-updated` para `stock.movement-recorded` foi feita apenas no `composition-root.ts`, sem alterar use cases nem o modelo de domínio do BI.
 
 4. **Tratamento de Anomalias e Idempotência:**
     - Apenas a primeira ocorrência de cada marco temporal é considerada (idempotência diante de reentregas).

@@ -1,9 +1,6 @@
 import type { EventBus } from '../shared/application/event-bus.js';
 import type { UseCase } from '../shared/application/use-case.js';
-import {
-    fromStockMovementRecorded,
-    fromStockUpdated,
-} from './application/adapters/stock-movement-adapters.js';
+import { fromStockMovementRecorded } from './application/adapters/stock-movement-adapters.js';
 import type {
     ServiceOrderCancelledContract,
     ServiceOrderDeliveredContract,
@@ -11,10 +8,7 @@ import type {
     ServiceOrderFinishedContract,
     ServiceOrderRegisteredContract,
 } from './application/contracts/service-order-events.js';
-import type {
-    StockMovementRecordedContract,
-    StockUpdatedContract,
-} from './application/contracts/stock-events.js';
+import type { StockMovementRecordedContract } from './application/contracts/stock-events.js';
 import { ProjectRestockCycle } from './application/handlers/project-restock-cycle.js';
 import { ProjectServiceOrderTimeline } from './application/handlers/project-service-order-timeline.js';
 import type { BiAccessGuard } from './application/ports/bi-access-guard.js';
@@ -58,9 +52,9 @@ export interface BusinessIntelligenceUseCases {
  * Composition root for the Business Intelligence context.
  *
  * Subscribes to Service Order and Stock events on the `EventBus` without
- * importing anything from those bounded contexts. Both `stock.stock-updated`
- * (current Stock event) and `stock.movement-recorded` (proposed stock-history
- * contract) are wired to the same restock projection through adapters.
+ * importing anything from those bounded contexts. The restock projection is
+ * fed by `stock.movement-recorded` only: Stock also emits `stock.stock-updated`
+ * for the same movement, so subscribing to both would count it twice.
  */
 export function businessIntelligenceCompositionRoot(
     eventBus: EventBus,
@@ -96,9 +90,6 @@ export function businessIntelligenceCompositionRoot(
     const projectRestock = new ProjectRestockCycle(
         deps.restockCycleRepository,
         restockPolicy,
-    );
-    eventBus.subscribe<StockUpdatedContract>('stock.stock-updated', (event) =>
-        projectRestock.handle(fromStockUpdated(event)),
     );
     eventBus.subscribe<StockMovementRecordedContract>(
         'stock.movement-recorded',

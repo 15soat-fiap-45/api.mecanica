@@ -41,7 +41,7 @@ Repo -> DB: INSERT INTO service_order_timeline ... ON CONFLICT DO UPDATE
 DB --> Repo: OK
 
 == 2. Projeção de Ciclos de Reposição de Estoque ==
-Producer -> Bus: publish(stock.stock-updated / stock.movement-recorded)
+Producer -> Bus: publish(stock.movement-recorded)
 Bus -> Handlers: handle(movement)
 Handlers -> Repo: findOpenByPartCode(partCode)
 Repo -> DB: SELECT restock_cycle WHERE closed_at IS NULL

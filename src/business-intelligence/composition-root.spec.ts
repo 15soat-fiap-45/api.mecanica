@@ -6,10 +6,7 @@ import { UnitOfMeasure } from '../stock/domain/part-supply/value-objects/unit-of
 import { ServiceOrder } from '../service-order/domain/service-order/service-order.js';
 import { ReorderPointRestockPolicy } from './domain/restock-cycle/restock-cycle-policy.js';
 import { InvalidLeadTimePeriodError } from './application/use-cases/get-service-order-lead-time.js';
-import type {
-    StockMovementRecordedContract,
-    StockUpdatedContract,
-} from './application/contracts/stock-events.js';
+import type { StockMovementRecordedContract } from './application/contracts/stock-events.js';
 import { businessIntelligenceCompositionRoot } from './composition-root.js';
 import { InMemoryRestockCycleRepository } from './infra/persistence/in-memory-restock-cycle-repository.js';
 import { InMemoryServiceOrderTimelineRepository } from './infra/persistence/in-memory-service-order-timeline-repository.js';
@@ -192,63 +189,71 @@ describe('Business Intelligence projections and use cases (via EventBus)', () =>
         ).rejects.toThrow(InvalidLeadTimePeriodError);
     });
 
-    it('projects restock cycles from both stock.stock-updated and stock.movement-recorded events', async () => {
+    it('projects restock cycles from stock.movement-recorded events', async () => {
         const { bus, bi } = setup(2); // reorderPoint = 2
 
-        // Part A via current `stock.stock-updated`:
+        // Part A via `stock.movement-recorded` (as emitted by PartSupply):
         // 1) EXIT to 4 (above threshold: no cycle)
         // 2) EXIT to 2 (opens cycle at t=10)
         // 3) EXIT to 0 (already open: ignored)
         // 4) ENTRY to 10 at t=70 (closes cycle -> 60 min)
-        const stockUpdatedEvents: StockUpdatedContract[] = [
+        const partAEvents: StockMovementRecordedContract[] = [
             {
-                eventId: 's1',
-                eventName: 'stock.stock-updated',
+                eventId: 'a1',
+                movementId: 'a-mov-1',
+                eventName: 'stock.movement-recorded',
                 aggregateId: 'p-1',
                 occurredOn: at(0),
                 partCode: 'PAST-FREIO-01',
                 movementType: 'EXIT',
-                movedQuantity: 1,
-                previousQuantity: 5,
-                currentQuantity: 4,
+                reason: 'RESERVATION',
+                quantity: 1,
+                quantityBefore: 5,
+                quantityAfter: 4,
             },
             {
-                eventId: 's2',
-                eventName: 'stock.stock-updated',
+                eventId: 'a2',
+                movementId: 'a-mov-2',
+                eventName: 'stock.movement-recorded',
                 aggregateId: 'p-1',
                 occurredOn: at(10),
                 partCode: 'PAST-FREIO-01',
                 movementType: 'EXIT',
-                movedQuantity: 2,
-                previousQuantity: 4,
-                currentQuantity: 2,
+                reason: 'RESERVATION',
+                quantity: 2,
+                quantityBefore: 4,
+                quantityAfter: 2,
             },
             {
-                eventId: 's3',
-                eventName: 'stock.stock-updated',
+                eventId: 'a3',
+                movementId: 'a-mov-3',
+                eventName: 'stock.movement-recorded',
                 aggregateId: 'p-1',
                 occurredOn: at(25),
                 partCode: 'PAST-FREIO-01',
                 movementType: 'EXIT',
-                movedQuantity: 2,
-                previousQuantity: 2,
-                currentQuantity: 0,
+                reason: 'RESERVATION',
+                quantity: 2,
+                quantityBefore: 2,
+                quantityAfter: 0,
             },
             {
-                eventId: 's4',
-                eventName: 'stock.stock-updated',
+                eventId: 'a4',
+                movementId: 'a-mov-4',
+                eventName: 'stock.movement-recorded',
                 aggregateId: 'p-1',
                 occurredOn: at(70),
                 partCode: 'PAST-FREIO-01',
                 movementType: 'ENTRY',
-                movedQuantity: 10,
-                previousQuantity: 0,
-                currentQuantity: 10,
+                reason: 'PURCHASE',
+                quantity: 10,
+                quantityBefore: 0,
+                quantityAfter: 10,
             },
         ];
-        await bus.publish(stockUpdatedEvents);
+        await bus.publish(partAEvents);
 
-        // Part B via proposed `stock.movement-recorded`:
+        // Part B via `stock.movement-recorded` with service-order and manual reasons:
         // 1) EXIT to 1 at t=20 (opens cycle)
         // 2) ENTRY with reason MANUAL at t=30 (ignored by policy)
         // 3) ENTRY with reason PURCHASE to 8 at t=50 (closes cycle -> 30 min)
@@ -351,7 +356,7 @@ describe('Business Intelligence projections and use cases (via EventBus)', () =>
         ).rejects.toThrow(InvalidLeadTimePeriodError);
     });
 
-    it('consumes real StockUpdated events emitted by PartSupply aggregate', async () => {
+    it('consumes real StockMovementRecorded events emitted by PartSupply aggregate', async () => {
         const { bus, bi } = setup(0);
 
         const part = PartSupply.register({

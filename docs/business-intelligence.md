@@ -18,7 +18,7 @@ flowchart TD
 
     subgraph StockContext["Stock Context"]
         ST_CMD["Movimentações de Estoque\n(saída / entrada)"]
-        ST_EVT["Eventos de Domínio:\nstock.stock-updated\nstock.movement-recorded (proposto)"]
+        ST_EVT["Eventos de Domínio:\nstock.movement-recorded\n(stock.stock-updated não é assinado pelo BI)"]
         ST_CMD --> ST_EVT
     end
 
@@ -147,13 +147,13 @@ Como o módulo de histórico de alterações de estoque ainda está em desenvolv
 | `service-order.delivered`         | `ServiceOrder.deliver()`        | Entrega do veículo ao cliente (`DELIVERED`) | Registra `deliveredAt` na timeline.                        |
 | `service-order.cancelled`         | `CancelServiceOrder`            | Cancelamento da O.S. (`CANCELLED`)          | Registra `cancelledAt` (invalida a O.S. nas estatísticas). |
 
-### 3.2. Eventos de Estoque e Contrato com a Equipe de Histórico
+### 3.2. Eventos de Estoque
 
-O BI já está preparado para consumir **dois formatos de evento** através do adaptador `StockMovementAdapters`:
+O agregado `PartSupply` emite **dois eventos** para cada movimentação (`registerEntry` e `deduct`). O BI projeta ciclos de reposição apenas a partir de `stock.movement-recorded`, para não contar a mesma movimentação duas vezes. O adaptador `fromStockUpdated` permanece disponível em `StockMovementAdapters`, mas não está assinado no `composition-root.ts`.
 
-#### A. Evento Atual (`stock.stock-updated`)
+#### A. Evento Legado (`stock.stock-updated`)
 
-Emitido pelo agregado `PartSupply` nas operações de entrada (`registerEntry`) e saída (`deduct`). O campo `reason` identifica a origem da movimentação e é traduzido pelo adaptador (`STOCK_ENTRY` → `PURCHASE`, `RESERVATION` → `RESERVATION`, `RESERVATION_CANCELLED` → `RETURN`):
+Emitido pelo `PartSupply` junto com o evento B e consumido por outros contextos. O campo `reason` identifica a origem da movimentação (`STOCK_ENTRY`, `RESERVATION`, `RESERVATION_CANCELLED`):
 
 ```ts
 interface StockUpdatedContract extends DomainEvent {
@@ -167,9 +167,9 @@ interface StockUpdatedContract extends DomainEvent {
 }
 ```
 
-#### B. Contrato Proposto para o Histórico de Estoque (`stock.movement-recorded`)
+#### B. Evento de Movimentação (`stock.movement-recorded`)
 
-Para a equipe responsável pela branch de histórico de estoque, propõe-se a publicação deste evento com enriquecimento de metadados:
+Publicado pelo `PartSupply` (`src/stock/domain/part-supply/events/stock-movement-recorded.ts`) a cada entrada ou saída, com o `reason` já traduzido (`STOCK_ENTRY` → `PURCHASE`, `RESERVATION` → `RESERVATION`, `RESERVATION_CANCELLED` → `RETURN`) e um `movementId` único gerado no estoque. O contrato esperado pelo BI é:
 
 ```ts
 interface StockMovementRecordedContract extends DomainEvent {
@@ -188,7 +188,7 @@ interface StockMovementRecordedContract extends DomainEvent {
 }
 ```
 
-> **Aviso de Integração:** O arquivo `src/business-intelligence/composition-root.ts` já assina ambos os eventos. Quando o serviço de estoque for completamente integrado ao bootstrap principal em produção, basta garantir que apenas um evento por movimentação acione o handler de ciclo de reposição.
+> **Aviso de Integração:** O arquivo `src/business-intelligence/composition-root.ts` assina somente `stock.movement-recorded`. O campo `referenceId` (ex.: ID da O.S.) ainda não é preenchido pelo estoque, e os motivos `SERVICE_ORDER` e `MANUAL` e o tipo `ADJUSTMENT` ainda não são emitidos.
 
 ---
 

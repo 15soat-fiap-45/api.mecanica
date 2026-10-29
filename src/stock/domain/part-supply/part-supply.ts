@@ -6,6 +6,11 @@ import {
     type StockExitReason,
     StockUpdated,
 } from './events/stock-updated.js';
+import {
+    type StockMovementKind,
+    type StockMovementRecordedReason,
+    StockMovementRecorded,
+} from './events/stock-movement-recorded.js';
 import type { PartCode } from '../../../shared/domain/part-code.js';
 import { Quantity } from './value-objects/quantity.js';
 import type { UnitOfMeasure } from './value-objects/unit-of-measure.js';
@@ -18,6 +23,15 @@ export interface PartSupplyProps {
     unitOfMeasure: UnitOfMeasure;
     version?: number | undefined;
 }
+
+const movementReasons: Record<
+    StockEntryReason | StockExitReason,
+    StockMovementRecordedReason
+> = {
+    STOCK_ENTRY: 'PURCHASE',
+    RESERVATION: 'RESERVATION',
+    RESERVATION_CANCELLED: 'RETURN',
+};
 
 export class PartSupply extends AggregateRoot<PartSupplyId> {
     description: string;
@@ -95,6 +109,7 @@ export class PartSupply extends AggregateRoot<PartSupplyId> {
                 currentQuantity: this._quantity.value,
             }),
         );
+        this.recordMovement('ENTRY', reason, moved, previous);
     }
 
     deduct(
@@ -114,6 +129,27 @@ export class PartSupply extends AggregateRoot<PartSupplyId> {
                 movedQuantity: moved.value,
                 previousQuantity: previous.value,
                 currentQuantity: this._quantity.value,
+            }),
+        );
+        this.recordMovement('EXIT', reason, moved, previous);
+    }
+
+    private recordMovement(
+        movementType: StockMovementKind,
+        reason: StockEntryReason | StockExitReason,
+        moved: Quantity,
+        previous: Quantity,
+    ): void {
+        this.record(
+            new StockMovementRecorded({
+                aggregateId: this.id.value,
+                movementId: crypto.randomUUID(),
+                partCode: this.partCode.value,
+                movementType,
+                reason: movementReasons[reason],
+                quantity: moved.value,
+                quantityBefore: previous.value,
+                quantityAfter: this._quantity.value,
             }),
         );
     }
