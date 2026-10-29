@@ -1,0 +1,11 @@
+node_modules
+dist
+coverage
+.git
+.claude
+.idea
+.scannerwork
+docs
+infra
+**/.env
+**/*.spec.ts

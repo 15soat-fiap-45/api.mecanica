@@ -32,7 +32,7 @@ O documento oficial `Fase 1 - Tech Challenge.pdf` não está presente na árvore
 | CRUD de clientes e veículos                          | **Implementado**                               | Clientes e veículos possuem cadastro, consulta, atualização e exclusão; as rotas exigem JWT e permissão `CLIENTE_EDITAR`              |
 | CRUD de serviços e peças                             | **Pendente / parcial**                         | Há operações de criação e consulta de serviços; atualização, exclusão e persistência completa de peças ainda não estão expostas      |
 | Autenticação JWT e autorização administrativa         | **Implementado**                              | `ActorResolver` + `TokenActorResolver` protegem Registry, Service Order e todas as rotas HTTP de Stock; `ESTOQUE_GERENCIAR`, `USUARIO_PRE_CADASTRAR` e `USUARIO_GERENCIAR` permanecem restritas ao `GERENTE` |
-| Dockerfile da aplicação e Docker Compose completo     | **Pendente**                                   | Existe Compose para PostgreSQL/MailHog e SonarQube, mas não para a aplicação                                                           |
+| Dockerfile da aplicação e Docker Compose completo     | **Implementado**                               | `Dockerfile` multi-stage e `docker-compose.yml` na raiz (PostgreSQL, MailHog, migrações e API)                                         |
 
 ## Arquitetura e DDD
 
@@ -104,7 +104,7 @@ Para identificar o usuário sem quebrar o isolamento entre os módulos `service-
 
 - Node.js compatível com TypeScript 6 e as dependências do `package.json`.
 - npm.
-- Docker e Docker Compose para executar o PostgreSQL e o MailHog.
+- Docker e Docker Compose (v2.20+ para o Compose completo da raiz, que usa `include`).
 
 As versões exatas de Node.js e npm não estão fixadas por `.nvmrc`, `engines` ou equivalente; **[PREENCHER: registrar versões oficiais da entrega]**.
 
@@ -128,6 +128,7 @@ Variáveis reconhecidas:
 POSTGRES_USER=<usuário do PostgreSQL>
 POSTGRES_PASSWORD=<senha do PostgreSQL>
 POSTGRES_DB=<nome do banco>
+POSTGRES_HOST=<opcional; host do PostgreSQL, padrão localhost>
 POSTGRES_PORT=<porta local, normalmente 5432>
 SMTP_HOST=<host SMTP, ex.: localhost>
 SMTP_PORT=<porta SMTP, ex.: 1025>
@@ -223,7 +224,28 @@ docker compose logs -f postgres
 docker compose down
 ```
 
-Não existe `Dockerfile` da aplicação nem `docker-compose.yml` na raiz orquestrando API e banco. O Compose de SonarQube está em [`infra/sonarqube/docker-compose.yml`](infra/sonarqube/docker-compose.yml).
+### Aplicação completa em containers
+
+O [`Dockerfile`](Dockerfile) gera uma imagem multi-stage (Node 24, Debian slim) com o código compilado, somente as dependências de produção, as migrações de `drizzle/` e a página `public/orcamento.html`. A imagem roda como usuário `node`, expõe a porta 3000 e tem `HEALTHCHECK` em `/health`.
+
+O [`docker-compose.yml`](docker-compose.yml) da raiz inclui o Compose de `infra/postgres` e acrescenta:
+
+- `migrate`: executa uma vez `node dist/infra/database/migrate.js` (migrador do `drizzle-orm`, sem `drizzle-kit`) depois que o PostgreSQL fica saudável;
+- `api`: sobe somente após as migrações terminarem com sucesso, apontando para `postgres` e `mailhog` na rede do Compose.
+
+Ambos leem `infra/postgres/.env` (inclusive `INITIAL_MANAGER_PASSWORD` e `JWT_SECRET`). A partir da raiz:
+
+```bash
+cp infra/postgres/.env.example infra/postgres/.env
+# edite infra/postgres/.env e troque os valores de exemplo
+docker compose up -d --build
+docker compose logs migrate
+docker compose ps
+```
+
+A API fica em `http://localhost:3000` (Swagger em `/docs`; a porta pode ser trocada com `API_PORT`) e o MailHog em `http://localhost:8025`. Use este Compose **ou** o de `infra/postgres`, não os dois ao mesmo tempo: os dois usam o container `oficina-postgres` e as mesmas portas, e cada um tem o próprio volume de dados. Para reaplicar as migrações sem Docker, após `npm run build`, use `npm run db:migrate:deploy`.
+
+O Compose de SonarQube está em [`infra/sonarqube/docker-compose.yml`](infra/sonarqube/docker-compose.yml).
 
 ## API HTTP
 
@@ -328,7 +350,6 @@ drizzle/                           # migrações versionadas de auth_users
 - O Event Bus é in-process/in-memory; não há durabilidade, retry automático, DLQ ou replay.
 - A consistência entre contextos é eventual e os handlers são preparados para idempotência em cenários específicos.
 - A API HTTP cobre autenticação/pré-cadastro (`auth`), CRUD protegido de clientes e veículos (`registry`), catálogo de serviços e ciclo completo da OS (criação, associação de serviços, insumos, envio de orçamento para aprovação, decisão de aprovação/recusa por token, consulta de histórico de fases com autor via `ActorResolver` / `TokenActorResolver`, início, finalização, entrega e cancelamento) e health check.
-- Não há Dockerfile da API nem Compose completo da aplicação.
 
 ## Links e informações da entrega
 
