@@ -10,7 +10,7 @@ import {
 } from './update-customer.js';
 
 describe('UpdateCustomer', () => {
-    it('updates customer data and persists it', async () => {
+    it('updates only email and telephone and persists them', async () => {
         const customer = Customer.create({
             cpfCnpj: CpfCnpj.create('52998224725'),
             name: 'John Doe',
@@ -26,12 +26,13 @@ describe('UpdateCustomer', () => {
 
         const result = await new UpdateCustomer(repository).execute({
             cpfCnpj: '52998224725',
-            name: 'Jane Doe',
             email: 'jane.doe@example.com',
             tel: '11999998888',
         });
 
-        expect(result.name).toBe('Jane Doe');
+        expect(result.name).toBe('John Doe');
+        expect(result.email).toBe('jane.doe@example.com');
+        expect(result.tel).toBe('11999998888');
         expect(repository.update).toHaveBeenCalledWith(customer);
     });
 
@@ -46,7 +47,6 @@ describe('UpdateCustomer', () => {
         await expect(
             new UpdateCustomer(repository).execute({
                 cpfCnpj: '52998224725',
-                name: 'Jane Doe',
                 email: 'jane.doe@example.com',
                 tel: '11999998888',
             }),

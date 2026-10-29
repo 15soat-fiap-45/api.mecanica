@@ -74,17 +74,7 @@ export class Vehicle extends AggregateRoot<VehicleId> {
         return vehicle;
     }
 
-    update(
-        model: string,
-        year: number,
-        brand: string,
-        color: string,
-        plate: Plate,
-    ): void {
-        this.model = model;
-        this.year = year;
-        this.brand = brand;
+    update(color: string): void {
         this.color = color;
-        this.plate = plate;
     }
 }

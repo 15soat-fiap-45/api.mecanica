@@ -2,7 +2,6 @@ import { ApplicationException } from '../../../shared/application/application-ex
 import type { UseCase } from '../../../shared/application/use-case.js';
 import type { VehicleRepository } from '../../domain/vehicle/vehicle.repository.js';
 import { VehicleId } from '../../domain/vehicle/vehicle-id.js';
-import { Plate } from '../../domain/vehicle/value-objects/plate.js';
 
 export class VehicleNotFoundForUpdateError extends ApplicationException {
     constructor() {
@@ -10,19 +9,9 @@ export class VehicleNotFoundForUpdateError extends ApplicationException {
     }
 }
 
-export class VehiclePlateAlreadyExistsOnUpdateError extends ApplicationException {
-    constructor() {
-        super('Vehicle with this plate already exists.');
-    }
-}
-
 export interface UpdateVehicleInput {
     id: string;
-    model: string;
-    year: number;
-    brand: string;
     color: string;
-    plate: string;
 }
 
 export interface UpdateVehicleOutput {
@@ -46,19 +35,7 @@ export class UpdateVehicle implements UseCase<
         const vehicle = await this.vehicleRepository.findById(id);
         if (!vehicle) throw new VehicleNotFoundForUpdateError();
 
-        const plate = Plate.create(input.plate);
-        const existing = await this.vehicleRepository.findByPlate(plate);
-        if (existing && existing.id.value !== vehicle.id.value) {
-            throw new VehiclePlateAlreadyExistsOnUpdateError();
-        }
-
-        vehicle.update(
-            input.model,
-            input.year,
-            input.brand,
-            input.color,
-            plate,
-        );
+        vehicle.update(input.color);
         await this.vehicleRepository.update(vehicle);
 
         return {

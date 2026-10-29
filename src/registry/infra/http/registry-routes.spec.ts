@@ -206,7 +206,6 @@ describe('Registry HTTP routes', () => {
             method: 'PATCH',
             url: '/customers/52998224725',
             payload: {
-                name: 'Maria Oliveira',
                 email: 'maria.oliveira@example.com',
                 tel: '11999998888',
             },
@@ -224,6 +223,27 @@ describe('Registry HTTP routes', () => {
         expect(useCases.deleteCustomer.execute).toHaveBeenCalledWith({
             cpfCnpj: '52998224725',
         });
+        await app.close();
+    });
+
+    it('rejects customer updates containing immutable fields', async () => {
+        const app = Fastify();
+        const useCases = makeUseCases();
+        registerRegistryRoutes(app, useCases);
+
+        const response = await app.inject({
+            method: 'PATCH',
+            url: '/customers/52998224725',
+            payload: {
+                name: 'Maria Oliveira',
+                cpfCnpj: '11144477735',
+                email: 'maria.oliveira@example.com',
+                tel: '11999998888',
+            },
+        });
+
+        expect(response.statusCode).toBe(400);
+        expect(useCases.updateCustomer.execute).not.toHaveBeenCalled();
         await app.close();
     });
 
@@ -285,11 +305,7 @@ describe('Registry HTTP routes', () => {
             method: 'PATCH',
             url: '/vehicles/vehicle-id',
             payload: {
-                model: 'Civic Touring',
-                year: 2023,
-                brand: 'Honda',
                 color: 'Prata',
-                plate: 'ABC-1234',
             },
         });
         const deleted = await app.inject({
@@ -305,6 +321,29 @@ describe('Registry HTTP routes', () => {
         expect(useCases.deleteVehicle.execute).toHaveBeenCalledWith({
             id: 'vehicle-id',
         });
+        await app.close();
+    });
+
+    it('rejects vehicle updates containing immutable fields', async () => {
+        const app = Fastify();
+        const useCases = makeUseCases();
+        registerRegistryRoutes(app, useCases);
+
+        const response = await app.inject({
+            method: 'PATCH',
+            url: '/vehicles/vehicle-id',
+            payload: {
+                model: 'Civic Touring',
+                year: 2023,
+                brand: 'Honda',
+                color: 'Prata',
+                plate: 'ABC-1234',
+                customerId: '52998224725',
+            },
+        });
+
+        expect(response.statusCode).toBe(400);
+        expect(useCases.updateVehicle.execute).not.toHaveBeenCalled();
         await app.close();
     });
 
@@ -334,6 +373,15 @@ describe('Registry HTTP routes', () => {
         await app.register(swagger, {
             openapi: {
                 info: { title: 'Registry test', version: '1.0.0' },
+                components: {
+                    securitySchemes: {
+                        bearerAuth: {
+                            type: 'http',
+                            scheme: 'bearer',
+                            bearerFormat: 'JWT',
+                        },
+                    },
+                },
             },
             transform: jsonSchemaTransform,
         });

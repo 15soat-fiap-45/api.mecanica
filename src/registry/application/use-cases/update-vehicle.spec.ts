@@ -3,10 +3,7 @@ import { CpfCnpj } from '../../domain/customer/value-objects/cpf-cnpj.js';
 import { Vehicle } from '../../domain/vehicle/vehicle.js';
 import { Plate } from '../../domain/vehicle/value-objects/plate.js';
 import type { VehicleRepository } from '../../domain/vehicle/vehicle.repository.js';
-import {
-    UpdateVehicle,
-    VehiclePlateAlreadyExistsOnUpdateError,
-} from './update-vehicle.js';
+import { UpdateVehicle } from './update-vehicle.js';
 
 describe('UpdateVehicle', () => {
     const makeVehicle = (plate = 'ABC-1234') =>
@@ -20,53 +17,26 @@ describe('UpdateVehicle', () => {
             plate: Plate.create(plate),
         });
 
-    it('updates vehicle data and persists it', async () => {
+    it('updates only the color and persists it', async () => {
         const vehicle = makeVehicle();
         const repository: VehicleRepository = {
             save: vi.fn(),
             update: vi.fn(),
             delete: vi.fn(),
             findById: vi.fn().mockResolvedValue(vehicle),
-            findByPlate: vi.fn().mockResolvedValue(vehicle),
+            findByPlate: vi.fn(),
         };
 
         const result = await new UpdateVehicle(repository).execute({
             id: 'vehicle-id',
-            model: 'Civic Touring',
-            year: 2023,
-            brand: 'Honda',
             color: 'Silver',
-            plate: 'ABC-1234',
         });
 
-        expect(result.model).toBe('Civic Touring');
+        expect(result.model).toBe('Civic');
+        expect(result.year).toBe(2022);
+        expect(result.brand).toBe('Honda');
+        expect(result.color).toBe('Silver');
+        expect(result.plate).toBe('ABC1234');
         expect(repository.update).toHaveBeenCalledWith(vehicle);
-    });
-
-    it('rejects a plate already used by another vehicle', async () => {
-        const vehicle = makeVehicle();
-        const otherVehicle = Vehicle.create({
-            ...vehicle,
-            id: 'other-vehicle-id',
-            plate: Plate.create('DEF-5678'),
-        });
-        const repository: VehicleRepository = {
-            save: vi.fn(),
-            update: vi.fn(),
-            delete: vi.fn(),
-            findById: vi.fn().mockResolvedValue(vehicle),
-            findByPlate: vi.fn().mockResolvedValue(otherVehicle),
-        };
-
-        await expect(
-            new UpdateVehicle(repository).execute({
-                id: 'vehicle-id',
-                model: 'Civic',
-                year: 2022,
-                brand: 'Honda',
-                color: 'Black',
-                plate: 'DEF-5678',
-            }),
-        ).rejects.toThrow(VehiclePlateAlreadyExistsOnUpdateError);
     });
 });

@@ -97,31 +97,28 @@ const vehicleResponseSchema = z
         ],
     });
 
-const customerUpdateBodySchema = customerBodySchema
-    .omit({ cpfCnpj: true })
+const customerUpdateBodySchema = z
+    .strictObject({
+        email: z.email().max(100),
+        tel: z.string().min(10).max(20),
+    })
     .meta({
         examples: [
             {
-                name: 'Maria Oliveira',
                 email: 'maria.oliveira@example.com',
                 tel: '11999998888',
             },
         ],
     });
 
-const vehicleUpdateBodySchema = vehicleBodySchema
-    .omit({
-        id: true,
-        customerId: true,
+const vehicleUpdateBodySchema = z
+    .strictObject({
+        color: z.string().trim().min(1).max(15),
     })
     .meta({
         examples: [
             {
-                model: 'Civic Touring',
-                year: 2023,
-                brand: 'Honda',
                 color: 'Prata',
-                plate: 'ABC-1234',
             },
         ],
     });
@@ -190,6 +187,7 @@ export function registerRegistryRoutes(
             preValidation: requireAuth,
             schema: {
                 tags: ['Registry'],
+                security: [{ bearerAuth: [] }],
                 body: customerBodySchema,
                 response: { 201: customerResponseSchema },
             },
@@ -208,6 +206,7 @@ export function registerRegistryRoutes(
             preValidation: requireAuth,
             schema: {
                 tags: ['Registry'],
+                security: [{ bearerAuth: [] }],
                 params: documentParamsSchema,
                 response: { 200: customerResponseSchema },
             },
@@ -224,6 +223,7 @@ export function registerRegistryRoutes(
             preValidation: requireAuth,
             schema: {
                 tags: ['Registry'],
+                security: [{ bearerAuth: [] }],
                 params: documentParamsSchema,
                 body: customerUpdateBodySchema,
                 response: { 200: customerResponseSchema },
@@ -242,6 +242,7 @@ export function registerRegistryRoutes(
             preValidation: requireAuth,
             schema: {
                 tags: ['Registry'],
+                security: [{ bearerAuth: [] }],
                 params: documentParamsSchema,
             },
         },
@@ -257,6 +258,7 @@ export function registerRegistryRoutes(
             preValidation: requireAuth,
             schema: {
                 tags: ['Registry'],
+                security: [{ bearerAuth: [] }],
                 body: vehicleBodySchema,
                 response: { 201: vehicleResponseSchema },
             },
@@ -275,6 +277,7 @@ export function registerRegistryRoutes(
             preValidation: requireAuth,
             schema: {
                 tags: ['Registry'],
+                security: [{ bearerAuth: [] }],
                 params: plateParamsSchema,
                 response: { 200: vehicleResponseSchema },
             },
@@ -291,6 +294,7 @@ export function registerRegistryRoutes(
             preValidation: requireAuth,
             schema: {
                 tags: ['Registry'],
+                security: [{ bearerAuth: [] }],
                 params: vehicleIdParamsSchema,
                 body: vehicleUpdateBodySchema,
                 response: { 200: vehicleResponseSchema },
@@ -309,6 +313,7 @@ export function registerRegistryRoutes(
             preValidation: requireAuth,
             schema: {
                 tags: ['Registry'],
+                security: [{ bearerAuth: [] }],
                 params: vehicleIdParamsSchema,
             },
         },

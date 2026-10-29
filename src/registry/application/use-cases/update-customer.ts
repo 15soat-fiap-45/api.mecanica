@@ -13,7 +13,6 @@ export class CustomerNotFoundForUpdateError extends ApplicationException {
 
 export interface UpdateCustomerInput {
     cpfCnpj: string;
-    name: string;
     email: string;
     tel: string;
 }
@@ -36,11 +35,7 @@ export class UpdateCustomer implements UseCase<
         const customer = await this.customerRepository.findByCpfCnpj(cpfCnpj);
         if (!customer) throw new CustomerNotFoundForUpdateError();
 
-        customer.update(
-            input.name,
-            Email.create(input.email),
-            Telephone.create(input.tel),
-        );
+        customer.update(Email.create(input.email), Telephone.create(input.tel));
         await this.customerRepository.update(customer);
 
         return {

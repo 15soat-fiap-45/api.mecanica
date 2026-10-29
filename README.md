@@ -136,9 +136,10 @@ APPROVAL_TOKEN_TTL_MINUTES=<validade do link de aprovação em minutos>
 DATABASE_URL=<opcional; tem prioridade sobre as variáveis individuais>
 INITIAL_MANAGER_PASSWORD=<senha temporária do gerente inicial; obrigatória>
 JWT_SECRET=<chave de assinatura JWT; obrigatória, com pelo menos 32 bytes>
+BI_REORDER_POINT=<opcional; ponto de reposição usado pelo módulo de BI, padrão 0>
 ```
 
-As duas últimas variáveis são usadas pelo bootstrap da aplicação; podem ser definidas no ambiente do processo. `src/infra/database/connection.ts` também carrega `infra/postgres/.env` no desenvolvimento. O arquivo `.env` real não deve ser publicado; não use os valores de exemplo como senhas reais.
+`INITIAL_MANAGER_PASSWORD` e `JWT_SECRET` são obrigatórias para iniciar a aplicação. `BI_REORDER_POINT` é opcional e tem padrão `0`. `src/infra/database/connection.ts` também carrega `infra/postgres/.env` no desenvolvimento. O arquivo `.env` real não deve ser publicado; substitua todos os valores de exemplo, principalmente as senhas e a chave JWT.
 
 ## Banco de dados
 
@@ -149,7 +150,9 @@ Há duas representações no banco:
 - `src/infra/database/schema.ts` contém tabelas Drizzle para cliente, veículo e serviço, além do schema `service_order` para OS (`orders`), itens (`supply_items`), orçamentos (`budgets`), solicitações de aprovação (`approval_requests`), catálogo de serviços (`services`, `service_parts`, `order_services`) e histórico de fases da OS (`order_status_history`).
 - `infra/postgres/init/01-schema.sql` contém o modelo legado em `public` (incluindo `peca_insumo`, validada ao vincular peças a serviços do catálogo, e `os_status_historico`).
 
-Os scripts SQL em `infra/postgres/init/` (`01-schema.sql` a `05-order-status-history.sql`) são executados automaticamente quando o volume do PostgreSQL é criado pela primeira vez. Os scripts disponíveis são:
+Os scripts SQL em `infra/postgres/init/` (`01-schema.sql` a `06-business-intelligence.sql`) são executados automaticamente quando o volume do PostgreSQL é criado pela primeira vez. As migrações do Drizzle em `drizzle/` são separadas e criam/atualizam a tabela de usuários da autenticação.
+
+Os comandos disponíveis para o banco são:
 
 ```bash
 npm run db:generate
@@ -163,22 +166,35 @@ Os repositórios Drizzle de OS, orçamento, catálogo de serviços e aprovação
 
 ## Execução local
 
-Inicie o banco e o MailHog:
+Após instalar as dependências, configure o ambiente e inicie o banco e o MailHog:
 
 ```bash
+cp infra/postgres/.env.example infra/postgres/.env
+# edite infra/postgres/.env e troque os valores de exemplo
+npm install
 cd infra/postgres
 docker compose up -d
 cd ../..
 npm run db:migrate
 ```
 
+O `docker compose up -d` executa os scripts de `infra/postgres/init/` somente
+quando o volume `postgres_data` é criado. O `npm run db:migrate` é necessário
+para aplicar as migrações versionadas do Drizzle, inclusive a tabela
+`auth_users`. Em um volume já existente, não conte com os scripts de init para
+aplicar alterações; use as instruções incrementais de
+[`infra/postgres/README.md`](infra/postgres/README.md).
+
 Depois, os scripts do projeto são:
 
 ```bash
 npm run dev          # desenvolvimento; executa src/index.ts em watch
 npm run build        # compila para dist/
-npm start            # executa dist/index.js
+npm start             # executa dist/index.js; rode npm run build antes
 ```
+
+Com a API em execução, verifique `http://localhost:3000/health`. A interface
+web do MailHog fica em `http://localhost:8025`.
 
 O bootstrap HTTP existente é `src/index.ts`. A aplicação usa `HOST=0.0.0.0` e `PORT=3000` por padrão, podendo receber essas variáveis pelo ambiente, além de executar periodicamente `expirePending` para expirar solicitações de aprovação vencidas. A inicialização depende de uma conexão PostgreSQL válida, de `INITIAL_MANAGER_PASSWORD` não vazia e de `JWT_SECRET` com pelo menos 32 bytes; sem essas variáveis, ela falha antes de abrir a porta.
 
@@ -218,10 +234,12 @@ O Fastify registra Swagger e Swagger UI em `/docs`. A especificação OpenAPI é
 | `POST` | `/auth/first-access`                                       | Troca a senha temporária no primeiro acesso                                            | Não (rate-limit: 5/min por IP)                   |
 | `POST` | `/auth/login`                                              | Autentica usuário ativo e emite JWT HS256 (4h)                                         | Não (rate-limit: 5/min por IP)                   |
 | `POST` | `/users`                                                   | Pré-cadastra usuário com senha temporária                                              | Bearer JWT (`USUARIO_PRE_CADASTRAR` — `GERENTE`) |
-| `POST` | `/customers`                                               | Cadastra cliente                                                                       | Não                                              |
-| `GET`  | `/customers/:cpfCnpj`                                      | Consulta cliente por CPF/CNPJ                                                          | Não                                              |
-| `POST` | `/vehicles`                                                | Cadastra veículo vinculado a cliente                                                   | Não                                              |
-| `GET`  | `/vehicles/:plate`                                         | Consulta veículo por placa                                                             | Não                                              |
+| `POST` | `/customers`                                               | Cadastra cliente                                                                       | Bearer JWT (`CLIENTE_EDITAR` — `ATENDENTE` ou `GERENTE`) |
+| `GET`  | `/customers/:cpfCnpj`                                      | Consulta cliente por CPF/CNPJ                                                          | Bearer JWT (`CLIENTE_EDITAR` — `ATENDENTE` ou `GERENTE`) |
+| `PATCH`| `/customers/:cpfCnpj`                                      | Atualiza somente e-mail e telefone; nome e CPF/CNPJ são imutáveis após o cadastro     | Bearer JWT (`CLIENTE_EDITAR`)                   |
+| `POST` | `/vehicles`                                                | Cadastra veículo vinculado a cliente                                                   | Bearer JWT (`CLIENTE_EDITAR` — `ATENDENTE` ou `GERENTE`) |
+| `GET`  | `/vehicles/:plate`                                         | Consulta veículo por placa                                                             | Bearer JWT (`CLIENTE_EDITAR` — `ATENDENTE` ou `GERENTE`) |
+| `PATCH`| `/vehicles/:id`                                             | Atualiza somente a cor; demais dados do veículo são imutáveis após o cadastro         | Bearer JWT (`CLIENTE_EDITAR` — `ATENDENTE` ou `GERENTE`) |
 | `POST` | `/service-orders`                                          | Cadastra OS (`description`, `vehicleId`, `valueCents` opcional)                        | Bearer JWT (`OS_CRIAR`)                          |
 | `GET`  | `/service-orders/:serviceOrderId`                          | Consulta OS (`valueCents` e insumos `supplies` associados)                             | Bearer JWT (qualquer papel ativo)                |
 | `GET`  | `/service-orders/:serviceOrderId/history`                  | Consulta histórico de fases da OS (`status`, `valueCents`, `changedBy` e `recordedAt`) | Bearer JWT (qualquer papel ativo)                |
