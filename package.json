@@ -15,6 +15,7 @@
         "format:check": "prettier . --check",
         "db:generate": "drizzle-kit generate",
         "db:migrate": "drizzle-kit migrate",
+        "db:migrate:deploy": "node dist/infra/database/migrate.js",
         "db:push": "drizzle-kit push",
         "db:studio": "drizzle-kit studio",
         "db:test": "tsx src/infra/database/test-connection.ts",
