@@ -7,7 +7,7 @@ Person(client, "Consumidor HTTP", "Chama a API por HTTP/JSON")
 
 System_Boundary(system, "API Oficina Mecanica") {
     Container(api, "Processo da API", "Node.js / TypeScript / Fastify", "Servidor, Swagger, health check e error handler")
-    Container(http_adapters, "Adaptadores HTTP", "Fastify + Zod", "Rotas de Registry, Auth, Service Order e Business Intelligence")
+    Container(http_adapters, "Adaptadores HTTP", "Fastify + Zod", "Rotas de Registry (CRUD protegido), Auth, Service Order e Business Intelligence")
     Container(application, "Camada de aplicação", "Casos de uso e handlers", "Registry, Auth, Service Order, Stock e Business Intelligence")
     Container(domain, "Domínio modular", "DDD", "Registry, Auth, Service Order, Stock e Business Intelligence")
     Container(event_bus, "Event Bus", "InMemoryEventBus", "Comunicação desacoplada entre contextos no mesmo processo")
@@ -15,7 +15,7 @@ System_Boundary(system, "API Oficina Mecanica") {
 }
 System_Ext(postgres, "PostgreSQL", "Banco local/provisionado pelo Compose")
 
-Rel(client, http_adapters, "HTTP/JSON")
+Rel(client, http_adapters, "HTTP/JSON", "Bearer JWT nas rotas protegidas")
 Rel(http_adapters, application, "Valida e executa casos de uso")
 Rel(application, domain, "Invoca agregados, entidades e políticas")
 Rel(application, drizzle, "Usa interfaces de repositório")

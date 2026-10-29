@@ -8,14 +8,14 @@ Deployment_Node(client, "Cliente da API", "Browser, curl ou outro consumidor HTT
 
 Deployment_Node(host, "Host de execução", "Node.js") {
     Container(api_process, "API process", "Fastify / TypeScript", "src/index.ts; padrão HOST=0.0.0.0 e PORT=3000")
-    ContainerDb(drizzle, "Drizzle ORM", "node-postgres", "Repositórios Registry e health check")
+    ContainerDb(drizzle, "Drizzle ORM", "node-postgres", "Repositórios Auth, Registry, Service Order, BI e health check")
 }
 
 Deployment_Node(database_runtime, "PostgreSQL", "Docker Compose ou servidor PostgreSQL") {
-    ContainerDb(postgres, "Database", "PostgreSQL", "Tabelas mapeadas: cliente, veiculo e servico")
+    ContainerDb(postgres, "Database", "PostgreSQL", "Tabelas mapeadas: auth_users, cliente, veiculo, service_order e business_intelligence")
 }
 
-Rel(client_tool, api_process, "HTTP/JSON", "Health, Swagger, customers e vehicles")
+Rel(client_tool, api_process, "HTTP/JSON", "Health, Swagger, Auth, CRUD protegido de customers/vehicles, Service Order e BI")
 Rel(api_process, drizzle, "usa")
 Rel(drizzle, postgres, "TCP/SQL")
 Rel(api_process, postgres, "SELECT 1 no health check")
@@ -25,7 +25,8 @@ note right of api_process
     - Dockerfile da API
     - cluster/load balancer
     - Redis, S3 ou fila
-    - serviços externos de pagamento/email/SMS
+    - serviços externos de pagamento ou SMS
+    - serviço SMTP externo de produção; no ambiente local, MailHog é usado pelo Compose
 end note
 
 note right of postgres

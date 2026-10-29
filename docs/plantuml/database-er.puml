@@ -3,6 +3,15 @@ hide circle
 skinparam linetype ortho
 
 package "Schema public" {
+    entity "auth_users" as auth_users {
+        * id : UUID <<PK>>
+        --
+        email : VARCHAR(320) <<UNIQUE>>
+        password_hash : TEXT
+        role : auth_role
+        status : auth_user_status
+    }
+
     entity "cliente" as cliente {
         * cliente_id : VARCHAR(14) <<PK>>
         --
