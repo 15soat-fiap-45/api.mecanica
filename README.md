@@ -84,12 +84,7 @@ Para identificar o usuário sem quebrar o isolamento entre os módulos `service-
 
 ### Documentação DDD
 
-- ADR do monólito modular com DDD e Clean Architecture: [`docs/adr/modular-monolith.md`](docs/adr/modular-monolith.md)
 - ADR do Event Bus: [`docs/adr/event-bus.md`](docs/adr/event-bus.md)
-- ADR das projeções de Business Intelligence: [`docs/adr/business-intelligence-projections.md`](docs/adr/business-intelligence-projections.md)
-- ADR do PostgreSQL: [`docs/adr/postgresql-database.md`](docs/adr/postgresql-database.md)
-- ADR de autenticação e autorização: [`docs/adr/authentication-authorization.md`](docs/adr/authentication-authorization.md)
-- ADR do MailHog no MVP: [`docs/adr/mailhog-mvp-email.md`](docs/adr/mailhog-mvp-email.md)
 - Fluxos Auth: [`docs/plantuml/flows/auth-service.puml`](docs/plantuml/flows/auth-service.puml)
 - Event Storming: **[PREENCHER: inserir link ou caminho do artefato]**
 - Diagrama de domínio / linguagem ubíqua / glossário: **[PREENCHER: inserir link ou caminho]**
