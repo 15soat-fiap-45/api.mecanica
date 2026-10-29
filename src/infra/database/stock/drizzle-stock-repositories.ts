@@ -130,17 +130,37 @@ export class DrizzlePartSupplyRepository implements PartSupplyRepository {
         partSupply: PartSupply,
         itemId: number,
     ): Promise<void> {
-        const movements = partSupply.pendingEvents
-            .filter(
-                (event): event is StockUpdatedEvent =>
-                    event.eventName === 'stock.stock-updated',
-            )
-            .map((movement) => ({
-                itemId,
-                tipo: movement.movementType === 'ENTRY' ? 'ENTRADA' : 'SAIDA',
-                quantidade: String(movement.movedQuantity),
-                observacao: `Stock movement for ${movement.partCode}`,
-            }));
+        const movements = partSupply.pendingEvents.flatMap((event) => {
+            if (isStockUpdatedEvent(event)) {
+                return [
+                    {
+                        itemId,
+                        tipo:
+                            event.movementType === 'ENTRY'
+                                ? 'ENTRADA'
+                                : 'SAIDA',
+                        quantidade: String(event.movedQuantity),
+                        observacao: `Motivo: ${event.reason}. Saldo: ${event.previousQuantity} -> ${event.currentQuantity}.`,
+                    },
+                ];
+            }
+
+            if (isPartSupplyRegisteredEvent(event)) {
+                return event.initialQuantity > 0
+                    ? [
+                          {
+                              itemId,
+                              tipo: 'ENTRADA',
+                              quantidade: String(event.initialQuantity),
+                              observacao:
+                                  'Entrada inicial do cadastro do insumo.',
+                          },
+                      ]
+                    : [];
+            }
+
+            return [];
+        });
 
         if (movements.length) {
             await this.database.insert(movimentoEstoque).values(movements);
@@ -300,8 +320,28 @@ type StockUpdatedEvent = DomainEvent & {
     eventName: 'stock.stock-updated';
     partCode: string;
     movementType: 'ENTRY' | 'EXIT';
+    reason: string;
     movedQuantity: number;
+    previousQuantity: number;
+    currentQuantity: number;
 };
+
+type PartSupplyRegisteredEvent = DomainEvent & {
+    eventName: 'stock.part-supply-registered';
+    initialQuantity: number;
+};
+
+function isStockUpdatedEvent(
+    event: DomainEvent,
+): event is StockUpdatedEvent {
+    return event.eventName === 'stock.stock-updated';
+}
+
+function isPartSupplyRegisteredEvent(
+    event: DomainEvent,
+): event is PartSupplyRegisteredEvent {
+    return event.eventName === 'stock.part-supply-registered';
+}
 
 function partSupplyFromRow(
     item: typeof pecaInsumo.$inferSelect,

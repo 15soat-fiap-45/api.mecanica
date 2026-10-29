@@ -125,7 +125,20 @@ export const movimentoEstoque = pgTable('movimento_estoque', {
     usuarioId: bigint('usuario_id', { mode: 'number' }),
     osId: bigint('os_id', { mode: 'number' }),
     observacao: text('observacao'),
-});
+}, (table) => [
+    index('movimento_estoque_item_data_idx').on(
+        table.itemId,
+        table.dataHora,
+    ),
+    check(
+        'movimento_estoque_tipo_check',
+        sql`${table.tipo} IN ('ENTRADA', 'SAIDA', 'AJUSTE')`,
+    ),
+    check(
+        'movimento_estoque_quantidade_check',
+        sql`${table.quantidade} > 0`,
+    ),
+]);
 
 export const reservaEstoque = pgTable(
     'reserva_estoque',

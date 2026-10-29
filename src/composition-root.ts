@@ -1,4 +1,5 @@
 import type { EventBus } from './shared/application/event-bus.js';
+import type { ActorResolver } from './service-order/application/ports/actor-resolver.js';
 import type { PartSupplyRepository } from './stock/domain/part-supply/part-supply.repository.js';
 import type { SupplyReservationRepository } from './stock/domain/supply-reservation/supply-reservation.repository.js';
 import { RegisterPartSupply } from './stock/application/use-cases/register-part-supply.js';
@@ -50,6 +51,7 @@ import type {
 } from './stock/application/use-cases/write-off-stock.js';
 
 export interface StockUseCases {
+    actorResolver?: ActorResolver | undefined;
     registerPartSupply: UseCase<RegisterPartSupplyInput, RegisterPartSupplyOutput>;
     registerStockEntry: UseCase<
         RegisterStockEntryInput,
@@ -68,6 +70,7 @@ export type { BusinessIntelligenceDependencies } from './business-intelligence/c
 export interface StockDependencies {
     partSupplyRepository: PartSupplyRepository;
     reservationRepository: SupplyReservationRepository;
+    actorResolver?: ActorResolver | undefined;
 }
 
 export interface RegistryDependencies {
@@ -133,6 +136,7 @@ export function stockCompositionRoot(
     );
 
     return {
+        actorResolver: deps.actorResolver,
         registerPartSupply,
         registerStockEntry,
         reserveSupply,
