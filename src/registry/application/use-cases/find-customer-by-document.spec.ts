@@ -22,6 +22,8 @@ describe('FindCustomerByDocument Use Case', () => {
     it('should return customer output when found', async () => {
         const repository: CustomerRepository = {
             save: vi.fn(),
+            update: vi.fn(),
+            delete: vi.fn(),
             findByCpfCnpj: vi.fn().mockResolvedValue(mockCustomer),
         };
         const useCase = new FindCustomerByDocument(repository);
@@ -40,6 +42,8 @@ describe('FindCustomerByDocument Use Case', () => {
     it('should throw CustomerNotFoundError when customer is not found', async () => {
         const repository: CustomerRepository = {
             save: vi.fn(),
+            update: vi.fn(),
+            delete: vi.fn(),
             findByCpfCnpj: vi.fn().mockResolvedValue(null),
         };
         const useCase = new FindCustomerByDocument(repository);
@@ -52,6 +56,8 @@ describe('FindCustomerByDocument Use Case', () => {
     it('should throw InvalidDocumentException when document is invalid', async () => {
         const repository: CustomerRepository = {
             save: vi.fn(),
+            update: vi.fn(),
+            delete: vi.fn(),
             findByCpfCnpj: vi.fn(),
         };
         const useCase = new FindCustomerByDocument(repository);

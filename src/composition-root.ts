@@ -15,8 +15,8 @@ import type { ServiceOrderCancelled } from './stock/application/handlers/release
 import { ConsumeUsedSupply } from './stock/application/handlers/consume-used-supply.js';
 import type { SupplyUsed } from './stock/application/handlers/consume-used-supply.js';
 
-import type { ServiceOrderRepository } from './service-order/domain/service-order/service-order.repository.js';
-import type { BudgetRepository } from './service-order/domain/budget/budget.repository.js';
+import type { ServiceOrderDependencies } from './service-order/composition-root.js';
+export type { ServiceOrderDependencies } from './service-order/composition-root.js';
 import type { CustomerRepository } from './registry/domain/customer/customer.repository.js';
 import type { VehicleRepository } from './registry/domain/vehicle/vehicle.repository.js';
 import { registryCompositionRoot } from './registry/composition-root.js';
@@ -62,15 +62,12 @@ export interface StockUseCases {
         CancelReservationOutput
     >;
 }
+import type { BusinessIntelligenceDependencies } from './business-intelligence/composition-root.js';
+export type { BusinessIntelligenceDependencies } from './business-intelligence/composition-root.js';
 
 export interface StockDependencies {
     partSupplyRepository: PartSupplyRepository;
     reservationRepository: SupplyReservationRepository;
-}
-
-export interface ServiceOrderDependencies {
-    serviceOrderRepository: ServiceOrderRepository;
-    budgetRepository: BudgetRepository;
 }
 
 export interface RegistryDependencies {
@@ -80,7 +77,8 @@ export interface RegistryDependencies {
 
 export type ApplicationDependencies = StockDependencies &
     ServiceOrderDependencies &
-    RegistryDependencies;
+    RegistryDependencies &
+    Partial<BusinessIntelligenceDependencies>;
 
 export function stockCompositionRoot(
     eventBus: EventBus,
@@ -167,6 +165,7 @@ export function compositionRoot(
     // Service order use cases
     const registerServiceOrder = new RegisterServiceOrder(
         deps.serviceOrderRepository,
+        deps.vehicleContacts,
         eventBus,
     );
     const addSupplyToServiceOrder = new AddSupplyToServiceOrder(

@@ -1,6 +1,11 @@
 # Autenticação e autorização
 
-O módulo Auth usa senha com hash Argon2id para autenticar usuários, JWT para identificá-los nas requisições e papéis/permissões para decidir o que podem fazer. **Nesta branch, apenas `POST /users` exige JWT e permissão de gerente.** As rotas de Registry (`/customers` e `/vehicles`) continuam públicas; ter um token não as protege automaticamente.
+O módulo Auth usa senha com hash Argon2id para autenticar usuários, JWT para identificá-los nas requisições e papéis/permissões para decidir o que podem fazer. Nesta branch:
+
+- `POST /users` exige JWT e permissão `USUARIO_PRE_CADASTRAR` (`GERENTE`).
+- As rotas de Ordem de Serviço (`/service-orders/*`) exigem JWT Bearer válido (`401 Unauthorized` quando ausente/inválido/inativo) e validam a permissão correspondente ao papel (`403 Forbidden` quando o usuário não possui a permissão exigida).
+- As rotas de aprovação de orçamento pelo cliente (`POST /budget-approvals/decide`, `GET /orcamento/:token` e `GET /orcamento`) são públicas para acesso via link de e-mail.
+- As rotas de Registry (`/customers` e `/vehicles`) exigem JWT Bearer válido e a permissão `CLIENTE_EDITAR` (`ATENDENTE` ou `GERENTE`).
 
 ## Antes de usar
 
@@ -54,23 +59,32 @@ Os papéis aceitos são `ATENDENTE`, `MECANICO`, `ESTOQUISTA` e `GERENTE`. O ger
 
 As regras estão em `src/auth/domain/services/access-policy.ts`:
 
-| Papel        | Permissões                                                        |
-| ------------ | ----------------------------------------------------------------- |
-| `ATENDENTE`  | `OS_CRIAR`, `CLIENTE_EDITAR`                                      |
-| `MECANICO`   | `OS_CONCLUIR`, `ESTOQUE_BAIXAR`                                   |
-| `ESTOQUISTA` | `ESTOQUE_BAIXAR`                                                  |
-| `GERENTE`    | Todas as anteriores, `USUARIO_PRE_CADASTRAR`, `USUARIO_GERENCIAR` |
+| Papel        | Permissões                                                                         |
+| ------------ | ---------------------------------------------------------------------------------- |
+| `ATENDENTE`  | `OS_CRIAR`, `CLIENTE_EDITAR`                                                       |
+| `MECANICO`   | `OS_CONCLUIR`, `ESTOQUE_BAIXAR`                                                    |
+| `ESTOQUISTA` | `ESTOQUE_BAIXAR`                                                                   |
+| `GERENTE`    | Todas as anteriores, `USUARIO_PRE_CADASTRAR`, `USUARIO_GERENCIAR`, `BI_VISUALIZAR` |
 
-Para proteger outra operação, o adaptador HTTP deve obter o token Bearer, resolver o usuário com `ResolveAuthenticatedUser` e então exigir a permissão adequada com `AccessPolicy.require(user, Permission.create(...))`. O controller de Auth já faz isso em `POST /users` para `USUARIO_PRE_CADASTRAR`; **as rotas Registry ainda não fazem essa verificação**. Há casos de uso `ChangeUserRole` e `DeactivateUser` que exigem `USUARIO_GERENCIAR`, mas não há rotas HTTP para executá-los.
+Nas rotas de Ordem de Serviço, a proteção é realizada de forma desacoplada pela porta `ActorResolver` (`src/service-order/application/ports/actor-resolver.ts`) e seu adaptador `TokenActorResolver` (`src/infra/token-actor-resolver.ts`):
+
+- `OS_CRIAR` (`ATENDENTE`, `GERENTE`): `POST /service-orders`, `POST /service-orders/:serviceOrderId/cancel` e `POST /service-orders/:serviceOrderId/deliver`.
+- `OS_CONCLUIR` (`MECANICO`, `GERENTE`): `PATCH /service-orders/:serviceOrderId/description`, `POST /service-orders/:serviceOrderId/awaiting-approval`, `POST /service-orders/:serviceOrderId/start` e `POST /service-orders/:serviceOrderId/finish`. A descrição pode ser atualizada apenas enquanto a OS está em `PENDING` (avaliação), inclusive no envio para aprovação pelo campo opcional `description`.
+- `ESTOQUE_BAIXAR` (`MECANICO`, `ESTOQUISTA`, `GERENTE`): `POST /service-orders/:serviceOrderId/supplies` e `POST /service-orders/:serviceOrderId/supplies/:partCode/usage`.
+- Qualquer usuário autenticado ativo (`ATENDENTE`, `MECANICO`, `ESTOQUISTA`, `GERENTE`): `GET /service-orders/:serviceOrderId` e `GET /service-orders/:serviceOrderId/history`.
+
+Nas rotas de Business Intelligence (`/bi/*`), a proteção segue o mesmo padrão via `BiAccessGuard` (`src/business-intelligence/application/ports/bi-access-guard.ts`) e `TokenBiAccessGuard` (`src/infra/token-bi-access-guard.ts`):
+
+- `BI_VISUALIZAR` (`GERENTE`): `GET /bi/service-orders/lead-time` e `GET /bi/stock/restock-lead-time`.
 
 ## Erros e limites atuais
 
-| Situação nas rotas Auth                                                             | Resposta |
+| Situação                                                                            | Resposta |
 | ----------------------------------------------------------------------------------- | -------- |
 | Corpo inválido                                                                      | `400`    |
-| Credenciais incorretas; Bearer ausente ou fora do formato em `/users`               | `401`    |
-| Usuário pendente/inativo, token inválido ou usuário sem permissão                   | `403`    |
+| Credenciais incorretas; Bearer ausente/inválido em `/service-orders/*`              | `401`    |
+| Usuário sem a permissão exigida na rota (`403 Forbidden`)                           | `403`    |
 | E-mail já cadastrado em `/users`                                                    | `409`    |
 | Mais de cinco tentativas por minuto, por IP e por rota, em login ou primeiro acesso | `429`    |
 
-O limitador usa memória local do processo, portanto não soma as tentativas entre várias instâncias da API. Essas respostas descrevem o controller de Auth; outros módulos têm tratamento de erros próprio e não recebem autorização automaticamente.
+O limitador usa memória local do processo, portanto não soma as tentativas entre várias instâncias da API.

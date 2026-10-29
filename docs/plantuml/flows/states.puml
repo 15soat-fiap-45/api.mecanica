@@ -3,8 +3,13 @@ hide empty description
 
 state "ServiceOrder" as SO {
     [*] --> PENDING
+    PENDING --> AWAITING_APPROVAL
     PENDING --> APPROVED
     PENDING --> CANCELLED
+    AWAITING_APPROVAL --> APPROVED
+    AWAITING_APPROVAL --> REJECTED
+    AWAITING_APPROVAL --> CANCELLED
+    REJECTED --> [*]
     APPROVED --> IN_PROGRESS
     APPROVED --> CANCELLED
     IN_PROGRESS --> PAUSED
@@ -12,7 +17,8 @@ state "ServiceOrder" as SO {
     IN_PROGRESS --> CANCELLED
     PAUSED --> IN_PROGRESS
     PAUSED --> CANCELLED
-    COMPLETED --> [*]
+    COMPLETED --> DELIVERED
+    DELIVERED --> [*]
     CANCELLED --> [*]
 }
 
@@ -40,8 +46,10 @@ state "PartSupply" as SUPPLY {
 }
 
 note right of SO
-    Valores definidos em
+    Valores e transições definidos em
     service-order-status.ts.
+    Mudanças persistidas em
+    service_order.order_status_history.
 end note
 
 note right of BUDGET
@@ -55,7 +63,7 @@ note right of RESERVATION
 end note
 
 note bottom of SUPPLY
-    Não há máquina de estados de cliente,
-    pagamento ou entrega implementada.
+    Não há máquina de estados de cliente
+    ou pagamento implementada.
 end note
 @enduml

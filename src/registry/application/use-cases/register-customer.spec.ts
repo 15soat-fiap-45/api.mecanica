@@ -20,6 +20,8 @@ describe('RegisterCustomer Use Case', () => {
         existing: Customer | null = null,
     ): CustomerRepository => ({
         save: vi.fn().mockResolvedValue(undefined),
+        update: vi.fn().mockResolvedValue(undefined),
+        delete: vi.fn().mockResolvedValue(undefined),
         findByCpfCnpj: vi.fn().mockResolvedValue(existing),
     });
 

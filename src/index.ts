@@ -21,6 +21,19 @@ import {
     DrizzlePartSupplyRepository,
     DrizzleSupplyReservationRepository,
 } from './infra/database/stock/drizzle-stock-repositories.js';
+import { serviceOrderCompositionRoot } from './service-order/composition-root.js';
+import { DrizzleServiceOrderRepository } from './infra/database/service-order/drizzle-service-order-repository.js';
+import { DrizzleBudgetRepository } from './infra/database/service-order/drizzle-budget-repository.js';
+import { DrizzleApprovalRequestRepository } from './infra/database/service-order/drizzle-approval-request-repository.js';
+import { RegistryVehicleContactLookup } from './infra/registry-vehicle-contact-lookup.js';
+import { TokenActorResolver } from './infra/token-actor-resolver.js';
+import { SmtpEmailSender } from './service-order/infra/email/smtp-email-sender.js';
+import { readEmailConfig } from './service-order/infra/email/email.config.js';
+import { businessIntelligenceCompositionRoot } from './business-intelligence/composition-root.js';
+import { ReorderPointRestockPolicy } from './business-intelligence/domain/restock-cycle/restock-cycle-policy.js';
+import { DrizzleServiceOrderTimelineRepository } from './infra/database/business-intelligence/drizzle-service-order-timeline-repository.js';
+import { DrizzleRestockCycleRepository } from './infra/database/business-intelligence/drizzle-restock-cycle-repository.js';
+import { TokenBiAccessGuard } from './infra/token-bi-access-guard.js';
 
 const initialManagerPassword = process.env.INITIAL_MANAGER_PASSWORD;
 if (!initialManagerPassword || initialManagerPassword.trim() === '') {
@@ -33,11 +46,12 @@ const jwt = new JoseTokenService(process.env.JWT_SECRET ?? '');
 const hasher = new Argon2PasswordHasher();
 const users = new DrizzleUserRepository(db);
 await seedInitialManager(db, hasher, initialManagerPassword);
+const resolveAuthenticatedUser = new ResolveAuthenticatedUser(users, jwt);
 const auth = new AuthController(
     new FirstAccess(users, hasher),
     new LogIn(users, hasher, jwt),
     new PreRegisterUser(users, hasher, new SecurePasswordGenerator()),
-    new ResolveAuthenticatedUser(users, jwt),
+    resolveAuthenticatedUser,
 );
 
 const eventBus = new InMemoryEventBus({
@@ -48,17 +62,62 @@ const eventBus = new InMemoryEventBus({
 const registry = registryCompositionRoot(eventBus, {
     customerRepository: new DrizzleCustomerRepository(),
     vehicleRepository: new DrizzleVehicleRepository(),
+    actorResolver: new TokenActorResolver(resolveAuthenticatedUser),
+});
+const emailConfig = readEmailConfig();
+const approvalRequests = new DrizzleApprovalRequestRepository();
+const serviceOrder = serviceOrderCompositionRoot(eventBus, {
+    serviceOrderRepository: new DrizzleServiceOrderRepository(),
+    budgetRepository: new DrizzleBudgetRepository(),
+    approvalRequestRepository: approvalRequests,
+    vehicleContacts: new RegistryVehicleContactLookup(
+        new DrizzleVehicleRepository(),
+        new DrizzleCustomerRepository(),
+    ),
+    actorResolver: new TokenActorResolver(resolveAuthenticatedUser),
+    emailSender: new SmtpEmailSender(emailConfig.smtp),
+    frontendUrl: emailConfig.frontendUrl,
+    approvalTokenTtlMinutes: emailConfig.ttlMinutes,
+});
+const reorderPoint = Number(process.env.BI_REORDER_POINT ?? 0);
+const businessIntelligence = businessIntelligenceCompositionRoot(eventBus, {
+    timelineRepository: new DrizzleServiceOrderTimelineRepository(),
+    restockCycleRepository: new DrizzleRestockCycleRepository(),
+    restockPolicy: new ReorderPointRestockPolicy(
+        Number.isInteger(reorderPoint) && reorderPoint >= 0 ? reorderPoint : 0,
+    ),
+    accessGuard: new TokenBiAccessGuard(resolveAuthenticatedUser),
 });
 const stock = stockCompositionRoot(eventBus, {
     partSupplyRepository: new DrizzlePartSupplyRepository(db),
     reservationRepository: new DrizzleSupplyReservationRepository(db),
 });
-const app = buildApp({ registry, auth, stock });
+const app = buildApp({
+    registry,
+    auth,
+    stock,
+    serviceOrder,
+    businessIntelligence,
+});
+let expiryInterval: ReturnType<typeof setInterval> | undefined;
+app.addHook('onClose', async () => {
+    if (expiryInterval) clearInterval(expiryInterval);
+});
 const port = Number(process.env.PORT ?? 3000);
 const host = process.env.HOST ?? '0.0.0.0';
 
 try {
     await app.listen({ host, port });
+    const expire = async () => {
+        try {
+            await approvalRequests.expirePending(new Date());
+        } catch (error) {
+            app.log.error(error);
+        }
+    };
+    await expire();
+    expiryInterval = setInterval(() => void expire(), 60_000);
+    expiryInterval.unref();
 } catch (error) {
     app.log.error(error);
     process.exitCode = 1;

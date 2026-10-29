@@ -23,6 +23,7 @@ describe('AccessPolicy', () => {
         'ESTOQUE_BAIXAR',
         'USUARIO_PRE_CADASTRAR',
         'USUARIO_GERENCIAR',
+        'BI_VISUALIZAR',
     ];
 
     it.each([

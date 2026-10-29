@@ -6,6 +6,13 @@ import { RegisterServiceOrder } from './register-service-order.js';
 describe('RegisterServiceOrder Use Case', () => {
     const validInput = {
         description: 'Troca de pastilhas e fluido de freio',
+        vehicleId: 'vehicle-1',
+    };
+    const contacts = {
+        findByVehicleId: vi.fn(async () => ({
+            name: 'Ana',
+            email: 'ana@example.com',
+        })),
     };
 
     const makeRepository = (): ServiceOrderRepository => ({
@@ -21,13 +28,19 @@ describe('RegisterServiceOrder Use Case', () => {
     it('should register a new service order successfully and publish domain event', async () => {
         const repository = makeRepository();
         const eventBus = makeEventBus();
-        const useCase = new RegisterServiceOrder(repository, eventBus);
+        const useCase = new RegisterServiceOrder(
+            repository,
+            contacts,
+            eventBus,
+        );
 
         const result = await useCase.execute(validInput);
 
         expect(result.id).toBeTruthy();
         expect(result.description).toBe('Troca de pastilhas e fluido de freio');
         expect(result.status).toBe('PENDING');
+        expect(result.vehicleId).toBe('vehicle-1');
+        expect(result.valueCents).toBeNull();
         expect(repository.save).toHaveBeenCalledTimes(1);
         expect(eventBus.publish).toHaveBeenCalledTimes(1);
         expect(eventBus.publish).toHaveBeenCalledWith(
@@ -40,9 +53,22 @@ describe('RegisterServiceOrder Use Case', () => {
         );
     });
 
+    it('should register a service order with an initial valueCents when provided', async () => {
+        const repository = makeRepository();
+        const useCase = new RegisterServiceOrder(repository, contacts);
+
+        const result = await useCase.execute({
+            ...validInput,
+            valueCents: 18500,
+        });
+
+        expect(result.valueCents).toBe(18500);
+        expect(repository.save).toHaveBeenCalledTimes(1);
+    });
+
     it('should always generate the id (a caller-chosen id could overwrite an existing order on retry)', async () => {
         const repository = makeRepository();
-        const useCase = new RegisterServiceOrder(repository);
+        const useCase = new RegisterServiceOrder(repository, contacts);
 
         const first = await useCase.execute(validInput);
         const second = await useCase.execute(validInput);
@@ -51,5 +77,16 @@ describe('RegisterServiceOrder Use Case', () => {
         expect(second.id).toBeTruthy();
         expect(first.id).not.toBe(second.id);
         expect(repository.save).toHaveBeenCalledTimes(2);
+    });
+
+    it('does not register an order for an unknown vehicle', async () => {
+        const repository = makeRepository();
+        const useCase = new RegisterServiceOrder(repository, {
+            findByVehicleId: vi.fn(async () => null),
+        });
+        await expect(useCase.execute(validInput)).rejects.toThrow(
+            'Vehicle not found',
+        );
+        expect(repository.save).not.toHaveBeenCalled();
     });
 });

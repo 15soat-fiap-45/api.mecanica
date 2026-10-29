@@ -12,11 +12,17 @@ import type { RegistryUseCases } from './registry/composition-root.js';
 import type { AuthController } from './auth/infra/http/auth-controller.js';
 import { registerStockRoutes } from './stock/infra/http/stock-routes.js';
 import type { StockUseCases } from './composition-root.js';
+import type { ServiceOrderUseCases } from './service-order/composition-root.js';
+import { registerServiceOrderRoutes } from './service-order/infra/http/service-order-routes.js';
+import type { BusinessIntelligenceUseCases } from './business-intelligence/composition-root.js';
+import { registerBusinessIntelligenceRoutes } from './business-intelligence/infra/http/bi-routes.js';
 
 export interface AppDependencies {
     registry?: RegistryUseCases;
     auth?: AuthController;
     stock?: StockUseCases;
+    serviceOrder?: ServiceOrderUseCases;
+    businessIntelligence?: BusinessIntelligenceUseCases;
 }
 
 export function buildApp(deps: AppDependencies = {}) {
@@ -28,10 +34,22 @@ export function buildApp(deps: AppDependencies = {}) {
         transform: jsonSchemaTransform,
         openapi: {
             info: {
-                title: 'Mechanical Workshop API',
+                title: 'API Oficina Mecânica',
                 description:
-                    'API for registry, authentication and stock operations.',
+                    'API da oficina mecânica: cadastro de clientes e veículos, ordens de serviço e orçamentos, ' +
+                    'autenticação (Auth) e indicadores de Business Intelligence. ' +
+                    'Para rotas protegidas, faça login em /auth/login e informe o token no botão Authorize.',
                 version: '1.0.0',
+            },
+            components: {
+                securitySchemes: {
+                    bearerAuth: {
+                        type: 'http',
+                        scheme: 'bearer',
+                        bearerFormat: 'JWT',
+                        description: 'Token retornado por POST /auth/login.',
+                    },
+                },
             },
         },
     });
@@ -49,7 +67,10 @@ export function buildApp(deps: AppDependencies = {}) {
         if (error instanceof ApplicationException) {
             const statusCode = error.name.includes('NotFound')
                 ? 404
-                : error.name.includes('AlreadyExists')
+                : error.name.includes('AlreadyExists') ||
+                    error.name.includes('Conflict') ||
+                    error.name === 'CustomerHasVehiclesError' ||
+                    error.name === 'ConcurrentModificationError'
                   ? 409
                   : 400;
             return reply.code(statusCode).send({
@@ -105,6 +126,21 @@ export function buildApp(deps: AppDependencies = {}) {
     if (deps.stock) {
         app.register(async (stockApp) => {
             registerStockRoutes(stockApp, deps.stock!);
+        });
+    }
+
+    if (deps.serviceOrder) {
+        app.register(async (serviceOrderApp) => {
+            registerServiceOrderRoutes(serviceOrderApp, deps.serviceOrder!);
+        });
+    }
+
+    if (deps.businessIntelligence) {
+        app.register(async (biApp) => {
+            registerBusinessIntelligenceRoutes(
+                biApp,
+                deps.businessIntelligence!,
+            );
         });
     }
 

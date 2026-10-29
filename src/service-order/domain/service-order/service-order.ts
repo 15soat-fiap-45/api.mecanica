@@ -9,6 +9,9 @@ import { SupplyUsed } from './events/supply-used.js';
 import { ServiceOrderFinished } from './events/service-order-finished.js';
 import { ServiceOrderCancelled } from './events/service-order-cancelled.js';
 import { InvalidServiceOrderStatusException } from './value-objects/service-order-status.js';
+import { OrderAwaitingApproval } from './events/order-awaiting-approval.js';
+import { ServiceOrderExecutionStarted } from './events/service-order-execution-started.js';
+import { ServiceOrderDelivered } from './events/service-order-delivered.js';
 
 export class SupplyItemAlreadyAddedException extends DomainException {
     constructor(message = 'Supply item with this part code already added') {
@@ -24,9 +27,38 @@ export class SupplyItemNotFoundException extends DomainException {
     }
 }
 
+export class InvalidServiceOrderValueException extends DomainException {
+    constructor(
+        message = 'Service order value must be a non-negative integer number of cents',
+    ) {
+        super(message);
+        this.name = 'InvalidServiceOrderValueException';
+    }
+}
+
+export class InvalidServiceOrderDescriptionException extends DomainException {
+    constructor() {
+        super('Service order description must not be empty');
+    }
+}
+
+function assertValidValueCents(valueCents: number | null): void {
+    if (
+        valueCents !== null &&
+        (typeof valueCents !== 'number' ||
+            Number.isNaN(valueCents) ||
+            !Number.isSafeInteger(valueCents) ||
+            valueCents < 0)
+    ) {
+        throw new InvalidServiceOrderValueException();
+    }
+}
+
 export interface ServiceOrderProps {
     id?: ServiceOrderId | string | undefined;
     description: string;
+    vehicleId?: string | undefined;
+    valueCents?: number | null | undefined;
     status?: ServiceOrderStatus | undefined;
     items?: SupplyItem[] | undefined;
     version?: number | undefined;
@@ -34,6 +66,8 @@ export interface ServiceOrderProps {
 
 export class ServiceOrder extends AggregateRoot<ServiceOrderId> {
     description: string;
+    readonly vehicleId: string | null;
+    private _valueCents: number | null;
     private _status: ServiceOrderStatus;
     private readonly _items: SupplyItem[];
 
@@ -43,13 +77,22 @@ export class ServiceOrder extends AggregateRoot<ServiceOrderId> {
         status: ServiceOrderStatus,
         items: SupplyItem[],
         version = 0,
+        vehicleId: string | null = null,
+        valueCents: number | null = null,
     ) {
         const serviceOrderId =
             id instanceof ServiceOrderId ? id : new ServiceOrderId(id);
         super(serviceOrderId, version);
+        assertValidValueCents(valueCents);
         this.description = description;
+        this.vehicleId = vehicleId;
+        this._valueCents = valueCents;
         this._status = status;
         this._items = items;
+    }
+
+    get valueCents(): number | null {
+        return this._valueCents;
     }
 
     get status(): ServiceOrderStatus {
@@ -71,6 +114,8 @@ export class ServiceOrder extends AggregateRoot<ServiceOrderId> {
             props.status ?? ServiceOrderStatus.pending(),
             props.items ?? [],
             props.version ?? 0,
+            props.vehicleId ?? null,
+            props.valueCents ?? null,
         );
     }
 
@@ -85,11 +130,30 @@ export class ServiceOrder extends AggregateRoot<ServiceOrderId> {
         return serviceOrder;
     }
 
+    updateDescription(description: string): void {
+        if (this._status.value !== 'PENDING') {
+            throw new InvalidServiceOrderStatusException(
+                `Cannot update description on a ${this._status.value} service order`,
+            );
+        }
+        if (typeof description !== 'string' || !description.trim()) {
+            throw new InvalidServiceOrderDescriptionException();
+        }
+        this.description = description.trim();
+    }
+
+    setValueCents(valueCents: number): void {
+        if (this._status.value !== 'PENDING') {
+            throw new InvalidServiceOrderStatusException(
+                `Cannot set value on a ${this._status.value} service order`,
+            );
+        }
+        assertValidValueCents(valueCents);
+        this._valueCents = valueCents;
+    }
+
     addSupply(partCode: string, quantity: number): void {
-        if (
-            this._status.value === 'COMPLETED' ||
-            this._status.value === 'CANCELLED'
-        ) {
+        if (this._status.isClosed()) {
             throw new InvalidServiceOrderStatusException(
                 `Cannot add supplies to a ${this._status.value} service order`,
             );
@@ -138,14 +202,42 @@ export class ServiceOrder extends AggregateRoot<ServiceOrderId> {
         this._status = this._status.transitionTo('APPROVED');
     }
 
+    reject(): void {
+        this._status = this._status.transitionTo('REJECTED');
+    }
+
+    awaitApproval(budgetId: string): void {
+        this._status = this._status.transitionTo('AWAITING_APPROVAL');
+        this.record(
+            new OrderAwaitingApproval({
+                aggregateId: this.id.value,
+                budgetId,
+            }),
+        );
+    }
+
     startExecution(): void {
         this._status = this._status.transitionTo('IN_PROGRESS');
+        this.record(
+            new ServiceOrderExecutionStarted({
+                aggregateId: this.id.value,
+            }),
+        );
     }
 
     finish(): void {
         this._status = this._status.transitionTo('COMPLETED');
         this.record(
             new ServiceOrderFinished({
+                aggregateId: this.id.value,
+            }),
+        );
+    }
+
+    deliver(): void {
+        this._status = this._status.transitionTo('DELIVERED');
+        this.record(
+            new ServiceOrderDelivered({
                 aggregateId: this.id.value,
             }),
         );

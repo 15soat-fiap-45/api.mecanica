@@ -6,31 +6,33 @@ Backend do Tech Challenge — FIAP, Fase 1, voltado à gestão de uma oficina me
 
 ## Contexto e objetivo
 
-O sistema modela quatro contextos principais:
+O sistema modela cinco contextos principais:
 
 - **Registry:** cadastro e consulta de clientes e veículos.
 - **Service Order:** ordens de serviço, orçamento, itens e eventos de domínio.
 - **Stock:** peças/insumos, entradas, reservas, consumo e baixa de estoque.
 - **Auth:** usuários, primeiro acesso, login JWT, papéis e pré-cadastro por gerente.
+- **Business Intelligence:** projeções orientadas a eventos para tempo médio de O.S. (lead time total, execução e entrega) e tempo médio de reposição de estoque (ver [`docs/business-intelligence.md`](docs/business-intelligence.md)).
 
 O documento oficial `Fase 1 - Tech Challenge.pdf` não está presente na árvore analisada; os requisitos acadêmicos considerados aqui são os fornecidos na especificação da tarefa.
 
 ## Estado atual
 
-| Capacidade                                            | Estado                                       | Evidência / observação                                                                                                             |
-| ----------------------------------------------------- | -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| Cadastrar cliente                                     | **Implementado, mas não validado via banco** | `src/registry/application/use-cases/register-customer.ts` e rota `POST /customers`                                                 |
-| Consultar cliente por CPF/CNPJ                        | **Implementado, mas não validado via banco** | `find-customer-by-document.ts` e `GET /customers/:cpfCnpj`                                                                         |
-| Cadastrar veículo                                     | **Implementado, mas não validado via banco** | `register-vehicle.ts` e `POST /vehicles`                                                                                           |
-| Consultar veículo por placa                           | **Implementado, mas não validado via banco** | `find-vehicle-by-plate.ts` e `GET /vehicles/:plate`                                                                                |
-| Validação de CPF/CNPJ, e-mail, telefone e placa       | **Implementado**                             | Value objects no módulo Registry e `src/shared/domain/email.ts`                                                                    |
-| Ordens de serviço no domínio                          | **Parcialmente implementado**                | Agregado, casos de uso e testes existem; não há rotas HTTP ou persistência concreta identificada para OS                           |
-| Orçamento e aprovação/rejeição                        | **Parcialmente implementado**                | Agregado `Budget`, casos de uso e evento de aprovação existem; não há API publicada para o fluxo                                   |
-| Estoque e reservas                                    | **Implementado parcialmente**                | Agregados, casos de uso, handlers, endpoints e repositories PostgreSQL existem; a migration adiciona campos de integração e `reserva_estoque` ao schema relacional |
-| CRUD completo de clientes, veículos, serviços e peças | **Pendente / parcial**                       | Foram encontradas operações de criação e consulta de clientes/veículos; atualização e exclusão não estão expostas nas rotas atuais |
-| Autenticação JWT e autorização administrativa         | **Implementado para o módulo Auth**          | `POST /auth/first-access`, `POST /auth/login` e `POST /users`; Registry ainda não exige JWT                                        |
-| Gestão de papéis e desativação por HTTP               | **Pendente**                                 | Casos de uso existem, mas não há rotas para trocar papel ou desativar usuário                                                      |
-| Dockerfile da aplicação e Docker Compose completo     | **Pendente**                                 | Existe Compose para PostgreSQL e SonarQube, mas não para a aplicação                                                               |
+| Capacidade                                            | Estado                                         | Evidência / observação                                                                                                                 |
+| ----------------------------------------------------- | ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| Cadastrar cliente                                     | **Implementado e validado via integração E2E** | `src/registry/application/use-cases/register-customer.ts`, `DrizzleCustomerRepository` e rota `POST /customers`                        |
+| Consultar cliente por CPF/CNPJ                        | **Implementado**                               | `find-customer-by-document.ts`, `DrizzleCustomerRepository` e `GET /customers/:cpfCnpj`                                                |
+| Cadastrar veículo                                     | **Implementado e validado via integração E2E** | `register-vehicle.ts`, `DrizzleVehicleRepository` e `POST /vehicles`                                                                   |
+| Consultar veículo por placa                           | **Implementado**                               | `find-vehicle-by-plate.ts`, `DrizzleVehicleRepository` e `GET /vehicles/:plate`                                                        |
+| Validação de CPF/CNPJ, e-mail, telefone e placa       | **Implementado**                               | Value objects em `src/registry/domain/**/value-objects`                                                                                |
+| Ordens de serviço no domínio                          | **Implementado e validado via integração E2E** | Repositórios Drizzle, catálogo de serviços, ciclo de execução/entrega e rotas HTTP                                                     |
+| Histórico de fases da OS                              | **Implementado e validado via integração E2E** | Tabela `service_order.order_status_history` (`status`, `value_cents`, `changed_by`, `recorded_at`) e `GET /service-orders/:id/history` |
+| Orçamento e aprovação/rejeição                        | **Implementado e validado via integração E2E** | Persistência atômica orçamento+OS, envio de link único por e-mail (MailHog/SMTP), aprovação, recusa, revogação e expiração             |
+| Estoque e reservas                                    | **Parcialmente implementado**                  | Agregados, casos de uso, handlers e testes existem; não há endpoints nem repositórios PostgreSQL correspondentes                       |
+| CRUD de clientes e veículos                          | **Implementado**                               | Clientes e veículos possuem cadastro, consulta, atualização e exclusão; as rotas exigem JWT e permissão `CLIENTE_EDITAR`              |
+| CRUD de serviços e peças                             | **Pendente / parcial**                         | Há operações de criação e consulta de serviços; atualização, exclusão e persistência completa de peças ainda não estão expostas      |
+| Autenticação JWT e autorização administrativa         | **Implementado**                              | `ActorResolver` + `TokenActorResolver` protegem Registry e Service Order; `USUARIO_PRE_CADASTRAR` permanece restrita ao `GERENTE`     |
+| Dockerfile da aplicação e Docker Compose completo     | **Pendente**                                   | Existe Compose para PostgreSQL/MailHog e SonarQube, mas não para a aplicação                                                           |
 
 ## Arquitetura e DDD
 
@@ -39,27 +41,46 @@ A solução é um monólito modular organizado em camadas:
 - `domain/`: entidades/agregados, objetos de valor, eventos e contratos de repositório.
 - `application/use-cases/`: orquestração dos casos de uso.
 - `application/handlers/`: consumidores e políticas acionadas por eventos.
-- `infra/`: adaptadores HTTP e persistência.
+- `infra/`: adaptadores HTTP, envio de e-mail SMTP e persistência.
 - `shared/`: abstrações compartilhadas, exceções, IDs, eventos e Event Bus.
 
-Os agregados e conceitos identificados incluem `Customer`, `Vehicle`, `ServiceOrder`, `Budget`, `PartSupply`, `SupplyReservation` e `User`. Entre os objetos de valor estão `CpfCnpj`, `Email`, `Telephone`, `Plate`, `Quantity`, `UnitOfMeasure`, `PartCode`, `Role` e objetos de status.
+Os agregados e conceitos identificados incluem `Customer`, `Vehicle`, `ServiceOrder`, `Budget`, `ApprovalRequest`, `PartSupply`, `SupplyReservation` e `User`. Entre os objetos de valor estão `CpfCnpj`, `Email`, `Telephone`, `Plate`, `Quantity`, `UnitOfMeasure`, `PartCode`, `Role` e objetos de status.
 
-Os módulos se comunicam por um `InMemoryEventBus`, implementado em `src/shared/application/in-memory-event-bus.ts`. A decisão está registrada em [`docs/adr/event-bus.md`](docs/adr/event-bus.md). O desenho atual assume consistência eventual entre contextos, com handlers para reservar, liberar, consumir e baixar insumos.
+Os módulos se comunicam por um `InMemoryEventBus`, implementado em `src/shared/application/in-memory-event-bus.ts`. A decisão está registrada em [`docs/adr/event-bus.md`](docs/adr/event-bus.md). O desenho atual assume consistência eventual entre contextos, com handlers para notificação de orçamento/retirada e para reservar, liberar, consumir e baixar insumos.
 
 ### Status de ordem de serviço
 
-O domínio usa os valores em inglês `PENDING`, `APPROVED`, `IN_PROGRESS`, `PAUSED`, `COMPLETED` e `CANCELLED`, com transições definidas em `src/service-order/domain/service-order/value-objects/service-order-status.ts`:
+O domínio usa os valores em inglês `PENDING`, `AWAITING_APPROVAL`, `REJECTED`, `APPROVED`, `IN_PROGRESS`, `PAUSED`, `COMPLETED`, `DELIVERED` e `CANCELLED`, com transições definidas em `src/service-order/domain/service-order/value-objects/service-order-status.ts`:
 
 ```text
-PENDING      -> APPROVED | CANCELLED
-APPROVED     -> IN_PROGRESS | CANCELLED
-IN_PROGRESS  -> PAUSED | COMPLETED | CANCELLED
-PAUSED       -> IN_PROGRESS | CANCELLED
-COMPLETED    -> (final)
-CANCELLED    -> (final)
+PENDING            -> AWAITING_APPROVAL | APPROVED | CANCELLED
+AWAITING_APPROVAL  -> APPROVED | REJECTED | CANCELLED
+REJECTED           -> (final)
+APPROVED           -> IN_PROGRESS | CANCELLED
+IN_PROGRESS        -> PAUSED | COMPLETED | CANCELLED
+PAUSED             -> IN_PROGRESS | CANCELLED
+COMPLETED          -> DELIVERED
+DELIVERED          -> (final)
+CANCELLED          -> (final)
 ```
 
-Isso diverge dos status acadêmicos em português (`RECEBIDA`, `EM_DIAGNOSTICO`, `AGUARDANDO_APROVACAO`, `EM_EXECUCAO`, `FINALIZADA`, `ENTREGUE`). A equivalência e a implementação do fluxo completo ainda precisam ser definidas.
+Estados encerrados ou terminais (`COMPLETED`, `DELIVERED`, `REJECTED` e `CANCELLED`, identificados por `ServiceOrderStatus.isClosed()`) bloqueiam a inclusão de novos insumos (`addSupply`).
+
+### Histórico de fases da OS e isolamento com o módulo de Auth
+
+Cada transição de fase da OS é registrada cronologicamente em `service_order.order_status_history` (migração `infra/postgres/init/05-order-status-history.sql`) com:
+
+- `status`: fase da OS (`PENDING`, `AWAITING_APPROVAL`, `APPROVED`, `REJECTED`, `IN_PROGRESS`, `PAUSED`, `COMPLETED`, `DELIVERED`, `CANCELLED`).
+- `value_cents` (`valueCents`): valor orçado em centavos quando a vistoria/orçamento já foi realizada (`NULL` na abertura em `PENDING`, gravado diretamente a partir do `Budget` persistido na mesma transação em `AWAITING_APPROVAL` e preservado nas fases subsequentes).
+- `changed_by` (`changedBy`): identificador do usuário autenticado que efetuou a mudança ou `NULL` em transições públicas/automáticas (aprovação/recusa pelo cliente via link de e-mail ou expiração de token).
+- `recorded_at` (`recordedAt`): data/hora da mudança de fase.
+
+Para identificar o usuário sem quebrar o isolamento entre os módulos `service-order` e `auth` (que utiliza JWT com `jose`):
+
+1. **Porta no módulo `service-order` (`src/service-order/application/ports/actor-resolver.ts`):** define o contrato `ActorResolver` (`resolve(authorizationHeader?: string): Promise<string | null>`) e o contexto assíncrono `actorContext` (`AsyncLocalStorage<string | null>`). O módulo `service-order` não importa nada de `src/auth/` nem conhece JWT ou `jose`.
+2. **Adaptador por tipagem estrutural em `src/infra/token-actor-resolver.ts`:** `TokenActorResolver` extrai o token `Bearer <jwt>` do header `Authorization` e aceita, por _structural typing_ (`TokenVerifier`), tanto `JoseTokenService` (`{ verify(token): Promise<string | null> }`) quanto `ResolveAuthenticatedUser` (`{ execute(token): Promise<{ id: { value: string } }> }`) do módulo `auth`. Para conectá-lo no bootstrap (`src/index.ts`), basta injetar `actorResolver: new TokenActorResolver(tokenService)` no `serviceOrderCompositionRoot`.
+3. **Propagação via `AsyncLocalStorage` (`src/service-order/infra/http/service-order-routes.ts`):** um hook `preHandler` do Fastify resolve o ator no início da requisição e executa o handler dentro de `actorContext.run(actorId, done)`. Assim, `DrizzleServiceOrderRepository` e `DrizzleApprovalRequestRepository` gravam `changed_by` automaticamente sem acoplar entidades de domínio ou casos de uso a headers HTTP.
+4. **Desacoplamento no banco:** a coluna `changed_by VARCHAR(320)` em `service_order.order_status_history` não possui _foreign key_ cruzada para `public.auth_users`, preservando a autonomia de schema de cada contexto delimitado e aceitando tanto UUID quanto `sub`/e-mail do JWT.
 
 ### Documentação DDD
 
@@ -73,6 +94,7 @@ Isso diverge dos status acadêmicos em português (`RECEBIDA`, `EM_DIAGNOSTICO`,
 - Node.js e TypeScript ESM (`module: nodenext`), modo estrito.
 - Fastify 5, Zod e `fastify-type-provider-zod`.
 - Drizzle ORM, `drizzle-kit` e `pg`.
+- Nodemailer e MailHog para envio e teste de e-mails transacionais.
 - PostgreSQL 17 no ambiente Docker do banco.
 - Argon2id para senhas, `jose` para JWT e `@fastify/rate-limit` para limitar tentativas de autenticação.
 - Vitest 5 para testes.
@@ -82,7 +104,7 @@ Isso diverge dos status acadêmicos em português (`RECEBIDA`, `EM_DIAGNOSTICO`,
 
 - Node.js compatível com TypeScript 6 e as dependências do `package.json`.
 - npm.
-- Docker e Docker Compose para executar o PostgreSQL.
+- Docker e Docker Compose para executar o PostgreSQL e o MailHog.
 
 As versões exatas de Node.js e npm não estão fixadas por `.nvmrc`, `engines` ou equivalente; **[PREENCHER: registrar versões oficiais da entrega]**.
 
@@ -107,23 +129,31 @@ POSTGRES_USER=<usuário do PostgreSQL>
 POSTGRES_PASSWORD=<senha do PostgreSQL>
 POSTGRES_DB=<nome do banco>
 POSTGRES_PORT=<porta local, normalmente 5432>
+SMTP_HOST=<host SMTP, ex.: localhost>
+SMTP_PORT=<porta SMTP, ex.: 1025>
+SMTP_FROM=<remetente, ex.: oficina@localhost>
+FRONTEND_URL=<URL base para links de aprovação, ex.: http://localhost:3000>
+APPROVAL_TOKEN_TTL_MINUTES=<validade do link de aprovação em minutos>
 DATABASE_URL=<opcional; tem prioridade sobre as variáveis individuais>
 INITIAL_MANAGER_PASSWORD=<senha temporária do gerente inicial; obrigatória>
 JWT_SECRET=<chave de assinatura JWT; obrigatória, com pelo menos 32 bytes>
+BI_REORDER_POINT=<opcional; ponto de reposição usado pelo módulo de BI, padrão 0>
 ```
 
-As duas últimas variáveis são usadas pelo bootstrap da aplicação; podem ser definidas no ambiente do processo. `src/infra/database/connection.ts` também carrega `infra/postgres/.env` no desenvolvimento. O arquivo `.env` real não deve ser publicado; não use os valores de exemplo como senhas reais.
+`INITIAL_MANAGER_PASSWORD` e `JWT_SECRET` são obrigatórias para iniciar a aplicação. `BI_REORDER_POINT` é opcional e tem padrão `0`. `src/infra/database/connection.ts` também carrega `infra/postgres/.env` no desenvolvimento. O arquivo `.env` real não deve ser publicado; substitua todos os valores de exemplo, principalmente as senhas e a chave JWT.
 
 ## Banco de dados
 
-O banco identificado no projeto é o **PostgreSQL**. A escolha está refletida em `pg`, `drizzle-orm/node-postgres`, `drizzle.config.ts`, `infra/postgres/docker-compose.yml` e no schema SQL inicial. O README do banco também registra a justificativa operacional para uso de PostgreSQL com Docker e Drizzle.
+O banco identificado no projeto é o **PostgreSQL**. A escolha está refletida em `pg`, `drizzle-orm/node-postgres`, `drizzle.config.ts`, `infra/postgres/docker-compose.yml` e nos scripts SQL iniciais. O README do banco também registra a justificativa operacional para uso de PostgreSQL com Docker e Drizzle.
 
-Há duas representações que ainda precisam ser alinhadas:
+Há duas representações no banco:
 
-- `src/infra/database/schema.ts` contém tabelas Drizzle para usuários de Auth, cliente, veículo e serviço.
-- `infra/postgres/init/01-schema.sql` contém um modelo mais amplo, incluindo peças, usuários, ordens, orçamento, estoque e histórico de status.
+- `src/infra/database/schema.ts` contém tabelas Drizzle para cliente, veículo e serviço, além do schema `service_order` para OS (`orders`), itens (`supply_items`), orçamentos (`budgets`), solicitações de aprovação (`approval_requests`), catálogo de serviços (`services`, `service_parts`, `order_services`) e histórico de fases da OS (`order_status_history`).
+- `infra/postgres/init/01-schema.sql` contém o modelo legado em `public` (incluindo `peca_insumo`, validada ao vincular peças a serviços do catálogo, e `os_status_historico`).
 
-O script SQL inicial é executado automaticamente apenas quando o volume do PostgreSQL é criado pela primeira vez. Os scripts disponíveis são:
+Os scripts SQL em `infra/postgres/init/` (`01-schema.sql` a `06-business-intelligence.sql`) são executados automaticamente quando o volume do PostgreSQL é criado pela primeira vez. As migrações do Drizzle em `drizzle/` são separadas e criam/atualizam a tabela de usuários da autenticação.
+
+Os comandos disponíveis para o banco são:
 
 ```bash
 npm run db:generate
@@ -133,28 +163,41 @@ npm run db:studio
 npm run db:test
 ```
 
-As migrações versionadas de `auth_users` estão em `drizzle/`. Execute `npm run db:migrate` **antes** de iniciar a API: o SQL inicial do Docker não cria essa tabela e o bootstrap tenta inserir o gerente inicial. Há repositórios Drizzle concretos para usuários, clientes e veículos; os repositórios dos contextos de ordem e estoque são apenas contratos de domínio no estado atual. A integração das migrações com o schema do banco Docker ainda não foi validada em PostgreSQL real.
+Os repositórios Drizzle de OS, orçamento, catálogo de serviços e aprovação implementam os contratos com transações e controle otimista/pessimista de versão. Para um volume existente, aplique os scripts incrementais conforme o [README do PostgreSQL](infra/postgres/README.md).
 
 ## Execução local
 
-Inicie o banco:
+Após instalar as dependências, configure o ambiente e inicie o banco e o MailHog:
 
 ```bash
+cp infra/postgres/.env.example infra/postgres/.env
+# edite infra/postgres/.env e troque os valores de exemplo
+npm install
 cd infra/postgres
 docker compose up -d
 cd ../..
 npm run db:migrate
 ```
 
+O `docker compose up -d` executa os scripts de `infra/postgres/init/` somente
+quando o volume `postgres_data` é criado. O `npm run db:migrate` é necessário
+para aplicar as migrações versionadas do Drizzle, inclusive a tabela
+`auth_users`. Em um volume já existente, não conte com os scripts de init para
+aplicar alterações; use as instruções incrementais de
+[`infra/postgres/README.md`](infra/postgres/README.md).
+
 Depois, os scripts do projeto são:
 
 ```bash
 npm run dev          # desenvolvimento; executa src/index.ts em watch
 npm run build        # compila para dist/
-npm start            # executa dist/index.js
+npm start             # executa dist/index.js; rode npm run build antes
 ```
 
-O bootstrap HTTP existente é `src/index.ts`. A aplicação usa `HOST=0.0.0.0` e `PORT=3000` por padrão, podendo receber essas variáveis pelo ambiente. A inicialização depende de uma conexão PostgreSQL válida, de `INITIAL_MANAGER_PASSWORD` não vazia e de `JWT_SECRET` com pelo menos 32 bytes; sem essas variáveis, ela falha antes de abrir a porta.
+Com a API em execução, verifique `http://localhost:3000/health`. A interface
+web do MailHog fica em `http://localhost:8025`.
+
+O bootstrap HTTP existente é `src/index.ts`. A aplicação usa `HOST=0.0.0.0` e `PORT=3000` por padrão, podendo receber essas variáveis pelo ambiente, além de executar periodicamente `expirePending` para expirar solicitações de aprovação vencidas. A inicialização depende de uma conexão PostgreSQL válida, de `INITIAL_MANAGER_PASSWORD` não vazia e de `JWT_SECRET` com pelo menos 32 bytes; sem essas variáveis, ela falha antes de abrir a porta.
 
 ### Fluxo de autenticação
 
@@ -170,7 +213,7 @@ Papéis aceitos: `ATENDENTE`, `MECANICO`, `ESTOQUISTA` e `GERENTE`. Apenas o ger
 
 ## Docker
 
-O Compose disponível em [`infra/postgres/docker-compose.yml`](infra/postgres/docker-compose.yml) provisiona somente o serviço `postgres`, exposto na porta definida por `POSTGRES_PORT` e internamente na porta 5432.
+O Compose disponível em [`infra/postgres/docker-compose.yml`](infra/postgres/docker-compose.yml) provisiona os serviços `postgres` e `mailhog` (SMTP na porta 1025 e interface web na porta 8025).
 
 ```bash
 cd infra/postgres
@@ -180,30 +223,61 @@ docker compose logs -f postgres
 docker compose down
 ```
 
-Não existe `Dockerfile` da aplicação nem `docker-compose.yml` na raiz orquestrando API e banco. Portanto, o requisito acadêmico de empacotamento completo da aplicação com Docker está pendente. O Compose de SonarQube está em [`infra/sonarqube/docker-compose.yml`](infra/sonarqube/docker-compose.yml).
+Não existe `Dockerfile` da aplicação nem `docker-compose.yml` na raiz orquestrando API e banco. O Compose de SonarQube está em [`infra/sonarqube/docker-compose.yml`](infra/sonarqube/docker-compose.yml).
 
 ## API HTTP
 
 O Fastify registra Swagger e Swagger UI em `/docs`. A especificação OpenAPI é gerada a partir das rotas registradas.
 
-| Método | Rota                  | Finalidade                                         | Autenticação         |
-| ------ | --------------------- | -------------------------------------------------- | -------------------- |
-| `GET`  | `/health`             | Verifica a aplicação e executa `SELECT 1` no banco | Não                  |
-| `POST` | `/auth/first-access`  | Troca senha temporária e ativa usuário             | Senha temporária     |
-| `POST` | `/auth/login`         | Emite JWT para usuário ativo                       | E-mail e senha       |
-| `POST` | `/users`              | Pré-cadastra usuário pendente                      | JWT de gerente ativo |
-| `POST` | `/customers`          | Cadastra cliente                                   | Não                  |
-| `GET`  | `/customers/:cpfCnpj` | Consulta cliente por CPF/CNPJ                      | Não                  |
-| `POST` | `/vehicles`           | Cadastra veículo vinculado a cliente               | Não                  |
-| `GET`  | `/vehicles/:plate`    | Consulta veículo por placa                         | Não                  |
-| `POST` | `/stock/parts`        | Cadastra peça/insumo e saldo inicial               | Não                  |
-| `POST` | `/stock/entries`      | Registra entrada de estoque                        | Não                  |
-| `POST` | `/stock/reservations` | Reserva insumo para uma ordem de serviço           | Não                  |
-| `POST` | `/stock/reservations/:serviceOrderId/cancel` | Cancela reservas da OS | Não |
-| `POST` | `/stock/write-offs/:serviceOrderId` | Realiza baixa de reservas | Não |
-| `GET`  | `/docs`               | Interface Swagger UI                               | Não                  |
+| Método | Rota                                                       | Finalidade                                                                             | Autenticação / Permissão                         |
+| ------ | ---------------------------------------------------------- | -------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| `GET`  | `/health`                                                  | Verifica a aplicação e executa `SELECT 1` no banco                                     | Não                                              |
+| `POST` | `/auth/first-access`                                       | Troca a senha temporária no primeiro acesso                                            | Não (rate-limit: 5/min por IP)                   |
+| `POST` | `/auth/login`                                              | Autentica usuário ativo e emite JWT HS256 (4h)                                         | Não (rate-limit: 5/min por IP)                   |
+| `POST` | `/users`                                                   | Pré-cadastra usuário com senha temporária                                              | Bearer JWT (`USUARIO_PRE_CADASTRAR` — `GERENTE`) |
+| `POST` | `/customers`                                               | Cadastra cliente                                                                       | Bearer JWT (`CLIENTE_EDITAR` — `ATENDENTE` ou `GERENTE`) |
+| `GET`  | `/customers/:cpfCnpj`                                      | Consulta cliente por CPF/CNPJ                                                          | Bearer JWT (`CLIENTE_EDITAR` — `ATENDENTE` ou `GERENTE`) |
+| `PATCH`| `/customers/:cpfCnpj`                                      | Atualiza somente e-mail e telefone; nome e CPF/CNPJ são imutáveis após o cadastro     | Bearer JWT (`CLIENTE_EDITAR`)                   |
+| `DELETE`| `/customers/:cpfCnpj`                                     | Exclui cliente sem veículos vinculados                                                  | Bearer JWT (`CLIENTE_EDITAR` — `ATENDENTE` ou `GERENTE`) |
+| `POST` | `/vehicles`                                                | Cadastra veículo vinculado a cliente                                                   | Bearer JWT (`CLIENTE_EDITAR` — `ATENDENTE` ou `GERENTE`) |
+| `GET`  | `/vehicles/:plate`                                         | Consulta veículo por placa                                                             | Bearer JWT (`CLIENTE_EDITAR` — `ATENDENTE` ou `GERENTE`) |
+| `PATCH`| `/vehicles/:id`                                             | Atualiza somente a cor; demais dados do veículo são imutáveis após o cadastro         | Bearer JWT (`CLIENTE_EDITAR` — `ATENDENTE` ou `GERENTE`) |
+| `DELETE`| `/vehicles/:id`                                            | Exclui veículo                                                                         | Bearer JWT (`CLIENTE_EDITAR` — `ATENDENTE` ou `GERENTE`) |
+| `POST` | `/service-orders`                                          | Cadastra OS (`description`, `vehicleId`, `valueCents` opcional)                        | Bearer JWT (`OS_CRIAR`)                          |
+| `GET`  | `/service-orders/:serviceOrderId`                          | Consulta OS (`valueCents` e insumos `supplies` associados)                             | Bearer JWT (qualquer papel ativo)                |
+| `GET`  | `/service-orders/:serviceOrderId/history`                  | Consulta histórico de fases da OS (`status`, `valueCents`, `changedBy` e `recordedAt`) | Bearer JWT (qualquer papel ativo)                |
+| `POST` | `/service-orders/:serviceOrderId/supplies`                 | Inclui insumo (`partCode`, `quantity`)                                                 | Bearer JWT (`ESTOQUE_BAIXAR`)                    |
+| `POST` | `/service-orders/:serviceOrderId/supplies/:partCode/usage` | Registra uso do insumo                                                                 | Bearer JWT (`ESTOQUE_BAIXAR`)                    |
+| `PATCH` | `/service-orders/:serviceOrderId/description`             | Atualiza a descrição durante a avaliação da OS em `PENDING`                            | Bearer JWT (`OS_CONCLUIR`)                       |
+| `POST` | `/service-orders/:serviceOrderId/awaiting-approval`        | Define/atualiza `valueCents` e `description` (opcionais), gera orçamento e envia link de aprovação | Bearer JWT (`OS_CONCLUIR`)               |
+| `POST` | `/service-orders/:serviceOrderId/start`                    | Inicia execução da OS (`IN_PROGRESS`)                                                  | Bearer JWT (`OS_CONCLUIR`)                       |
+| `POST` | `/service-orders/:serviceOrderId/finish`                   | Finaliza execução da OS (`COMPLETED`) e notifica cliente                               | Bearer JWT (`OS_CONCLUIR`)                       |
+| `POST` | `/service-orders/:serviceOrderId/deliver`                  | Registra entrega do veículo (`DELIVERED`)                                              | Bearer JWT (`OS_CRIAR`)                          |
+| `POST` | `/service-orders/:serviceOrderId/cancel`                   | Cancela OS                                                                             | Bearer JWT (`OS_CRIAR`)                          |
+| `POST` | `/budget-approvals/decide`                                 | Confirma aprovação ou recusa do orçamento por token                                    | Pública (link de uso único enviado por e-mail)   |
+| `GET`  | `/orcamento/:token` e `/orcamento`                         | Página web de aprovação/recusa do orçamento                                            | Pública                                          |
+| `GET`  | `/bi/service-orders/lead-time`                             | Consulta tempo médio de OS (total, execução e entrega)                                 | Bearer JWT (`BI_VISUALIZAR` — `GERENTE`)         |
+| `GET`  | `/bi/stock/restock-lead-time`                              | Consulta tempo médio de reposição de estoque (geral e por peça)                        | Bearer JWT (`BI_VISUALIZAR` — `GERENTE`)         |
+| `GET`  | `/docs`                                                    | Interface Swagger UI                                                                   | Não                                              |
 
-As rotas de ordem de serviço, orçamento, serviços, troca de papel e desativação de usuário ainda não estão registradas. As rotas de Stock estão disponíveis e documentadas no Swagger. As rotas Auth validam os corpos com Zod e retornam `400` para requisições inválidas, `401` para credenciais incorretas ou ausência do Bearer em `/users`, `403` para usuário sem acesso e `409` para e-mail já cadastrado. As rotas Registry continuam públicas; suas exceções são tratadas pelo error handler central em `src/app.ts`.
+A validação de payload usa Zod; erros de validação retornam HTTP 400 e exceções de aplicação/domínio são convertidas pelo error handler central em `src/app.ts`.
+
+Durante a avaliação (`PENDING`), mecânico e gerente podem salvar ou revisar a descrição com `PATCH /service-orders/:serviceOrderId/description`, enviando `{ "description": "Pastilhas desgastadas; substituir o par dianteiro." }`. O texto substitui o campo `description` da OS, deve conter conteúdo e tem os espaços das extremidades removidos. Também pode ser informado junto de `valueCents` no envio para aprovação; quando omitido, a descrição anterior é preservada. O texto salvo aparece na consulta da OS e no e-mail do orçamento. A edição fica bloqueada após o envio para aprovação.
+
+No Registry, a atualização de cliente aceita somente `email` e `tel`. O nome e o CPF/CNPJ não podem ser alterados após o cadastro. A atualização de veículo aceita somente `color`; modelo, ano, marca, placa, cliente vinculado e ID são imutáveis. A exclusão de um cliente com veículos vinculados retorna HTTP 409.
+
+Os controllers de OS usam `DrizzleServiceOrderRepository`, `DrizzleBudgetRepository`, `DrizzleApprovalRequestRepository` e a mesma instância de `InMemoryEventBus` usada no cadastro. A OS guarda `vehicleId` e `valueCents` (informado manualmente no cadastro ou antes de enviar para aprovação); `RegistryVehicleContactLookup` valida a existência do veículo e consulta o contato do cliente. Ao acionar `POST /service-orders/:serviceOrderId/awaiting-approval`, o orçamento é gerado a partir do `valueCents` da OS e persistido (`PENDING`) **atomicamente na mesma transação** que a transição da OS para `AWAITING_APPROVAL`; em seguida, o evento `service-order.awaiting-approval` emite um token de uso único por e-mail (persistindo apenas o hash SHA-256 em `service_order.approval_requests`). A decisão é confirmada via `POST /budget-approvals/decide` (`approved` ou `rejected`), atualizando orçamento e OS. Cancelar uma OS (`POST /service-orders/:serviceOrderId/cancel`) revoga na mesma transação quaisquer solicitações de aprovação pendentes, e a rotina periódica `expirePending` filtra ordens em `AWAITING_APPROVAL` antes do limite de lote (`LIMIT 100`). Ao finalizar a OS (`POST /service-orders/:serviceOrderId/finish`), o evento `service-order.finished` envia o e-mail informando que o veículo está pronto para retirada. Todas as mudanças de fase são gravadas em `service_order.order_status_history` com data (`recordedAt`), valor (`valueCents`) e autor da transição (`changedBy`, resolvido via `ActorResolver` / `TokenActorResolver` a partir do header `Authorization: Bearer <jwt>`). Conflitos de versão retornam HTTP 409.
+
+Exemplo de cadastro de OS:
+
+```bash
+curl -X POST http://localhost:3000/service-orders \
+  -H 'Authorization: Bearer <jwt>' \
+  -H 'Content-Type: application/json' \
+  -d '{"description":"Troca de pastilhas de freio","vehicleId":"ID_DO_VEICULO","valueCents":15000}'
+```
+
+A autenticação (`401 Unauthorized` para token ausente, inválido ou usuário inativo) e a verificação de permissões por papel (`403 Forbidden`) nas rotas de OS são realizadas de forma desacoplada por `ActorResolver` (`src/service-order/application/ports/actor-resolver.ts`) e `TokenActorResolver` (`src/infra/token-actor-resolver.ts`), sem acoplamento direto entre `src/service-order/` e `src/auth/`.
 
 ## Testes e qualidade
 
@@ -218,9 +292,13 @@ npm run format:check
 npm run build
 ```
 
-Na verificação desta branch, `npm test` passou com **54 arquivos e 415 testes**; `npm run typecheck` e `npm run build` também passaram. A cobertura V8 da versão atual não foi medida; os percentuais anteriores não devem ser usados como resultado desta branch.
+Na análise desta versão:
 
-Os testes existentes são predominantemente unitários, com doubles/fakes de repositório e testes de rotas usando `app.inject`. O teste em `src/app.spec.ts` percorre primeiro acesso, login e pré-cadastro no Fastify montado, mas usa um repositório em memória. Não foi comprovada uma suíte de integração contra PostgreSQL nem a cobertura isolada dos “domínios críticos” conforme o critério acadêmico; esse recorte deve ser validado na entrega.
+- **61 arquivos de teste** (60 suítes unitárias/HTTP + 1 suíte de integração E2E com PostgreSQL e MailHog reais).
+- **477 testes** (476 testes unitários/HTTP + 1 fluxo E2E completo).
+- `typecheck`, `lint` e `build` concluíram sem erros.
+
+Os testes incluem testes unitários de domínio/aplicação, testes de repositórios Drizzle, testes de rotas HTTP via `app.inject` (incluindo primeiro acesso, login e pré-cadastro em `src/app.spec.ts`) e o teste de integração ponta a ponta (`src/service-order/infra/http/service-order-real.integration.spec.ts`) validado contra PostgreSQL e MailHog reais.
 
 ## Estrutura relevante
 
@@ -232,12 +310,12 @@ src/
 ├── auth/                          # usuários, autenticação, autorização e adaptadores
 ├── shared/                        # abstrações comuns
 ├── registry/                      # clientes e veículos
-├── service-order/                 # OS, orçamento e eventos
+├── service-order/                 # OS, orçamento, catálogo, aprovação, histórico e eventos
 ├── stock/                         # estoque, reservas e handlers
-└── infra/database/                # conexão, schema e repositórios Drizzle
+└── infra/                         # conexão, schema, repositórios Drizzle e adaptadores cross-module
 
 infra/
-├── postgres/                      # Compose, .env.example e schema SQL inicial
+├── postgres/                      # Compose (PostgreSQL + MailHog), .env.example e scripts SQL
 └── sonarqube/                     # Compose do SonarQube
 
 docs/adr/                          # decisões arquiteturais
@@ -247,11 +325,9 @@ drizzle/                           # migrações versionadas de auth_users
 
 ## Decisões e limitações conhecidas
 
-- O Event Bus é in-process/in-memory; não há durabilidade, retry, DLQ ou replay.
+- O Event Bus é in-process/in-memory; não há durabilidade, retry automático, DLQ ou replay.
 - A consistência entre contextos é eventual e os handlers são preparados para idempotência em cenários específicos.
-- A API HTTP cobre cadastro de clientes/veículos, primeiro acesso, login, pré-cadastro de usuários e health check; Registry não exige JWT.
-- O modelo SQL inicial e o schema Drizzle ainda não representam o mesmo conjunto de tabelas.
-- Ainda não há endpoints de atualização/exclusão, mudança de papel, desativação de usuário ou fluxo público de aprovação/rejeição de orçamento.
+- A API HTTP cobre autenticação/pré-cadastro (`auth`), CRUD protegido de clientes e veículos (`registry`), catálogo de serviços e ciclo completo da OS (criação, associação de serviços, insumos, envio de orçamento para aprovação, decisão de aprovação/recusa por token, consulta de histórico de fases com autor via `ActorResolver` / `TokenActorResolver`, início, finalização, entrega e cancelamento) e health check.
 - Não há Dockerfile da API nem Compose completo da aplicação.
 
 ## Links e informações da entrega
@@ -260,12 +336,19 @@ drizzle/                           # migrações versionadas de auth_users
 - Vídeo de apresentação: **[PREENCHER: inserir link público do YouTube]**
 - Documentação DDD: **[PREENCHER: inserir link público ou manter os caminhos locais acima]**
 - Grupo: **[PREENCHER]**
-- Integrantes e RMs: **[PREENCHER]**
-- Usuário do Discord: **[PREENCHER]**
+- Integrantes e RMs:
+    - Eric de Sousa Sampaio - rm377720
+    - Isabelly Pinheiro Serra - rm377614
+    - Luis Henrique de Barros - rm377625
+    - Thiago André Alloa - rm377950
+- Usuário do Discord:
+    - Eric de Sousa Sampaio - ericsampaio.
+    - Isabelly Serra - isabelbs
+    - Luis Henrique de Barros - luisao0680
+    - Thiago Ulloa - tafareid
 - Branch entregue: `main`
-- Commit analisado: **[PREENCHER: registrar o commit da entrega]**
-- Versão da entrega: **[PREENCHER]**
 
 ## Status da documentação
 
 README elaborado a partir da árvore do repositório, `package.json`, configurações TypeScript/Drizzle, código de domínio/aplicação, rotas, testes, Docker e documentação existente. Os placeholders devem ser preenchidos manualmente antes da entrega acadêmica final.
+

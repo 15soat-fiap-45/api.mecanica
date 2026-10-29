@@ -3,35 +3,39 @@
 LAYOUT_LEFT_RIGHT()
 SHOW_PERSON_OUTLINE()
 
-Person(client, "Consumidor HTTP", "Chama a API por HTTP/JSON")
+Person(operator, "Operador Autenticado", "Usa Auth, Registry, Service Order e BI conforme permissoes RBAC")
+Person(customer, "Cliente do Veiculo", "Confirma a decisao sobre o orcamento recebido por e-mail")
 
 System_Boundary(system, "API Oficina Mecanica") {
-    Container(api, "Processo da API", "Node.js / TypeScript / Fastify", "Servidor, Swagger, health check e error handler")
-    Container(registry_http, "Adaptador HTTP Registry", "Fastify + Zod", "POST/GET /customers e /vehicles")
-    Container(stock_http, "Adaptador HTTP Stock", "Fastify + Zod", "POST /stock/parts, entries, reservations e write-offs")
-    Container(application, "Camada de aplicação", "Casos de uso", "Registry, Stock e casos de uso de Service Order")
-    Container(domain, "Domínio modular", "DDD", "Registry, Service Order, Budget, Part Supply e Supply Reservation")
-    Container(event_bus, "Event Bus", "InMemoryEventBus", "Eventos no mesmo processo; sem durabilidade, retry ou DLQ")
-    Container(drizzle, "Persistência", "Drizzle ORM", "Repositórios de Registry e Stock")
+    Container(api, "Processo da API", "Node.js / TypeScript / Fastify", "Servidor, Swagger, health check, public/orcamento.html e expiração periódica de aprovações")
+    Container(http_adapters, "Adaptadores HTTP", "Fastify + Zod", "Rotas de Registry (CRUD protegido), Auth, Service Order e Business Intelligence")
+    Container(application, "Camada de aplicação", "Casos de uso e handlers", "Registry, Auth, Service Order, Stock e Business Intelligence")
+    Container(domain, "Domínio modular", "DDD", "Registry, Auth, Service Order, Stock e Business Intelligence")
+    Container(event_bus, "Event Bus", "InMemoryEventBus", "Comunicação desacoplada entre contextos no mesmo processo")
+    Container(drizzle, "Persistência Drizzle ORM", "Drizzle / node-postgres", "Repositórios concretos nos schemas public, service_order e business_intelligence")
+    ContainerDb(postgres, "Banco da oficina", "PostgreSQL 17", "public: auth_users, cliente e veiculo. service_order: orders, supply_items, budgets, approval_requests e order_status_history. business_intelligence: service_order_timeline e restock_cycle")
 }
-System_Ext(postgres, "PostgreSQL", "Banco local/provisionado pelo Compose")
+System_Ext(smtp, "Servidor SMTP", "Entrega de notificacoes transacionais")
 
-Rel(client, registry_http, "HTTP/JSON")
-Rel(client, stock_http, "HTTP/JSON")
-Rel(registry_http, application, "Valida e executa casos de uso")
-Rel(stock_http, application, "Valida e executa casos de uso")
-Rel(application, domain, "Cria agregados, VOs e eventos")
-Rel(application, drizzle, "Usa contratos de repositório")
+Rel(operator, http_adapters, "HTTP/JSON + ******")
+Rel(customer, api, "Acessa página de confirmação do orçamento", "HTTP/HTML e JSON")
+Rel(http_adapters, application, "Valida e executa casos de uso")
+Rel(application, domain, "Invoca agregados, entidades e políticas")
+Rel(application, drizzle, "Usa interfaces de repositório")
 Rel(drizzle, postgres, "SQL")
 Rel(application, event_bus, "Publica eventos de domínio")
-Rel(event_bus, application, "Handlers internos de OS/Stock")
-Rel(api, registry_http, "Registra rotas")
+Rel(event_bus, application, "Notifica handlers e alimenta projeções de BI")
+Rel(api, http_adapters, "Registra rotas Fastify no bootstrap")
 Rel(api, event_bus, "Cria Event Bus no bootstrap")
 Rel(api, postgres, "Health check SELECT 1")
+Rel(api, smtp, "Envia descrição, valor e link do orçamento; notifica veículo pronto", "SMTP / Nodemailer")
 
 note right of application
-    Service Order ainda não possui rotas HTTP.
-    Stock possui rotas HTTP e persistência PostgreSQL.
+    O módulo de Business Intelligence consome eventos
+    via EventBus e alimenta projeções exclusivas
+    no schema business_intelligence (CQRS).
+    UpdateServiceOrderDescription salva a avaliação em PENDING;
+    AwaitBudgetApproval também aceita description opcional.
 end note
 SHOW_LEGEND()
 @enduml

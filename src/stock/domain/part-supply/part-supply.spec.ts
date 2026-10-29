@@ -63,6 +63,7 @@ describe('PartSupply Aggregate Root', () => {
         expect(events[0]?.eventName).toBe('stock.stock-updated');
         expect(events[0]).toMatchObject({
             movementType: 'ENTRY',
+            reason: 'STOCK_ENTRY',
             movedQuantity: 5,
             previousQuantity: 10,
             currentQuantity: 15,
@@ -80,6 +81,7 @@ describe('PartSupply Aggregate Root', () => {
         expect(events).toHaveLength(1);
         expect(events[0]).toMatchObject({
             movementType: 'EXIT',
+            reason: 'RESERVATION',
             movedQuantity: 4,
             previousQuantity: 10,
             currentQuantity: 6,

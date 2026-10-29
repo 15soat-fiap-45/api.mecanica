@@ -3,22 +3,27 @@
 LAYOUT_LEFT_RIGHT()
 SHOW_PERSON_OUTLINE()
 
-Person(api_client, "Consumidor HTTP", "Cliente da API, ferramenta de integracao ou operador")
-System(api, "API Oficina Mecanica", "Monolito modular em TypeScript com Fastify. Expõe health check, Swagger, Registry e Stock.")
-System_Ext(postgres, "PostgreSQL", "Banco usado pelo Fastify/Drizzle para Registry e Stock.")
+Person(operator, "Operador Autenticado", "Atendente, mecanico, estoquista ou gerente; acesso conforme JWT e permissoes RBAC")
+Person(customer, "Cliente do Veiculo", "Recebe o orcamento e confirma aprovacao ou recusa via token")
+System(api, "API Oficina Mecanica", "Monolito modular em TypeScript com Fastify. Expõe health check, Swagger, Registry, Auth, Service Order e Business Intelligence.")
+System_Ext(postgres, "PostgreSQL", "Banco usado pelo Fastify/Drizzle. Schemas: public, service_order e business_intelligence.")
+System_Ext(smtp, "Servidor SMTP", "Entrega e-mails de orcamento e veiculo pronto para retirada")
 
-Rel(api_client, api, "HTTP/JSON", "Health, Swagger, Registry e Stock")
-Rel(api, postgres, "SQL", "SELECT/INSERT via Drizzle")
+Rel(operator, api, "Autentica, mantem clientes/veiculos (CRUD), gerencia OS e consulta BI", "HTTP/JSON + ******")
+Rel(customer, api, "Acessa /orcamento/:token e confirma decisao em /budget-approvals/decide", "HTTP/HTML e JSON")
+Rel(api, postgres, "SQL", "Drizzle ORM")
+Rel(api, smtp, "Envia descricao da OS, valor e link de aprovacao; notifica conclusao", "SMTP / Nodemailer")
+Rel(smtp, customer, "Entrega notificacoes", "E-mail HTML/Texto")
 
 note right of api
-    Contextos modelados no código:
-    - Registry: clientes e veículos
-    - Service Order: OS e orçamento
-    - Stock: peças, reservas e consumo
-
-    Registry e Stock estão conectados às rotas HTTP
-    e aos repositórios Drizzle no bootstrap atual.
-    Service Order ainda não possui adaptador HTTP.
+    Contextos conectados às rotas HTTP:
+    - Registry: CRUD protegido de clientes e veículos; CLIENTE_EDITAR
+    - Auth: login JWT, primeiro acesso e pré-cadastro
+    - Service Order: O.S., orçamentos, aprovações e histórico
+    - Business Intelligence: lead time de O.S. e reposição
+    - Stock: regras de estoque consumidas via EventBus
+    A descrição da OS pode ser revisada em PENDING
+    por mecânico ou gerente (OS_CONCLUIR).
 end note
 
 SHOW_LEGEND()

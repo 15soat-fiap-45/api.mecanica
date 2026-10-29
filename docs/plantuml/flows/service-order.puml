@@ -1,36 +1,105 @@
-@startuml Fluxo: Casos de Uso de Ordem e Estoque
-!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Sequence.puml
+@startuml service_order_budget_approval
+title Fluxo dinamico complementar - avaliacao da OS e aprovacao de orcamento
 autonumber
 
-participant Caller as "Chamador interno"
-participant UseCase as "Service Order use case"
-participant OrderRepo as "ServiceOrderRepository"
-participant Bus as "InMemoryEventBus"
-participant StockHandler as "Stock handler"
-participant StockRepo as "PartSupply / Reservation repository"
+actor "Mecanico ou Gerente" as Operator
+actor "Cliente do Veiculo" as Customer
+participant "Fastify / Zod" as HTTP
+participant TokenActorResolver as Auth
+participant UpdateServiceOrderDescription as DescriptionUC
+participant AwaitBudgetApproval as AwaitUC
+participant DrizzleServiceOrderRepository as OrderRepo
+participant InMemoryEventBus as Bus
+participant SendBudgetApprovalEmail as EmailHandler
+participant DrizzleApprovalRequestRepository as ApprovalRepo
+participant SmtpEmailSender as Mailer
+participant DecideBudgetApproval as DecideUC
+participant MoveServiceOrderToApproved as ApproveHandler
+database "PostgreSQL" as DB
 
-Caller -> UseCase: execute(...)
-UseCase -> OrderRepo: find/save ServiceOrder ou Budget
-OrderRepo --> UseCase: agregado (fake/implementação injetada)
-UseCase -> Bus: publish evento de domínio
+== 1. Descricao durante a Avaliacao (opcional, pode ser revisada) ==
+Operator -> HTTP: PATCH /service-orders/:id/description { description } (Bearer JWT)
+HTTP -> Auth: authenticate(Authorization) e verificar OS_CONCLUIR
+Auth --> HTTP: ator autorizado (MECANICO ou GERENTE)
+HTTP -> DescriptionUC: execute({ serviceOrderId, description })
+DescriptionUC -> OrderRepo: findById(serviceOrderId)
+OrderRepo -> DB: SELECT orders LEFT JOIN supply_items
+DB --> OrderRepo: ServiceOrder (PENDING)
+OrderRepo --> DescriptionUC: order
+DescriptionUC -> DescriptionUC: order.updateDescription(description)\nvalida PENDING, remove espacos das extremidades e rejeita texto vazio
+DescriptionUC -> OrderRepo: save(order)
+OrderRepo -> DB: TX: persiste orders.description e incrementa version\nsem nova entrada de historico (status permanece PENDING)
+DB --> OrderRepo: COMMIT
+DescriptionUC --> HTTP: { serviceOrderId, description }
+HTTP --> Operator: HTTP 200
 
-alt additional-supplies-included
-    Bus -> StockHandler: CheckAvailability
-    StockHandler -> StockRepo: reserva insumos disponíveis
-else service-order.finished
-    Bus -> StockHandler: WriteOffReservedSupplies
-    StockHandler -> StockRepo: confirma e consome reservas
-else service-order.cancelled
-    Bus -> StockHandler: ReleaseReservedSupplies
-    StockHandler -> StockRepo: cancela reservas e devolve quantidade
-else service-order.supply-used
-    Bus -> StockHandler: ConsumeUsedSupply
-    StockHandler -> StockRepo: consome reserva da peça utilizada
+note over HTTP,OrderRepo
+  Sem token/ator valido: HTTP 401; sem OS_CONCLUIR: HTTP 403.
+  OS inexistente: HTTP 404; descricao vazia ou OS fora de PENDING: HTTP 400.
+  Conflito de versao na persistencia: HTTP 409.
+end note
+
+== 2. Envio da OS para Aprovacao de Orcamento ==
+Operator -> HTTP: POST /service-orders/:id/awaiting-approval { valueCents?, description? } (Bearer JWT)
+HTTP -> Auth: authenticate(Authorization) e verificar OS_CONCLUIR
+Auth --> HTTP: ator autorizado
+HTTP -> AwaitUC: execute({ serviceOrderId, valueCents, description })
+AwaitUC -> OrderRepo: findById(serviceOrderId)
+OrderRepo -> DB: SELECT orders LEFT JOIN supply_items
+DB --> OrderRepo: ServiceOrder (PENDING)
+AwaitUC -> AwaitUC: order.setValueCents(valueCents) se informado e valida valor\norder.updateDescription(description) se informada\ncria Budget(order.valueCents) e chama order.awaitApproval(budget.id)
+AwaitUC -> OrderRepo: save(order, budget)
+OrderRepo -> DB: TX: persiste orders (AWAITING_APPROVAL, value_cents, description),\nbudgets (PENDING) e order_status_history
+DB --> OrderRepo: COMMIT
+AwaitUC -> Bus: publish([OrderAwaitingApproval])
+Bus -> EmailHandler: handle(OrderAwaitingApproval)
+EmailHandler -> ApprovalRepo: issue(ApprovalRequest com tokenHash e budgetVersion)
+ApprovalRepo -> DB: TX: revoga anteriores e INSERT approval_requests
+EmailHandler -> Mailer: send(e-mail HTML/texto com order.description, valor\ne /orcamento/:token?acao=aprovar|recusar)
+EmailHandler -> ApprovalRepo: markSent(request.id)
+Bus --> AwaitUC: publish concluido
+AwaitUC --> HTTP: { status: "AWAITING_APPROVAL" }
+HTTP --> Operator: HTTP 200
+
+note over AwaitUC,Mailer
+  description omitida preserva o texto salvo na avaliacao.
+  Apos o envio (AWAITING_APPROVAL), a edicao da descricao fica bloqueada.
+  O hash budgetVersion inclui a descricao, o valor e os itens da OS.
+  A pagina /orcamento/:token confirma a decisao; a descricao esta no e-mail.
+end note
+
+== 3. Decisao do Cliente via Token ==
+Customer -> HTTP: POST /budget-approvals/decide { token, decision, rejectionReason? }
+HTTP -> DecideUC: execute(input)
+DecideUC -> ApprovalRepo: findByTokenHash(sha256(token))
+ApprovalRepo -> DB: SELECT approval_requests
+DB --> ApprovalRepo: ApprovalRequest ativo
+DecideUC -> OrderRepo: findById(orderId) + BudgetRepository.findById(budgetId)
+DecideUC -> DecideUC: valida AWAITING_APPROVAL, budgetVersion, request.decide() e budget.approve()|reject()
+DecideUC -> ApprovalRepo: decide(request, budget, order.version)
+
+alt decision == "approved"
+  ApprovalRepo -> DB: TX: SELECT orders FOR UPDATE, UPDATE approval_requests (used_at), UPDATE budgets (APPROVED)
+  DB --> ApprovalRepo: COMMIT
+  DecideUC -> Bus: publish([BudgetApproved])
+  Bus -> ApproveHandler: handle(BudgetApproved)
+  ApproveHandler -> OrderRepo: findById(serviceOrderId)
+  ApproveHandler -> ApproveHandler: order.approve()
+  ApproveHandler -> OrderRepo: save(order)
+  OrderRepo -> DB: TX: UPDATE orders (APPROVED), INSERT order_status_history
+  DB --> OrderRepo: COMMIT
+else decision == "rejected"
+  ApprovalRepo -> DB: TX: UPDATE approval_requests, UPDATE budgets (REJECTED), UPDATE orders (REJECTED), INSERT order_status_history
+  DB --> ApprovalRepo: COMMIT
 end
 
-note over Caller,StockRepo
-    Não existe endpoint HTTP de ordem de serviço ou estoque no estado atual.
-    O composition-root conecta os handlers ao Event Bus em memória.
-    Repositórios concretos PostgreSQL desses contextos ainda não foram identificados.
+DecideUC --> HTTP: { status: "decided", decision }
+HTTP --> Customer: HTTP 200
+
+note over ApprovalRepo,OrderRepo
+  Se o mesmo token ja decidido receber novamente a mesma decision,
+  DecideBudgetApproval retorna { status: "already_decided", decision } (idempotencia).
+  Se o orcamento/OS tiver sido modificado (budgetVersion divergente),
+  retorna HTTP 400 (BudgetChangedError).
 end note
 @enduml

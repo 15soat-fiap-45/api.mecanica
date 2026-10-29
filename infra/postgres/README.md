@@ -36,9 +36,48 @@ Na primeira execução, com o volume de dados vazio, o Docker executa automatica
 
 ```text
 init/01-schema.sql
+init/02-service-order.sql
+init/03-budget-approval.sql
+init/04-service-catalog-and-status.sql
+init/05-order-status-history.sql
+init/06-business-intelligence.sql
 ```
 
 Esse script cria o modelo relacional da oficina.
+
+O segundo script cria o schema `service_order`, usado pelos agregados atuais
+de OS e orçamento: `orders`, `supply_items` e `budgets`. Ele mantém as tabelas
+legadas em `public` intactas. Os agregados usam UUIDs, status em inglês e códigos
+de peça; por isso não são gravados nas tabelas legadas `ordem_servico` e
+`orcamento`, que têm outro contrato. Não há sincronização entre os dois modelos.
+
+Para um banco já inicializado, aplique o script incremental a partir desta pasta:
+
+```bash
+docker compose exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1' < init/02-service-order.sql
+```
+
+O script usa `IF NOT EXISTS` e pode ser reaplicado. Não é necessário recriar o
+volume. A execução desse script em banco real deve preceder o uso das rotas de OS.
+
+Para um banco com o schema `service_order` já instalado, aplique também as
+migrações incrementais da aprovação por link, do catálogo de serviços/status e do histórico de fases da OS:
+
+```bash
+docker compose exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1' < init/03-budget-approval.sql
+docker compose exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1' < init/04-service-catalog-and-status.sql
+docker compose exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1' < init/05-order-status-history.sql
+```
+
+O MailHog recebe mensagens SMTP na porta 1025 e disponibiliza a caixa de
+entrada em http://localhost:8025. Para iniciar a API, configure no ambiente
+`SMTP_HOST`, `SMTP_PORT`, `SMTP_FROM`, `FRONTEND_URL`,
+`APPROVAL_TOKEN_TTL_MINUTES` (inteiro positivo, em minutos),
+`INITIAL_MANAGER_PASSWORD` e `JWT_SECRET` (com pelo menos 32 bytes).
+`SMTP_USER`,
+`SMTP_PASS` e `SMTP_SECURE=true` são opcionais para um provedor SMTP real.
+O frontend deve exibir a página `/orcamento/:token` e confirmar a decisão via
+`POST /budget-approvals/decide`; abrir o link não registra a decisão.
 
 Importante: os scripts em `/docker-entrypoint-initdb.d/` são executados apenas na primeira inicialização do PostgreSQL. Alterações posteriores no script não serão aplicadas automaticamente em um banco já criado.
 
@@ -246,7 +285,11 @@ postgres/
 ├── .env.example
 ├── README.md
 └── init/
-    └── 01-schema.sql
+    ├── 01-schema.sql
+    ├── 02-service-order.sql
+    ├── 03-budget-approval.sql
+    ├── 04-service-catalog-and-status.sql
+    └── 05-order-status-history.sql
 ```
 
 ## Evolução do schema

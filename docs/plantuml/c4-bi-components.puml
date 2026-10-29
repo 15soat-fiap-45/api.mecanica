@@ -1,0 +1,50 @@
+@startuml bi_c3_components
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Component.puml
+title C3 - Business Intelligence - visao dos componentes no container API HTTP
+LAYOUT_LEFT_RIGHT()
+
+Person(manager, "Gerente Autenticado", "Consulta métricas e indicadores de desempenho")
+
+Container_Boundary(api, "API HTTP - processo Node.js / Fastify") {
+  Component(http, "Adaptador HTTP BI", "Fastify / Zod", "registerBusinessIntelligenceRoutes: GET /bi/service-orders/lead-time e GET /bi/stock/restock-lead-time protegidos com BI_VISUALIZAR.")
+  Component(lead_time_uc, "Caso de Uso Lead Time O.S.", "GetServiceOrderLeadTime", "Calcula lead time total, tempo de execucao e tempo ate entrega a partir da timeline.")
+  Component(restock_uc, "Caso de Uso Reposicao", "GetRestockLeadTime", "Calcula tempo medio de reposicao geral e por peca a partir dos ciclos encerrados.")
+  Component(domain_timeline, "Dominio Timeline O.S.", "ServiceOrderTimeline / DurationStats", "Read model imutavel de marcos temporais da O.S.; descarta canceladas e amostras negativas.")
+  Component(domain_restock, "Dominio Ciclos de Reposicao", "RestockCycle / ReorderPointRestockPolicy", "Entidade de ciclo e estrategia plugavel com ponto de reposicao configuravel.")
+  Component(ports, "Portas do Modulo BI", "Interfaces TypeScript", "ServiceOrderTimelineRepository, RestockCycleRepository e BiAccessGuard.")
+  Component(db_adapters, "Adaptadores Drizzle BI", "Drizzle ORM / Infrastructure", "DrizzleServiceOrderTimelineRepository e DrizzleRestockCycleRepository.")
+  Component(auth_adapter, "Adaptador de Acesso BI", "TokenBiAccessGuard", "Valida JWT e checa permissao BI_VISUALIZAR de forma desacoplada.")
+  Component(bus, "Event Bus compartilhado", "EventBus / InMemoryEventBus", "Barramento in-process para recebimento de eventos de dominio.")
+  Component(handlers, "Handlers de Projecao BI", "TypeScript / Application", "ProjectServiceOrderTimeline (5 eventos de OS) e ProjectRestockCycle (movimentos de estoque).")
+  Component(stock_adapters, "Adaptadores de Estoque", "StockMovementAdapters", "Converte stock.stock-updated e stock.movement-recorded para StockMovement.")
+}
+
+ContainerDb(database, "Banco da oficina", "PostgreSQL 17", "Schema business_intelligence: service_order_timeline e restock_cycle")
+
+Rel(manager, http, "Consulta metricas", "HTTP/JSON + JWT Bearer")
+Rel(http, auth_adapter, "Verifica permissao BI_VISUALIZAR", "authenticate(header)")
+Rel(http, lead_time_uc, "Consulta tempos de O.S.", "execute(period)")
+Rel(http, restock_uc, "Consulta tempos de reposicao", "execute(filter)")
+
+Rel(lead_time_uc, ports, "Busca timelines finalizadas/entregues", "findFinishedBetween / findDeliveredBetween")
+Rel(restock_uc, ports, "Busca ciclos fechados/abertos", "findClosedBetween / findOpen")
+
+Rel(lead_time_uc, domain_timeline, "Extrai duracoes e calcula DurationStats", "TypeScript")
+Rel(restock_uc, domain_restock, "Calcula duracoes de ciclos e DurationStats", "TypeScript")
+
+Rel(bus, handlers, "Entrega eventos de OS e Estoque", "handle(event)")
+Rel(handlers, stock_adapters, "Normaliza evento de estoque para StockMovement", "fromStockUpdated / fromStockMovementRecorded")
+Rel(handlers, domain_timeline, "Registra marcos (registered, started, finished, delivered, cancelled)", "markX(occurredOn)")
+Rel(handlers, domain_restock, "Abre ou fecha ciclo conforme RestockCyclePolicy", "opensCycle / closesCycle")
+Rel(handlers, ports, "Salva projecoes no banco", "save(timeline) / save(cycle)")
+
+Rel(db_adapters, ports, "Implementam repositorios de projecao", "TypeScript")
+Rel(db_adapters, database, "Upserts SQL (ON CONFLICT DO UPDATE)", "SQL / Drizzle")
+
+note bottom of db_adapters
+  As tabelas do schema business_intelligence nao possuem
+  chaves estrangeiras fisicas para outros schemas.
+end note
+
+SHOW_LEGEND()
+@enduml
