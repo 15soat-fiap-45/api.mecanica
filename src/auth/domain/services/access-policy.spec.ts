@@ -21,6 +21,7 @@ describe('AccessPolicy', () => {
         'CLIENTE_EDITAR',
         'OS_CONCLUIR',
         'ESTOQUE_BAIXAR',
+        'ESTOQUE_GERENCIAR',
         'USUARIO_PRE_CADASTRAR',
         'USUARIO_GERENCIAR',
         'BI_VISUALIZAR',

@@ -7,6 +7,7 @@ export class Permission {
     static readonly CLIENTE_EDITAR = 'CLIENTE_EDITAR';
     static readonly OS_CONCLUIR = 'OS_CONCLUIR';
     static readonly ESTOQUE_BAIXAR = 'ESTOQUE_BAIXAR';
+    static readonly ESTOQUE_GERENCIAR = 'ESTOQUE_GERENCIAR';
     static readonly USUARIO_PRE_CADASTRAR = 'USUARIO_PRE_CADASTRAR';
     static readonly USUARIO_GERENCIAR = 'USUARIO_GERENCIAR';
     static readonly BI_VISUALIZAR = 'BI_VISUALIZAR';
@@ -31,6 +32,7 @@ export type PermissionValue =
     | typeof Permission.CLIENTE_EDITAR
     | typeof Permission.OS_CONCLUIR
     | typeof Permission.ESTOQUE_BAIXAR
+    | typeof Permission.ESTOQUE_GERENCIAR
     | typeof Permission.USUARIO_PRE_CADASTRAR
     | typeof Permission.USUARIO_GERENCIAR
     | typeof Permission.BI_VISUALIZAR;

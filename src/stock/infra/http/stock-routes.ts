@@ -1,4 +1,9 @@
-import type { FastifyInstance } from 'fastify';
+import type {
+    FastifyInstance,
+    FastifyReply,
+    FastifyRequest,
+    HookHandlerDoneFunction,
+} from 'fastify';
 import {
     serializerCompiler,
     validatorCompiler,
@@ -6,6 +11,7 @@ import {
 } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import type { StockUseCases } from '../../../composition-root.js';
+import { actorContext } from '../../../service-order/application/ports/actor-resolver.js';
 
 const registerPartBody = z
     .object({
@@ -197,10 +203,49 @@ export function registerStockRoutes(
     app.setSerializerCompiler(serializerCompiler);
 
     const typedApp = app.withTypeProvider<ZodTypeProvider>();
+    const requireAdmin = (
+        request: FastifyRequest,
+        reply: FastifyReply,
+        done: HookHandlerDoneFunction,
+    ) => {
+        const resolver = useCases.actorResolver;
+        if (!resolver) {
+            void reply.code(401).send({
+                error: 'UnauthorizedError',
+                message: 'Authentication required.',
+            });
+            return;
+        }
+
+        const authPromise = resolver.authenticate
+            ? resolver.authenticate(request.headers.authorization)
+            : resolver
+                  .resolve(request.headers.authorization)
+                  .then((id) => (id ? { id, can: () => true } : null));
+
+        authPromise.then((actor) => {
+            if (!actor) {
+                void reply.code(401).send({
+                    error: 'UnauthorizedError',
+                    message: 'Authentication required.',
+                });
+                return;
+            }
+            if (!actor.can('ESTOQUE_GERENCIAR')) {
+                void reply.code(403).send({
+                    error: 'ForbiddenError',
+                    message: 'Insufficient permissions.',
+                });
+                return;
+            }
+            actorContext.run(actor.id, done);
+        }, done);
+    };
 
     typedApp.post(
         '/stock/parts',
         {
+            preValidation: requireAdmin,
             schema: {
                 tags: ['Stock'],
                 summary: 'Register a part or supply',
@@ -221,6 +266,7 @@ export function registerStockRoutes(
     typedApp.post(
         '/stock/entries',
         {
+            preValidation: requireAdmin,
             schema: {
                 tags: ['Stock'],
                 summary: 'Register a stock entry',
@@ -236,6 +282,7 @@ export function registerStockRoutes(
     typedApp.post(
         '/stock/reservations',
         {
+            preValidation: requireAdmin,
             schema: {
                 tags: ['Stock'],
                 summary: 'Reserve a supply',
@@ -254,6 +301,7 @@ export function registerStockRoutes(
     typedApp.post(
         '/stock/reservations/:serviceOrderId/cancel',
         {
+            preValidation: requireAdmin,
             schema: {
                 tags: ['Stock'],
                 summary: 'Cancel service order reservations',
@@ -268,6 +316,7 @@ export function registerStockRoutes(
     typedApp.post(
         '/stock/write-offs/:serviceOrderId',
         {
+            preValidation: requireAdmin,
             schema: {
                 tags: ['Stock'],
                 summary: 'Write off reserved supplies',

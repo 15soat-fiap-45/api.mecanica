@@ -91,6 +91,7 @@ const businessIntelligence = businessIntelligenceCompositionRoot(eventBus, {
 const stock = stockCompositionRoot(eventBus, {
     partSupplyRepository: new DrizzlePartSupplyRepository(db),
     reservationRepository: new DrizzleSupplyReservationRepository(db),
+    actorResolver: new TokenActorResolver(resolveAuthenticatedUser),
 });
 const app = buildApp({
     registry,

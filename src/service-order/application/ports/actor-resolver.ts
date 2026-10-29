@@ -1,7 +1,11 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 
 export type ApplicationPermission =
-    'CLIENTE_EDITAR' | 'OS_CRIAR' | 'OS_CONCLUIR' | 'ESTOQUE_BAIXAR';
+    | 'CLIENTE_EDITAR'
+    | 'OS_CRIAR'
+    | 'OS_CONCLUIR'
+    | 'ESTOQUE_BAIXAR'
+    | 'ESTOQUE_GERENCIAR';
 
 export type ServiceOrderPermission = Exclude<
     ApplicationPermission,

@@ -31,7 +31,7 @@ O documento oficial `Fase 1 - Tech Challenge.pdf` não está presente na árvore
 | Estoque e reservas                                    | **Parcialmente implementado**                  | Agregados, casos de uso, handlers e testes existem; não há endpoints nem repositórios PostgreSQL correspondentes                       |
 | CRUD de clientes e veículos                          | **Implementado**                               | Clientes e veículos possuem cadastro, consulta, atualização e exclusão; as rotas exigem JWT e permissão `CLIENTE_EDITAR`              |
 | CRUD de serviços e peças                             | **Pendente / parcial**                         | Há operações de criação e consulta de serviços; atualização, exclusão e persistência completa de peças ainda não estão expostas      |
-| Autenticação JWT e autorização administrativa         | **Implementado**                              | `ActorResolver` + `TokenActorResolver` protegem Registry e Service Order; `USUARIO_PRE_CADASTRAR` permanece restrita ao `GERENTE`     |
+| Autenticação JWT e autorização administrativa         | **Implementado**                              | `ActorResolver` + `TokenActorResolver` protegem Registry, Service Order e todas as rotas HTTP de Stock; `ESTOQUE_GERENCIAR`, `USUARIO_PRE_CADASTRAR` e `USUARIO_GERENCIAR` permanecem restritas ao `GERENTE` |
 | Dockerfile da aplicação e Docker Compose completo     | **Pendente**                                   | Existe Compose para PostgreSQL/MailHog e SonarQube, mas não para a aplicação                                                           |
 
 ## Arquitetura e DDD
@@ -148,10 +148,10 @@ O banco identificado no projeto é o **PostgreSQL**. A escolha está refletida e
 
 Há duas representações no banco:
 
-- `src/infra/database/schema.ts` contém tabelas Drizzle para cliente, veículo e serviço, além do schema `service_order` para OS (`orders`), itens (`supply_items`), orçamentos (`budgets`), solicitações de aprovação (`approval_requests`), catálogo de serviços (`services`, `service_parts`, `order_services`) e histórico de fases da OS (`order_status_history`).
+- `src/infra/database/schema.ts` contém tabelas Drizzle para cliente, veículo, serviço e estoque. O histórico de movimentações (`movimento_estoque`) registra cada entrada e saída de insumos, incluindo a quantidade movimentada, data, tipo e observação com motivo e saldo anterior/atual. Também contém o schema `service_order` para OS (`orders`), itens (`supply_items`), orçamentos (`budgets`), solicitações de aprovação (`approval_requests`), catálogo de serviços (`services`, `service_parts`, `order_services`) e histórico de fases da OS (`order_status_history`).
 - `infra/postgres/init/01-schema.sql` contém o modelo legado em `public` (incluindo `peca_insumo`, validada ao vincular peças a serviços do catálogo, e `os_status_historico`).
 
-Os scripts SQL em `infra/postgres/init/` (`01-schema.sql` a `06-business-intelligence.sql`) são executados automaticamente quando o volume do PostgreSQL é criado pela primeira vez. As migrações do Drizzle em `drizzle/` são separadas e criam/atualizam a tabela de usuários da autenticação.
+Os scripts SQL em `infra/postgres/init/` (`01-schema.sql` a `06-business-intelligence.sql`) são executados automaticamente quando o volume do PostgreSQL é criado pela primeira vez. As migrações do Drizzle em `drizzle/` são separadas e criam/atualizam as tabelas de autenticação e estoque, incluindo o histórico de movimentações.
 
 Os comandos disponíveis para o banco são:
 
@@ -351,4 +351,3 @@ drizzle/                           # migrações versionadas de auth_users
 ## Status da documentação
 
 README elaborado a partir da árvore do repositório, `package.json`, configurações TypeScript/Drizzle, código de domínio/aplicação, rotas, testes, Docker e documentação existente. Os placeholders devem ser preenchidos manualmente antes da entrega acadêmica final.
-
