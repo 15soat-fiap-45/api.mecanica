@@ -21,6 +21,11 @@ export type { ServiceOrderDependencies } from './service-order/composition-root.
 import type { CustomerRepository } from './registry/domain/customer/customer.repository.js';
 import type { VehicleRepository } from './registry/domain/vehicle/vehicle.repository.js';
 import { registryCompositionRoot } from './registry/composition-root.js';
+import {
+    businessIntelligenceCompositionRoot,
+    type BusinessIntelligenceDependencies,
+} from './business-intelligence/composition-root.js';
+export type { BusinessIntelligenceDependencies } from './business-intelligence/composition-root.js';
 
 export interface StockDependencies {
     partSupplyRepository: PartSupplyRepository;
@@ -34,7 +39,8 @@ export interface RegistryDependencies {
 
 export type ApplicationDependencies = StockDependencies &
     ServiceOrderDependencies &
-    RegistryDependencies;
+    RegistryDependencies &
+    Partial<BusinessIntelligenceDependencies>;
 
 /**
  * Composition root for the Stock context: instantiates the use cases and
@@ -106,6 +112,15 @@ export function compositionRoot(
     );
 
     const serviceOrder = serviceOrderCompositionRoot(eventBus, deps);
+    const businessIntelligence =
+        deps.timelineRepository && deps.restockCycleRepository
+            ? businessIntelligenceCompositionRoot(eventBus, {
+                  timelineRepository: deps.timelineRepository,
+                  restockCycleRepository: deps.restockCycleRepository,
+                  restockPolicy: deps.restockPolicy,
+                  accessGuard: deps.accessGuard,
+              })
+            : undefined;
 
     return {
         ...registry,
@@ -115,6 +130,7 @@ export function compositionRoot(
         writeOffStock,
         cancelReservation,
         ...serviceOrder,
+        ...(businessIntelligence ?? {}),
     };
 }
 

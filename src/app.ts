@@ -11,12 +11,15 @@ import type { RegistryUseCases } from './registry/composition-root.js';
 import type { AuthController } from './auth/infra/http/auth-controller.js';
 import type { ServiceOrderUseCases } from './service-order/composition-root.js';
 import { registerServiceOrderRoutes } from './service-order/infra/http/service-order-routes.js';
+import type { BusinessIntelligenceUseCases } from './business-intelligence/composition-root.js';
+import { registerBusinessIntelligenceRoutes } from './business-intelligence/infra/http/bi-routes.js';
 import { jsonSchemaTransform } from 'fastify-type-provider-zod';
 
 export interface AppDependencies {
     registry?: RegistryUseCases;
     auth?: AuthController;
     serviceOrder?: ServiceOrderUseCases;
+    businessIntelligence?: BusinessIntelligenceUseCases;
 }
 
 export function buildApp(deps: AppDependencies = {}) {
@@ -27,9 +30,22 @@ export function buildApp(deps: AppDependencies = {}) {
     app.register(swagger, {
         openapi: {
             info: {
-                title: 'Mechanical Workshop API',
-                description: 'Registry and service order contexts API',
+                title: 'API Oficina Mecânica',
+                description:
+                    'API da oficina mecânica: cadastro de clientes e veículos, ordens de serviço e orçamentos, ' +
+                    'autenticação (Auth) e indicadores de Business Intelligence. ' +
+                    'Para rotas protegidas, faça login em /auth/login e informe o token no botão Authorize.',
                 version: '1.0.0',
+            },
+            components: {
+                securitySchemes: {
+                    bearerAuth: {
+                        type: 'http',
+                        scheme: 'bearer',
+                        bearerFormat: 'JWT',
+                        description: 'Token retornado por POST /auth/login.',
+                    },
+                },
             },
         },
         transform: jsonSchemaTransform,
@@ -106,6 +122,15 @@ export function buildApp(deps: AppDependencies = {}) {
     if (deps.serviceOrder) {
         app.register(async (serviceOrderApp) => {
             registerServiceOrderRoutes(serviceOrderApp, deps.serviceOrder!);
+        });
+    }
+
+    if (deps.businessIntelligence) {
+        app.register(async (biApp) => {
+            registerBusinessIntelligenceRoutes(
+                biApp,
+                deps.businessIntelligence!,
+            );
         });
     }
 

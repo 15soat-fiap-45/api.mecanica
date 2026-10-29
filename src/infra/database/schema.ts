@@ -171,3 +171,54 @@ export const orderStatusHistory = serviceOrderSchema.table(
         ),
     ],
 );
+
+// Business Intelligence projections (context-owned read models; no foreign keys to other contexts)
+export const businessIntelligenceSchema = pgSchema('business_intelligence');
+
+export const biServiceOrderTimelines = businessIntelligenceSchema.table(
+    'service_order_timeline',
+    {
+        serviceOrderId: varchar('service_order_id', {
+            length: 36,
+        }).primaryKey(),
+        registeredAt: timestamp('registered_at', { withTimezone: true }),
+        executionStartedAt: timestamp('execution_started_at', {
+            withTimezone: true,
+        }),
+        finishedAt: timestamp('finished_at', { withTimezone: true }),
+        deliveredAt: timestamp('delivered_at', { withTimezone: true }),
+        cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
+        updatedAt: timestamp('updated_at', { withTimezone: true })
+            .notNull()
+            .defaultNow(),
+    },
+    (table) => [
+        index('bi_sot_finished_at_idx').on(table.finishedAt),
+        index('bi_sot_delivered_at_idx').on(table.deliveredAt),
+    ],
+);
+
+export const biRestockCycles = businessIntelligenceSchema.table(
+    'restock_cycle',
+    {
+        id: varchar('id', { length: 36 }).primaryKey(),
+        partCode: varchar('part_code', { length: 50 }).notNull(),
+        openedAt: timestamp('opened_at', { withTimezone: true }).notNull(),
+        closedAt: timestamp('closed_at', { withTimezone: true }),
+        quantityAtOpen: integer('quantity_at_open').notNull(),
+        restockedQuantity: integer('restocked_quantity'),
+    },
+    (table) => [
+        uniqueIndex('bi_restock_cycle_one_open_per_part')
+            .on(table.partCode)
+            .where(sql`${table.closedAt} IS NULL`),
+        index('bi_restock_cycle_closed_at_idx').on(
+            table.partCode,
+            table.closedAt,
+        ),
+        check(
+            'bi_restock_cycle_dates_check',
+            sql`${table.closedAt} IS NULL OR ${table.closedAt} >= ${table.openedAt}`,
+        ),
+    ],
+);

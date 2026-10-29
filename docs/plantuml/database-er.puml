@@ -80,6 +80,29 @@ package "Schema service_order" {
     }
 }
 
+package "Schema business_intelligence" {
+    entity "service_order_timeline" as service_order_timeline {
+        * service_order_id : VARCHAR(36) <<PK>>
+        --
+        registered_at : TIMESTAMPTZ nullable
+        execution_started_at : TIMESTAMPTZ nullable
+        finished_at : TIMESTAMPTZ nullable
+        delivered_at : TIMESTAMPTZ nullable
+        cancelled_at : TIMESTAMPTZ nullable
+        updated_at : TIMESTAMPTZ
+    }
+
+    entity "restock_cycle" as restock_cycle {
+        * id : VARCHAR(36) <<PK>>
+        --
+        part_code : VARCHAR(50)
+        opened_at : TIMESTAMPTZ
+        closed_at : TIMESTAMPTZ nullable
+        quantity_at_open : INTEGER
+        restocked_quantity : INTEGER nullable
+    }
+}
+
 cliente ||--o{ veiculo : possui
 veiculo ||..o{ orders : referencia logica (vehicle_id)
 orders ||--o{ supply_items : contem
@@ -87,4 +110,12 @@ orders ||--o{ budgets : gera
 orders ||--o{ approval_requests : solicita aprovacao
 budgets ||--o{ approval_requests : vinculado a
 orders ||--o{ order_status_history : audita transicoes
+
+orders ||..o{ service_order_timeline : projecao analitica (sem FK fisica)
+supply_items ||..o{ restock_cycle : projecao por part_code (sem FK fisica)
+
+note bottom of service_order_timeline
+  Projecao de leitura do modulo Business Intelligence alimentada exclusivamente
+  via eventos do barramento. Sem FKs transcontextuais para garantir isolamento.
+end note
 @enduml

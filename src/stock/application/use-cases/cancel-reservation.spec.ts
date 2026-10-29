@@ -82,6 +82,7 @@ describe('CancelReservation Use Case', () => {
                 expect.objectContaining({
                     eventName: 'stock.stock-updated',
                     movementType: 'ENTRY',
+                    reason: 'RESERVATION_CANCELLED',
                     movedQuantity: 4,
                     previousQuantity: 6,
                     currentQuantity: 10,

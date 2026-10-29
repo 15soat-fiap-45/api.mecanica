@@ -1,0 +1,79 @@
+@startuml bi_metrics_flow
+title Fluxo de Projeção e Consulta de Métricas de Business Intelligence
+
+autonumber
+skinparam BoxPadding 10
+skinparam ParticipantPadding 10
+
+box "Contextos Externos (Produtores)" #LightYellow
+participant "Service Order / Stock" as Producer
+end box
+
+box "Event Bus" #LightGray
+participant "InMemoryEventBus" as Bus
+end box
+
+box "Módulo Business Intelligence" #LightCyan
+participant "Handlers de Projeção\n(Timeline / Restock)" as Handlers
+participant "Estratégia de Reposição\n(RestockCyclePolicy)" as Policy
+participant "Repositórios Drizzle BI" as Repo
+participant "Fastify / bi-routes" as Routes
+participant "TokenBiAccessGuard" as Guard
+participant "Casos de Uso BI\n(LeadTime / Restock)" as UseCases
+end box
+
+box "Banco de Dados" #LightBlue
+database "PostgreSQL\n(schema business_intelligence)" as DB
+end box
+
+actor "Gerente da Oficina" as Manager
+
+== 1. Projeção de Timeline de Ordem de Serviço ==
+Producer -> Bus: publish(service-order.registered / execution-started / finished / delivered)
+Bus -> Handlers: onX(event)
+Handlers -> Repo: findById(serviceOrderId)
+Repo -> DB: SELECT service_order_timeline
+DB --> Repo: timeline atual (ou null)
+Repo --> Handlers: ServiceOrderTimeline
+Handlers -> Handlers: markX(event.occurredOn) [idempotente]
+Handlers -> Repo: save(timeline)
+Repo -> DB: INSERT INTO service_order_timeline ... ON CONFLICT DO UPDATE
+DB --> Repo: OK
+
+== 2. Projeção de Ciclos de Reposição de Estoque ==
+Producer -> Bus: publish(stock.stock-updated / stock.movement-recorded)
+Bus -> Handlers: handle(movement)
+Handlers -> Repo: findOpenByPartCode(partCode)
+Repo -> DB: SELECT restock_cycle WHERE closed_at IS NULL
+DB --> Repo: ciclo aberto (ou null)
+Repo --> Handlers: RestockCycle
+
+alt Saída de estoque e sem ciclo aberto
+    Handlers -> Policy: opensCycle(movement)
+    Policy --> Handlers: true (saldo <= reorderPoint)
+    Handlers -> Repo: save(novo ciclo aberto com openedAt = occurredOn)
+    Repo -> DB: INSERT INTO restock_cycle ...
+else Entrada de estoque e existe ciclo aberto
+    Handlers -> Policy: closesCycle(movement)
+    Policy --> Handlers: true (saldo > reorderPoint e motivo != MANUAL)
+    Handlers -> Handlers: ciclo.close(occurredOn, restockedQuantity)
+    Handlers -> Repo: save(ciclo fechado com closedAt = occurredOn)
+    Repo -> DB: UPDATE restock_cycle SET closed_at = ...
+end
+
+== 3. Consulta de Métricas pelo Gerente ==
+Manager -> Routes: GET /bi/service-orders/lead-time?from=...&to=...\nHeader: Authorization: Bearer <jwt>
+Routes -> Guard: authenticate(header)
+Guard --> Routes: actor { id, can('BI_VISUALIZAR'): true }
+
+Routes -> UseCases: execute(period)
+UseCases -> Repo: findFinishedBetween(period) / findDeliveredBetween(period)
+Repo -> DB: SELECT WHERE finished_at BETWEEN ...
+DB --> Repo: rows
+Repo --> UseCases: ServiceOrderTimeline[]
+
+UseCases -> UseCases: DurationStats.from(durations)
+UseCases --> Routes: { totalLeadTime, executionTime, deliveryLeadTime }
+Routes --> Manager: HTTP 200 OK (JSON com médias em ms, contagens, min e max)
+
+@enduml

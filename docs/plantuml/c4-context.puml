@@ -5,21 +5,25 @@ SHOW_PERSON_OUTLINE()
 
 Person(operator, "Operador Autenticado", "Atendente, mecanico, estoquista ou gerente; acesso conforme JWT e permissoes RBAC")
 Person(customer, "Cliente do Veiculo", "Recebe o orcamento e confirma aprovacao ou recusa via token")
-System(api, "API Oficina Mecanica", "Monolito modular em TypeScript/Fastify: Auth, Registry e Service Order; avaliacao da OS, insumos, orcamento e historico.")
+System(api, "API Oficina Mecanica", "Monolito modular em TypeScript com Fastify. Expõe health check, Swagger, Registry, Auth, Service Order e Business Intelligence.")
+System_Ext(postgres, "PostgreSQL", "Banco usado pelo Fastify/Drizzle. Schemas: public, service_order e business_intelligence.")
 System_Ext(smtp, "Servidor SMTP", "Entrega e-mails de orcamento e veiculo pronto para retirada")
 
-Rel(operator, api, "Autentica, cadastra clientes/veiculos e gerencia OS; mecanico registra descricao na avaliacao", "HTTP/JSON + Bearer JWT")
+Rel(operator, api, "Autentica, cadastra clientes/veiculos e gerencia OS", "HTTP/JSON + ******")
+Rel(customer, api, "Acessa /orcamento/:token e confirma decisao em /budget-approvals/decide", "HTTP/HTML e JSON")
+Rel(api, postgres, "SQL", "Drizzle ORM")
 Rel(api, smtp, "Envia descricao da OS, valor e link de aprovacao; notifica conclusao", "SMTP / Nodemailer")
 Rel(smtp, customer, "Entrega notificacoes", "E-mail HTML/Texto")
-Rel(customer, api, "Acessa /orcamento/:token e confirma decisao em /budget-approvals/decide", "HTTP/HTML e JSON")
 
 note right of api
-    Auth, Registry e Service Order sao ativados por src/index.ts.
-    A descricao da OS pode ser revisada em PENDING
-    por mecanico ou gerente (OS_CONCLUIR).
-    Stock possui dominio/aplicacao, mas seus handlers
-    nao sao ativados pelo bootstrap atual.
-    PostgreSQL e detalhado no nivel de containers (C2).
+    Contextos conectados às rotas HTTP:
+    - Registry: clientes e veículos
+    - Auth: login JWT, primeiro acesso e pré-cadastro
+    - Service Order: O.S., orçamentos, aprovações e histórico
+    - Business Intelligence: lead time de O.S. e reposição
+    - Stock: regras de estoque consumidas via EventBus
+    A descrição da OS pode ser revisada em PENDING
+    por mecânico ou gerente (OS_CONCLUIR).
 end note
 
 SHOW_LEGEND()

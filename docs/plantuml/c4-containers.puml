@@ -3,26 +3,39 @@
 LAYOUT_LEFT_RIGHT()
 SHOW_PERSON_OUTLINE()
 
-Person(operator, "Operador Autenticado", "Usa Auth, Registry e Service Order conforme permissoes RBAC")
+Person(operator, "Operador Autenticado", "Usa Auth, Registry, Service Order e BI conforme permissoes RBAC")
 Person(customer, "Cliente do Veiculo", "Confirma a decisao sobre o orcamento recebido por e-mail")
 
 System_Boundary(system, "API Oficina Mecanica") {
-    Container(api, "Processo da API e Pagina de Orcamento", "Node.js / TypeScript / Fastify / Zod", "Auth, Registry e Service Order; Swagger, health check, public/orcamento.html e expiracao periodica de aprovacoes.")
-    ContainerDb(postgres, "Banco da oficina", "PostgreSQL 17", "public: auth_users, cliente e veiculo. service_order: orders, supply_items, budgets, approval_requests e order_status_history.")
+    Container(api, "Processo da API", "Node.js / TypeScript / Fastify", "Servidor, Swagger, health check, public/orcamento.html e expiração periódica de aprovações")
+    Container(http_adapters, "Adaptadores HTTP", "Fastify + Zod", "Rotas de Registry, Auth, Service Order e Business Intelligence")
+    Container(application, "Camada de aplicação", "Casos de uso e handlers", "Registry, Auth, Service Order, Stock e Business Intelligence")
+    Container(domain, "Domínio modular", "DDD", "Registry, Auth, Service Order, Stock e Business Intelligence")
+    Container(event_bus, "Event Bus", "InMemoryEventBus", "Comunicação desacoplada entre contextos no mesmo processo")
+    Container(drizzle, "Persistência Drizzle ORM", "Drizzle / node-postgres", "Repositórios concretos nos schemas public, service_order e business_intelligence")
+    ContainerDb(postgres, "Banco da oficina", "PostgreSQL 17", "public: auth_users, cliente e veiculo. service_order: orders, supply_items, budgets, approval_requests e order_status_history. business_intelligence: service_order_timeline e restock_cycle")
 }
 System_Ext(smtp, "Servidor SMTP", "Entrega de notificacoes transacionais")
 
-Rel(operator, api, "Autentica, cadastra/consulta e avalia OS; salva descricao e envia orcamento", "HTTP/JSON + Bearer JWT")
-Rel(customer, api, "Acessa pagina de confirmacao e aprova/recusa via token", "HTTP/HTML e JSON")
-Rel(api, postgres, "Persiste usuarios, clientes, veiculos e OS, incluindo description; transacoes e versao otimista", "SQL via Drizzle ORM / pg")
-Rel(api, smtp, "Envia descricao, valor e link do orcamento; notifica veiculo pronto", "SMTP / Nodemailer")
+Rel(operator, http_adapters, "HTTP/JSON + ******")
+Rel(customer, api, "Acessa página de confirmação do orçamento", "HTTP/HTML e JSON")
+Rel(http_adapters, application, "Valida e executa casos de uso")
+Rel(application, domain, "Invoca agregados, entidades e políticas")
+Rel(application, drizzle, "Usa interfaces de repositório")
+Rel(drizzle, postgres, "SQL")
+Rel(application, event_bus, "Publica eventos de domínio")
+Rel(event_bus, application, "Notifica handlers e alimenta projeções de BI")
+Rel(api, http_adapters, "Registra rotas Fastify no bootstrap")
+Rel(api, event_bus, "Cria Event Bus no bootstrap")
+Rel(api, postgres, "Health check SELECT 1")
+Rel(api, smtp, "Envia descrição, valor e link do orçamento; notifica veículo pronto", "SMTP / Nodemailer")
 
-note bottom of api
-    Camadas, casos de uso, repositorios e InMemoryEventBus
-    sao componentes internos do mesmo processo.
-    UpdateServiceOrderDescription salva a avaliacao em PENDING;
-    AwaitBudgetApproval tambem aceita description opcional.
-    O timer de 60s expira solicitacoes pendentes de aprovacao.
+note right of application
+    O módulo de Business Intelligence consome eventos
+    via EventBus e alimenta projeções exclusivas
+    no schema business_intelligence (CQRS).
+    UpdateServiceOrderDescription salva a avaliação em PENDING;
+    AwaitBudgetApproval também aceita description opcional.
 end note
 SHOW_LEGEND()
 @enduml
