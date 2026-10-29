@@ -8,6 +8,7 @@ import type { VehicleContactLookup } from './application/ports/vehicle-contact.j
 import { OrderAwaitingApproval } from './domain/service-order/events/order-awaiting-approval.js';
 import { SendBudgetApprovalEmail } from './application/handlers/send-budget-approval-email.js';
 import { AwaitBudgetApproval } from './application/use-cases/await-budget-approval.js';
+import { UpdateServiceOrderDescription } from './application/use-cases/update-service-order-description.js';
 import { DecideBudgetApproval } from './application/use-cases/decide-budget-approval.js';
 import type { ActorResolver } from './application/ports/actor-resolver.js';
 import { ChangeServiceOrderStatus } from './application/use-cases/change-service-order-status.js';
@@ -59,6 +60,7 @@ export interface ServiceOrderUseCases {
         AddSupplyToServiceOrderOutput
     >;
     awaitBudgetApproval: AwaitBudgetApproval;
+    updateServiceOrderDescription: UpdateServiceOrderDescription;
     startExecution: ChangeServiceOrderStatus;
     finishServiceOrder: ChangeServiceOrderStatus;
     deliverServiceOrder: ChangeServiceOrderStatus;
@@ -148,6 +150,9 @@ export function serviceOrderCompositionRoot(
         addSupplyToServiceOrder: new AddSupplyToServiceOrder(
             deps.serviceOrderRepository,
             eventBus,
+        ),
+        updateServiceOrderDescription: new UpdateServiceOrderDescription(
+            deps.serviceOrderRepository,
         ),
         awaitBudgetApproval: new AwaitBudgetApproval(
             deps.serviceOrderRepository,

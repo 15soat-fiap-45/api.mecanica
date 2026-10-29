@@ -248,7 +248,8 @@ O Fastify registra Swagger e Swagger UI em `/docs`. A especificação OpenAPI é
 | `GET`  | `/service-orders/:serviceOrderId/history`                  | Consulta histórico de fases da OS (`status`, `valueCents`, `changedBy` e `recordedAt`) | Bearer JWT (qualquer papel ativo)                |
 | `POST` | `/service-orders/:serviceOrderId/supplies`                 | Inclui insumo (`partCode`, `quantity`)                                                 | Bearer JWT (`ESTOQUE_BAIXAR`)                    |
 | `POST` | `/service-orders/:serviceOrderId/supplies/:partCode/usage` | Registra uso do insumo                                                                 | Bearer JWT (`ESTOQUE_BAIXAR`)                    |
-| `POST` | `/service-orders/:serviceOrderId/awaiting-approval`        | Define/atualiza `valueCents` (opcional), gera orçamento e envia link de aprovação      | Bearer JWT (`OS_CONCLUIR`)                       |
+| `PATCH` | `/service-orders/:serviceOrderId/description`             | Atualiza a descrição durante a avaliação da OS em `PENDING`                            | Bearer JWT (`OS_CONCLUIR`)                       |
+| `POST` | `/service-orders/:serviceOrderId/awaiting-approval`        | Define/atualiza `valueCents` e `description` (opcionais), gera orçamento e envia link de aprovação | Bearer JWT (`OS_CONCLUIR`)               |
 | `POST` | `/service-orders/:serviceOrderId/start`                    | Inicia execução da OS (`IN_PROGRESS`)                                                  | Bearer JWT (`OS_CONCLUIR`)                       |
 | `POST` | `/service-orders/:serviceOrderId/finish`                   | Finaliza execução da OS (`COMPLETED`) e notifica cliente                               | Bearer JWT (`OS_CONCLUIR`)                       |
 | `POST` | `/service-orders/:serviceOrderId/deliver`                  | Registra entrega do veículo (`DELIVERED`)                                              | Bearer JWT (`OS_CRIAR`)                          |
@@ -260,6 +261,8 @@ O Fastify registra Swagger e Swagger UI em `/docs`. A especificação OpenAPI é
 | `GET`  | `/docs`                                                    | Interface Swagger UI                                                                   | Não                                              |
 
 A validação de payload usa Zod; erros de validação retornam HTTP 400 e exceções de aplicação/domínio são convertidas pelo error handler central em `src/app.ts`.
+
+Durante a avaliação (`PENDING`), mecânico e gerente podem salvar ou revisar a descrição com `PATCH /service-orders/:serviceOrderId/description`, enviando `{ "description": "Pastilhas desgastadas; substituir o par dianteiro." }`. O texto substitui o campo `description` da OS, deve conter conteúdo e tem os espaços das extremidades removidos. Também pode ser informado junto de `valueCents` no envio para aprovação; quando omitido, a descrição anterior é preservada. O texto salvo aparece na consulta da OS e no e-mail do orçamento. A edição fica bloqueada após o envio para aprovação.
 
 No Registry, a atualização de cliente aceita somente `email` e `tel`. O nome e o CPF/CNPJ não podem ser alterados após o cadastro. A atualização de veículo aceita somente `color`; modelo, ano, marca, placa, cliente vinculado e ID são imutáveis. A exclusão de um cliente com veículos vinculados retorna HTTP 409.
 

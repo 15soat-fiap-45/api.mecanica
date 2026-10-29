@@ -1,5 +1,5 @@
 @startuml service_order_c4_code
-title C4 - Service Order - detalhe do codigo de dominio e portas
+title C4 - Service Order - avaliacao, dominio e portas
 left to right direction
 skinparam classAttributeIconSize 0
 
@@ -17,8 +17,11 @@ package "src/service-order/domain" {
   class ServiceOrder {
     +description: string
     +vehicleId: string | null
+    +valueCents: number | null
     +{static} create(props: ServiceOrderProps): ServiceOrder
     +{static} register(props: ServiceOrderProps): ServiceOrder
+    +updateDescription(description: string): void
+    +setValueCents(valueCents: number): void
     +addSupply(partCode: string, quantity: number): void
     +markSupplyUsed(partCode: string): void
     +awaitApproval(budgetId: string): void
@@ -90,6 +93,15 @@ package "src/service-order/domain" {
   }
 }
 
+package "src/service-order/application/use-cases" {
+  class UpdateServiceOrderDescription {
+    +execute(input: { serviceOrderId, description }): Promise<{ serviceOrderId, description }>
+  }
+  class AwaitBudgetApproval {
+    +execute(input: { serviceOrderId, valueCents?, description? }): Promise<{ status }>
+  }
+}
+
 AggregateRoot <|-- ServiceOrder
 AggregateRoot <|-- Budget
 ServiceOrder "1" *-- "0..*" SupplyItem : items
@@ -105,12 +117,25 @@ ServiceOrderRepository ..> Budget : salva atomicamente com OS (opcional)
 BudgetRepository ..> Budget : persiste / reconstitui
 ApprovalRequestRepository ..> ApprovalRequest : emite / decide / expira
 ApprovalRequestRepository ..> Budget : atualiza atomicamente na decisao
+UpdateServiceOrderDescription ..> ServiceOrderRepository : busca e salva OS
+UpdateServiceOrderDescription ..> ServiceOrder : updateDescription(description)
+AwaitBudgetApproval ..> ServiceOrder : updateDescription(description) opcional
+AwaitBudgetApproval ..> ServiceOrderRepository : save(order, budget) atomico
+AwaitBudgetApproval ..> Budget : cria com order.valueCents
 
 note bottom of ServiceOrder
   SupplyItem e entidade interna ao agregado ServiceOrder.
+  updateDescription(description) so permite OS em PENDING.
+  Substitui description; remove espacos das extremidades e rejeita texto vazio.
+  A descricao e persistida em orders.description, sem novo campo de banco.
   awaitApproval(budgetId) registra OrderAwaitingApproval.
   finish() registra ServiceOrderFinished (dispara e-mail de retirada).
   cancel() registra ServiceOrderCancelled e revoga aprovacoes ativas.
+end note
+note bottom of UpdateServiceOrderDescription
+  Disponivel via PATCH /service-orders/:serviceOrderId/description.
+  ActorResolver exige OS_CONCLUIR (MECANICO ou GERENTE).
+  A OS continua em PENDING; nao publica evento nem altera o historico de fases.
 end note
 note bottom of ApprovalRequest
   Armazena apenas o SHA-256 do token (tokenHash) e o hash da versao

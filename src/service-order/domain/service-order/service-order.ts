@@ -36,6 +36,12 @@ export class InvalidServiceOrderValueException extends DomainException {
     }
 }
 
+export class InvalidServiceOrderDescriptionException extends DomainException {
+    constructor() {
+        super('Service order description must not be empty');
+    }
+}
+
 function assertValidValueCents(valueCents: number | null): void {
     if (
         valueCents !== null &&
@@ -122,6 +128,18 @@ export class ServiceOrder extends AggregateRoot<ServiceOrderId> {
             }),
         );
         return serviceOrder;
+    }
+
+    updateDescription(description: string): void {
+        if (this._status.value !== 'PENDING') {
+            throw new InvalidServiceOrderStatusException(
+                `Cannot update description on a ${this._status.value} service order`,
+            );
+        }
+        if (typeof description !== 'string' || !description.trim()) {
+            throw new InvalidServiceOrderDescriptionException();
+        }
+        this.description = description.trim();
     }
 
     setValueCents(valueCents: number): void {

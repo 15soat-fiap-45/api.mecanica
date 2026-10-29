@@ -21,6 +21,7 @@ export class AwaitBudgetApproval {
     async execute(input: {
         serviceOrderId: string;
         valueCents?: number | undefined;
+        description?: string | undefined;
     }): Promise<{ status: string }> {
         const order = await this.orders.findById(input.serviceOrderId);
         if (!order) throw new ServiceOrderNotFoundError();
@@ -43,6 +44,9 @@ export class AwaitBudgetApproval {
             totalCents < 0
         ) {
             throw new InvalidOrderBudgetError();
+        }
+        if (input.description !== undefined) {
+            order.updateDescription(input.description);
         }
         const budget = Budget.create({
             serviceOrderId: order.id.value,

@@ -3,14 +3,17 @@
 LAYOUT_LEFT_RIGHT()
 SHOW_PERSON_OUTLINE()
 
-Person(api_client, "Consumidor HTTP", "Cliente da API, ferramenta de integracao ou operador")
+Person(operator, "Operador Autenticado", "Atendente, mecanico, estoquista ou gerente; acesso conforme JWT e permissoes RBAC")
+Person(customer, "Cliente do Veiculo", "Recebe o orcamento e confirma aprovacao ou recusa via token")
 System(api, "API Oficina Mecanica", "Monolito modular em TypeScript com Fastify. Expõe health check, Swagger, Registry, Auth, Service Order e Business Intelligence.")
 System_Ext(postgres, "PostgreSQL", "Banco usado pelo Fastify/Drizzle. Schemas: public, service_order e business_intelligence.")
-System_Ext(smtp, "Servidor SMTP / MailHog", "Entrega e-mails transacionais de aprovação e veículo pronto para retirada.")
+System_Ext(smtp, "Servidor SMTP", "Entrega e-mails de orcamento e veiculo pronto para retirada")
 
-Rel(api_client, api, "HTTP/JSON", "GET /health, /docs\nAuth (/auth/*, /users)\nRegistry CRUD (/customers, /vehicles) + Bearer JWT/RBAC\nService Order (/service-orders/*, /budget-approvals/*)\nBI (/bi/*)")
+Rel(operator, api, "Autentica, mantem clientes/veiculos (CRUD), gerencia OS e consulta BI", "HTTP/JSON + ******")
+Rel(customer, api, "Acessa /orcamento/:token e confirma decisao em /budget-approvals/decide", "HTTP/HTML e JSON")
 Rel(api, postgres, "SQL", "Drizzle ORM")
-Rel(api, smtp, "E-mail transacional", "Nodemailer / SMTP")
+Rel(api, smtp, "Envia descricao da OS, valor e link de aprovacao; notifica conclusao", "SMTP / Nodemailer")
+Rel(smtp, customer, "Entrega notificacoes", "E-mail HTML/Texto")
 
 note right of api
     Contextos conectados às rotas HTTP:
@@ -19,6 +22,8 @@ note right of api
     - Service Order: O.S., orçamentos, aprovações e histórico
     - Business Intelligence: lead time de O.S. e reposição
     - Stock: regras de estoque consumidas via EventBus
+    A descrição da OS pode ser revisada em PENDING
+    por mecânico ou gerente (OS_CONCLUIR).
 end note
 
 SHOW_LEGEND()

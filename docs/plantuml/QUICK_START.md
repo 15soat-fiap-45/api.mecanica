@@ -11,7 +11,7 @@ Ordem sugerida:
 5. `deployment.puml`
 6. fluxos em `flows/`
 
-Os fluxos HTTP detalhados atualmente incluem o cadastro protegido de cliente, com JWT e permissão `CLIENTE_EDITAR`, e os fluxos de Auth (`POST /users` e `POST /auth/login`). O diagrama de ordem de serviço representa as rotas HTTP implementadas, incluindo autenticação, aprovação por token e transições de status.
+Os fluxos HTTP detalhados atualmente incluem o cadastro protegido de cliente, com JWT e permissão `CLIENTE_EDITAR`, e os fluxos de Auth (`POST /users` e `POST /auth/login`). O diagrama de ordem de serviço representa as rotas HTTP implementadas, incluindo autenticação, aprovação por token e transições de status. Para acompanhar as atualizações da OS, abra os quatro arquivos `c4-service-order-*.puml` e `flows/service-order.puml`. Eles mostram a edição de `description` durante a avaliação (`PENDING`), sua persistência na OS e o envio do orçamento para aprovação.
 
 Para exportar com a CLI PlantUML:
 

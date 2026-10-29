@@ -12,7 +12,7 @@ Os diagramas desta pasta descrevem o estado confirmado no código atual. A imple
 - `deployment.puml`: execução atual com processo Node.js e PostgreSQL.
 - `flows/client-registration.puml`: fluxo real de `POST /customers` com JWT e permissão `CLIENTE_EDITAR`.
 - `flows/auth-service.puml`: pré-cadastro e login registrados pelo controller Auth.
-- `flows/service-order.puml`: fluxo de solicitação de aprovação de orçamento por e-mail/token e decisão pelo cliente.
+- `flows/service-order.puml`: registro/revisão da descrição durante a avaliação e solicitação de aprovação de orçamento por e-mail/token.
 - `flows/bi-metrics.puml`: fluxo de projeção orientada a eventos e consulta de métricas de BI.
 - `flows/states.puml`: estados implementados para OS, orçamento, reserva e estoque.
 
@@ -30,6 +30,7 @@ Os diagramas desta pasta descrevem o estado confirmado no código atual. A imple
 - Autenticadas via Bearer JWT + RBAC (`TokenActorResolver`):
     - `POST /service-orders` (`OS_CRIAR`)
     - `GET /service-orders/:serviceOrderId` (autenticado)
+    - `PATCH /service-orders/:serviceOrderId/description` (`OS_CONCLUIR`, somente `PENDING`)
     - `GET /service-orders/:serviceOrderId/history` (autenticado)
     - `POST /service-orders/:serviceOrderId/supplies` (`ESTOQUE_BAIXAR`)
     - `POST /service-orders/:serviceOrderId/supplies/:partCode/usage` (`ESTOQUE_BAIXAR`)
@@ -47,6 +48,12 @@ Os diagramas desta pasta descrevem o estado confirmado no código atual. A imple
 - Autenticadas via Bearer JWT + RBAC (`TokenBiAccessGuard`):
     - `GET /bi/service-orders/lead-time` (`BI_VISUALIZAR` — `GERENTE`)
     - `GET /bi/stock/restock-lead-time` (`BI_VISUALIZAR` — `GERENTE`)
+
+### Descrição da avaliação
+
+Mecânico e gerente podem registrar e revisar `description` na própria OS durante a avaliação (`PENDING`). `UpdateServiceOrderDescription` chama `ServiceOrder.updateDescription()` e salva pelo `ServiceOrderRepository`, reutilizando `service_order.orders.description`. O texto substitui a descrição anterior, tem espaços das extremidades removidos e não pode ficar vazio. A edição isolada mantém o status e não cria uma nova entrada no histórico de fases.
+
+`AwaitBudgetApproval` também aceita `description` opcional junto de `valueCents`; os dados da OS e o orçamento são persistidos na mesma transação antes da notificação. Omitir a descrição preserva o texto anterior. Após o envio para aprovação, a edição fica bloqueada. A descrição aparece na consulta da OS e no e-mail do orçamento; a página HTML de aprovação apenas confirma a decisão. O hash `budgetVersion` considera a descrição, o valor e os itens da OS.
 
 ## Banco
 
