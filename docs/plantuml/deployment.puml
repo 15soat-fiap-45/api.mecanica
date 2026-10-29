@@ -6,32 +6,51 @@ Deployment_Node(client, "Cliente da API", "Browser, curl ou outro consumidor HTT
     Container(client_tool, "Cliente HTTP", "HTTP/JSON", "Chama os endpoints publicados")
 }
 
-Deployment_Node(host, "Host de execução", "Node.js") {
-    Container(api_process, "API process", "Fastify / TypeScript", "src/index.ts; padrão HOST=0.0.0.0 e PORT=3000")
-    ContainerDb(drizzle, "Drizzle ORM", "node-postgres", "Repositórios Auth, Registry, Service Order, BI e health check")
+Deployment_Node(dev_host, "Host Docker", "Docker Compose (docker-compose.yml na raiz)") {
+    Deployment_Node(migrate_container, "migrate", "Container api-oficina:local, restart: no") {
+        Container(migrate_job, "Job de migração", "Node.js 24 / drizzle-orm migrator", "node dist/infra/database/migrate.js; aplica ./drizzle e encerra")
+    }
+
+    Deployment_Node(api_container, "api", "Container api-oficina:local (node:24-bookworm-slim), usuário node") {
+        Container(api_process, "API process", "Fastify / TypeScript", "node dist/index.js; HOST=0.0.0.0, PORT=3000; healthcheck em /health")
+        Container(event_bus, "Barramento de eventos", "InMemoryEventBus", "Eventos de domínio entre Service Order, Stock e BI no mesmo processo")
+        ContainerDb(drizzle, "Drizzle ORM", "node-postgres (pg Pool)", "Repositórios Auth, Registry, Stock, Service Order, BI e health check")
+    }
+
+    Deployment_Node(postgres_container, "postgres", "Container postgres:17 (oficina-postgres)") {
+        ContainerDb(postgres, "Database", "PostgreSQL 17", "Schemas public (auth, registry, estoque), service_order e business_intelligence; volume postgres_data; init/*.sql no primeiro start")
+    }
+
+    Deployment_Node(mailhog_container, "mailhog", "Container mailhog/mailhog") {
+        Container(mailhog, "MailHog", "SMTP 1025 / UI 8025", "Captura os e-mails de aprovação de orçamento em ambiente local")
+    }
 }
 
-Deployment_Node(database_runtime, "PostgreSQL", "Docker Compose ou servidor PostgreSQL") {
-    ContainerDb(postgres, "Database", "PostgreSQL", "Tabelas mapeadas: auth_users, cliente, veiculo, service_order e business_intelligence")
-}
-
-Rel(client_tool, api_process, "HTTP/JSON", "Health, Swagger, Auth, CRUD protegido de customers/vehicles, Service Order e BI")
+Rel(client_tool, api_process, "HTTP/JSON :3000 (API_PORT)", "Health, Swagger (/docs), Auth, Registry, Stock, Service Order e BI")
+Rel(api_process, event_bus, "publica / assina")
 Rel(api_process, drizzle, "usa")
-Rel(drizzle, postgres, "TCP/SQL")
+Rel(drizzle, postgres, "TCP/SQL :5432")
 Rel(api_process, postgres, "SELECT 1 no health check")
+Rel(api_process, mailhog, "SMTP (nodemailer)", "SMTP_HOST=mailhog, SMTP_PORT=1025")
+Rel(migrate_job, postgres, "TCP/SQL :5432", "migrações Drizzle")
 
 note right of api_process
+    Ordem de subida no Compose:
+    postgres (healthy) -> migrate (concluído) -> api
+    mailhog precisa estar iniciado antes da api.
+
     Não há no repositório atual:
-    - Dockerfile da API
-    - cluster/load balancer
-    - Redis, S3 ou fila
+    - cluster/orquestrador ou load balancer
+    - Redis, S3 ou broker de mensageria externo
     - serviços externos de pagamento ou SMS
-    - serviço SMTP externo de produção; no ambiente local, MailHog é usado pelo Compose
+    - serviço SMTP externo de produção
 end note
 
 note right of postgres
     infra/postgres/docker-compose.yml provisiona
-    o banco. O Compose não orquestra a API.
+    postgres e mailhog; é incluído pelo
+    docker-compose.yml da raiz, que adiciona
+    os serviços migrate e api.
 end note
 SHOW_LEGEND()
 @enduml

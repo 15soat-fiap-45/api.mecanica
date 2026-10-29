@@ -32,6 +32,49 @@ package "Schema public" {
         version : INTEGER
         cliente_id : VARCHAR(14) <<FK>>
     }
+
+    entity "peca_insumo" as peca_insumo {
+        * item_id : BIGINT <<PK, identity>>
+        --
+        stock_id : UUID <<UNIQUE>>
+        nome : VARCHAR(20)
+        descricao : VARCHAR(200) nullable
+        valor : BIGINT
+        part_code : VARCHAR(50) <<UNIQUE>>
+        unit_of_measure : stock_unit_of_measure
+        version : INTEGER
+    }
+
+    entity "estoque" as estoque {
+        * estoque_id : BIGINT <<PK, identity>>
+        --
+        item_id : BIGINT <<FK, UNIQUE>>
+        quantidade_disponivel : NUMERIC(10,2)
+        quantidade_minima : NUMERIC(10,2)
+    }
+
+    entity "movimento_estoque" as movimento_estoque {
+        * movimento_id : BIGINT <<PK, identity>>
+        --
+        item_id : BIGINT <<FK>>
+        tipo : VARCHAR(20) (ENTRADA | SAIDA | AJUSTE)
+        quantidade : NUMERIC(10,2)
+        data_hora : TIMESTAMP
+        usuario_id : BIGINT nullable
+        os_id : BIGINT nullable
+        observacao : TEXT nullable
+    }
+
+    entity "reserva_estoque" as reserva_estoque {
+        * reserva_id : UUID <<PK>>
+        --
+        item_id : BIGINT <<FK>>
+        service_order_id : VARCHAR(100)
+        quantidade : INTEGER
+        status : stock_reservation_status
+        version : INTEGER
+        criado_em : TIMESTAMP
+    }
 }
 
 package "Schema service_order" {
@@ -120,11 +163,22 @@ orders ||--o{ approval_requests : solicita aprovacao
 budgets ||--o{ approval_requests : vinculado a
 orders ||--o{ order_status_history : audita transicoes
 
+peca_insumo ||--o| estoque : saldo
+peca_insumo ||--o{ movimento_estoque : movimenta
+peca_insumo ||--o{ reserva_estoque : reserva
+peca_insumo ||..o{ supply_items : referencia logica (part_code)
+orders ||..o{ reserva_estoque : referencia logica (service_order_id)
+
 orders ||..o{ service_order_timeline : projecao analitica (sem FK fisica)
 supply_items ||..o{ restock_cycle : projecao por part_code (sem FK fisica)
 
 note bottom of service_order_timeline
   Projecao de leitura do modulo Business Intelligence alimentada exclusivamente
   via eventos do barramento. Sem FKs transcontextuais para garantir isolamento.
+end note
+
+note bottom of reserva_estoque
+  Indice unico parcial (service_order_id, item_id) apenas para
+  reservas abertas (status PENDING ou CONFIRMED).
 end note
 @enduml
