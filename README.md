@@ -327,6 +327,12 @@ Na análise desta versão:
 
 Os testes incluem testes unitários de domínio/aplicação, testes de repositórios Drizzle, testes de rotas HTTP via `app.inject` (incluindo primeiro acesso, login e pré-cadastro em `src/app.spec.ts`) e o teste de integração ponta a ponta (`src/service-order/infra/http/service-order-real.integration.spec.ts`) validado contra PostgreSQL e MailHog reais.
 
+### Análise SonarQube
+
+O projeto `api.mecanica` foi analisado no SonarQube (Community Build) e **passou no Quality Gate**: nota **A** em Security, Reliability, Maintainability e Hotspots Reviewed, sem issues abertas, com **85,1% de cobertura** e **0,5% de duplicação** em ~9,1k linhas de TypeScript.
+
+![SonarQube - Quality Gate aprovado](docs/images/sonarqube-quality-gate.png)
+
 ## Estrutura relevante
 
 ```text
