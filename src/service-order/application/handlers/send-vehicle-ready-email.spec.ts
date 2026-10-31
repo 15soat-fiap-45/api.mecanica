@@ -19,6 +19,7 @@ it('sends text and safe HTML to the vehicle owner after completion', async () =>
             findByVehicleId: vi.fn(async () => ({
                 name: '<Ana>',
                 email: 'ana@example.com',
+                customerDocument: '52998224725',
             })),
         },
         {

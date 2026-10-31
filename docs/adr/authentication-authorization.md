@@ -87,7 +87,7 @@ Os módulos não dependem do `auth`: dependem de portas (`ActorResolver`, usada 
 
 ### Regras
 
-1. Toda rota de negócio exige token e permissão; rotas públicas são exceções explícitas (login, primeiro acesso, health e o fluxo de aprovação do cliente por token).
+1. Toda rota de negócio exige token e permissão; rotas públicas são exceções explícitas (login, primeiro acesso, health, o fluxo de aprovação do cliente por token e a consulta de andamento da OS pelo cliente, validada pelo CPF/CNPJ do titular do veículo).
 2. Permissões são verificadas pelo cargo atual lido do banco, não por claims gravadas no token.
 3. Nenhuma senha (temporária ou definitiva) é armazenada ou registrada em texto puro.
 4. Na dúvida, o acesso é negado: ator sem cargo ou sem permissão recebe 403.

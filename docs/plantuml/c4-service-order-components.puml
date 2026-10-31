@@ -4,11 +4,11 @@ title C3 - Service Order - visao principal dos componentes no container API HTTP
 LAYOUT_LEFT_RIGHT()
 
 Person(operator, "Operador Autenticado", "Comandos e consultas de OS")
-Person(customer, "Cliente do Veiculo", "Aprova ou recusa orcamento via token")
+Person(customer, "Cliente do Veiculo", "Aprova ou recusa orcamento via token e consulta o andamento da OS com CPF/CNPJ")
 
 Container_Boundary(api, "API HTTP - processo Node.js / Fastify") {
-  Component(http, "Adaptador HTTP Service Order", "Fastify / Zod", "registerServiceOrderRoutes: 14 rotas (11 autenticadas via ActorResolver e 3 publicas de orcamento). PATCH de descricao exige OS_CONCLUIR.")
-  Component(orders, "Casos de uso de OS", "TypeScript / Application", "RegisterServiceOrder, UpdateServiceOrderDescription, AddSupplyToServiceOrder, RegisterSupplyUsage, ChangeServiceOrderStatus (start/finish/deliver), CancelServiceOrder e consultas de OS/historico.")
+  Component(http, "Adaptador HTTP Service Order", "Fastify / Zod", "registerServiceOrderRoutes: 15 rotas (11 autenticadas via ActorResolver, 3 publicas de orcamento e 1 publica de consulta de andamento). PATCH de descricao exige OS_CONCLUIR.")
+  Component(orders, "Casos de uso de OS", "TypeScript / Application", "RegisterServiceOrder, UpdateServiceOrderDescription, AddSupplyToServiceOrder, RegisterSupplyUsage, ChangeServiceOrderStatus (start/finish/deliver), CancelServiceOrder, consultas de OS/historico e TrackServiceOrder (consulta do cliente).")
   Component(budget_uc, "Casos de uso de Orcamento", "TypeScript / Application", "AwaitBudgetApproval (valueCents e description opcionais) e DecideBudgetApproval (e ApproveBudget legado).")
   Component(domain, "Dominio Service Order", "TypeScript / DDD", "Agregados ServiceOrder e Budget; entidade ApprovalRequest; SupplyItem, tokens, VOs de status e eventos.")
   Component(ports, "Portas do Modulo", "Interfaces TypeScript", "ServiceOrderRepository, BudgetRepository, ApprovalRequestRepository, VehicleContactLookup, ActorResolver e EmailSender.")
@@ -24,7 +24,7 @@ ContainerDb(database, "Banco da oficina", "PostgreSQL 17", "Schema service_order
 System_Ext(smtp, "Servidor SMTP", "Entrega de e-mails")
 
 Rel(operator, http, "Requisicoes autenticadas", "HTTP/JSON + JWT")
-Rel(customer, http, "GET /orcamento/:token e POST /budget-approvals/decide", "HTTP")
+Rel(customer, http, "GET /orcamento/:token, POST /budget-approvals/decide e POST /service-orders/:id/tracking", "HTTP")
 Rel(http, ports, "Autentica/autoriza ator", "ActorResolver")
 Rel(http, orders, "Salva descricao durante avaliacao; executa comandos e consultas de OS", "execute(input)")
 Rel(http, budget_uc, "Solicita ou decide aprovacao de orcamento", "execute(input)")
@@ -53,6 +53,9 @@ note bottom of http
   actorContext (AsyncLocalStorage) propaga o ID do usuario autenticado
   ate os repositorios Drizzle para gravar changed_by em order_status_history.
   Editar apenas a descricao nao cria uma nova transicao de status.
+  POST /service-orders/:serviceOrderId/tracking e publica: TrackServiceOrder
+  compara o CPF/CNPJ informado com o titular via VehicleContactLookup
+  (404 se divergir) e omite changed_by e insumos. Rate-limit 10/min por IP.
 end note
 SHOW_LEGEND()
 @enduml

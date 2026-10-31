@@ -15,7 +15,7 @@ System_Boundary(workshop, "API Oficina Mecanica") {
 System_Ext(smtp, "Servidor SMTP", "Infraestrutura de envio de e-mails")
 
 Rel(operator, api, "Avalia OS, registra descricao e valor, inclui insumos e consulta historico", "HTTP/JSON + Bearer JWT")
-Rel(customer, api, "Visualiza pagina de orcamento e envia decisao via token", "HTTP/HTML e JSON")
+Rel(customer, api, "Visualiza pagina de orcamento, envia decisao via token e consulta andamento da OS com CPF/CNPJ", "HTTP/HTML e JSON")
 Rel(api, database, "Persiste descricao da OS, agregados e historico com controle transacional e otimista", "SQL via Drizzle ORM / pg")
 Rel(api, smtp, "Envia notificacoes de aprovacao de orcamento e veiculo pronto", "SMTP / Nodemailer")
 

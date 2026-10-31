@@ -12,7 +12,7 @@ Os diagramas desta pasta descrevem o estado confirmado no código atual. A imple
 - `deployment.puml`: execução atual com processo Node.js e PostgreSQL.
 - `flows/client-registration.puml`: fluxo real de `POST /customers` com JWT e permissão `CLIENTE_EDITAR`.
 - `flows/auth-service.puml`: pré-cadastro e login registrados pelo controller Auth.
-- `flows/service-order.puml`: registro/revisão da descrição durante a avaliação e solicitação de aprovação de orçamento por e-mail/token.
+- `flows/service-order.puml`: registro/revisão da descrição durante a avaliação e solicitação de aprovação de orçamento por e-mail/token e consulta de andamento da OS pelo cliente.
 - `flows/bi-metrics.puml`: fluxo de projeção orientada a eventos e consulta de métricas de BI.
 - `flows/states.puml`: estados implementados para OS, orçamento, reserva e estoque.
 
@@ -39,7 +39,8 @@ Os diagramas desta pasta descrevem o estado confirmado no código atual. A imple
     - `POST /service-orders/:serviceOrderId/start` (`OS_CONCLUIR`)
     - `POST /service-orders/:serviceOrderId/finish` (`OS_CONCLUIR`)
     - `POST /service-orders/:serviceOrderId/deliver` (`OS_CRIAR`)
-- Públicas (fluxo de aprovação do cliente):
+- Públicas (cliente do veículo):
+    - `POST /service-orders/:serviceOrderId/tracking` (consulta de andamento; exige CPF/CNPJ do titular do veículo no corpo, rate-limit 10/min por IP)
     - `POST /budget-approvals/decide`
     - `GET /orcamento/:token` e `GET /orcamento`
 

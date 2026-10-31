@@ -314,6 +314,92 @@ export function registerServiceOrderRoutes(
     );
 
     typedApp.post(
+        '/service-orders/:serviceOrderId/tracking',
+        {
+            preValidation: publicRoute,
+            config: { rateLimit: { max: 10, timeWindow: '1 minute' } },
+            schema: {
+                tags: ['Service orders'],
+                summary: 'Consulta pública do andamento da OS pelo cliente',
+                description:
+                    'Não exige login. O cliente informa o CPF/CNPJ do titular do veículo no corpo; ' +
+                    'se o documento não corresponder à OS, a resposta é 404, como se ela não existisse. ' +
+                    'Limitado a 10 consultas por minuto por IP.',
+                params: orderParams,
+                body: z
+                    .object({
+                        document: z
+                            .string()
+                            .trim()
+                            .refine(
+                                (value) =>
+                                    [11, 14].includes(
+                                        value.replace(/\D/g, '').length,
+                                    ),
+                                'CPF/CNPJ must have 11 or 14 digits',
+                            )
+                            .describe(
+                                'CPF ou CNPJ do titular do veículo, com ou sem máscara.',
+                            ),
+                    })
+                    .meta({ examples: [{ document: '529.982.247-25' }] }),
+                response: {
+                    200: z
+                        .object({
+                            serviceOrderId: z.string(),
+                            description: z.string(),
+                            status: z.string(),
+                            valueCents: valueCentsSchema.nullable(),
+                            history: z.array(
+                                z.object({
+                                    status: z.string(),
+                                    recordedAt: z.string(),
+                                }),
+                            ),
+                        })
+                        .meta({
+                            examples: [
+                                {
+                                    serviceOrderId: exampleOrderId,
+                                    description: 'Troca de pastilhas de freio',
+                                    status: 'IN_PROGRESS',
+                                    valueCents: 35000,
+                                    history: [
+                                        {
+                                            status: 'PENDING',
+                                            recordedAt:
+                                                '2026-10-28T12:00:00.000Z',
+                                        },
+                                        {
+                                            status: 'AWAITING_APPROVAL',
+                                            recordedAt:
+                                                '2026-10-28T13:00:00.000Z',
+                                        },
+                                        {
+                                            status: 'APPROVED',
+                                            recordedAt:
+                                                '2026-10-28T13:15:00.000Z',
+                                        },
+                                        {
+                                            status: 'IN_PROGRESS',
+                                            recordedAt:
+                                                '2026-10-28T14:00:00.000Z',
+                                        },
+                                    ],
+                                },
+                            ],
+                        }),
+                },
+            },
+        },
+        async (request) =>
+            useCases.trackServiceOrder.execute({
+                ...request.params,
+                ...request.body,
+            }),
+    );
+
+    typedApp.post(
         '/service-orders/:serviceOrderId/supplies',
         {
             preValidation: requireAuth('ESTOQUE_BAIXAR'),

@@ -11,14 +11,14 @@ Os diagramas documentam a arquitetura implementada no código atual.
 | `c4-components.puml`               | Visão geral dos componentes do monolito                                                    |
 | `c4-service-order-context.puml`    | C1 focado em Service Order (Operador, Cliente e Servidor SMTP)                             |
 | `c4-service-order-containers.puml` | C2 focado em Service Order (API HTTP + Página de Orçamento, PostgreSQL e SMTP)             |
-| `c4-service-order-components.puml` | C3 focado em Service Order (14 rotas: 11 autenticadas e 3 públicas, casos de uso, handlers, portas e adaptadores) |
+| `c4-service-order-components.puml` | C3 focado em Service Order (15 rotas: 11 autenticadas e 4 públicas, casos de uso, handlers, portas e adaptadores) |
 | `c4-service-order-code.puml`       | C4 focado no domínio de Service Order (`ServiceOrder`, `Budget`, `ApprovalRequest`, VOs)   |
 | `c4-bi-components.puml`            | C3 focado em Business Intelligence (rotas /bi/*, use cases, handlers, projeções e Drizzle) |
 | `database-er.puml`                 | Tabelas do schema Drizzle (`public`, `service_order` e `business_intelligence`)            |
 | `deployment.puml`                  | Processo Node.js e PostgreSQL provisionado separadamente                                   |
 | `flows/client-registration.puml`   | `POST /customers` com JWT e permissão `CLIENTE_EDITAR`                                    |
 | `flows/auth-service.puml`          | Pré-cadastro de usuários e login no controller Auth                                        |
-| `flows/service-order.puml`         | Avaliação da OS com descrição, solicitação de aprovação por e-mail/token e decisão         |
+| `flows/service-order.puml`         | Avaliação da OS com descrição, solicitação de aprovação por e-mail/token, decisão e consulta de andamento pelo cliente |
 | `flows/bi-metrics.puml`            | Projeções de timeline/estoque e consulta de métricas por gerente (`/bi/*`)                 |
 | `flows/states.puml`                | Estados de OS (`ServiceOrder`), orçamento (`Budget`), reserva e estoque                    |
 

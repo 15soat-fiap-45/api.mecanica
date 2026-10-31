@@ -100,6 +100,15 @@ package "src/service-order/application/use-cases" {
   class AwaitBudgetApproval {
     +execute(input: { serviceOrderId, valueCents?, description? }): Promise<{ status }>
   }
+  class TrackServiceOrder {
+    +execute(input: { serviceOrderId, document }): Promise<{ serviceOrderId, description, status, valueCents, history }>
+  }
+}
+
+package "src/service-order/application/ports" {
+  interface VehicleContactLookup {
+    +findByVehicleId(vehicleId: string): Promise<{ name, email, customerDocument } | null>
+  }
 }
 
 AggregateRoot <|-- ServiceOrder
@@ -122,6 +131,8 @@ UpdateServiceOrderDescription ..> ServiceOrder : updateDescription(description)
 AwaitBudgetApproval ..> ServiceOrder : updateDescription(description) opcional
 AwaitBudgetApproval ..> ServiceOrderRepository : save(order, budget) atomico
 AwaitBudgetApproval ..> Budget : cria com order.valueCents
+TrackServiceOrder ..> ServiceOrderRepository : findById + findStatusHistory
+TrackServiceOrder ..> VehicleContactLookup : compara CPF/CNPJ do titular
 
 note bottom of ServiceOrder
   SupplyItem e entidade interna ao agregado ServiceOrder.
@@ -136,6 +147,11 @@ note bottom of UpdateServiceOrderDescription
   Disponivel via PATCH /service-orders/:serviceOrderId/description.
   ActorResolver exige OS_CONCLUIR (MECANICO ou GERENTE).
   A OS continua em PENDING; nao publica evento nem altera o historico de fases.
+end note
+note bottom of TrackServiceOrder
+  Disponivel via POST /service-orders/:serviceOrderId/tracking (publica).
+  Documento divergente ou OS sem titular respondem como OS inexistente (404).
+  O historico devolvido omite changed_by.
 end note
 note bottom of ApprovalRequest
   Armazena apenas o SHA-256 do token (tokenHash) e o hash da versao
