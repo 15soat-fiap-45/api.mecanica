@@ -1,4 +1,4 @@
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, asc, eq, inArray } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import type { DomainEvent } from '../../../shared/domain/domain-event.js';
 import { PartCode } from '../../../shared/domain/part-code.js';
@@ -24,74 +24,79 @@ export class DrizzlePartSupplyRepository implements PartSupplyRepository {
     constructor(private readonly database: Database) {}
 
     async save(partSupply: PartSupply): Promise<void> {
-        const [current] = await this.database
-            .select()
-            .from(pecaInsumo)
-            .where(eq(pecaInsumo.stockId, partSupply.id.value))
-            .limit(1);
+        // Item, balance and movement history change together or not at all.
+        await this.database.transaction(async (tx) => {
+            const [current] = await tx
+                .select()
+                .from(pecaInsumo)
+                .where(eq(pecaInsumo.stockId, partSupply.id.value))
+                .limit(1);
 
-        if (!current) {
-            const [item] = await this.database
-                .insert(pecaInsumo)
-                .values({
-                    stockId: partSupply.id.value,
+            if (!current) {
+                const [item] = await tx
+                    .insert(pecaInsumo)
+                    .values({
+                        stockId: partSupply.id.value,
+                        nome: partSupply.description.slice(0, 20),
+                        descricao: partSupply.description,
+                        valor: partSupply.unitPriceCents,
+                        ativo: partSupply.active,
+                        partCode: partSupply.partCode.value,
+                        unitOfMeasure: partSupply.unitOfMeasure.value,
+                        version: partSupply.version,
+                    })
+                    .returning({ itemId: pecaInsumo.itemId });
+
+                if (!item) throw new Error('Part supply could not be inserted.');
+
+                await tx.insert(estoque).values({
+                    itemId: item.itemId,
+                    quantidadeDisponivel: String(partSupply.quantity.value),
+                });
+                await saveMovements(tx, partSupply, item.itemId);
+                return;
+            }
+
+            const updated = await tx
+                .update(pecaInsumo)
+                .set({
                     nome: partSupply.description.slice(0, 20),
                     descricao: partSupply.description,
                     valor: partSupply.unitPriceCents,
+                    ativo: partSupply.active,
                     partCode: partSupply.partCode.value,
                     unitOfMeasure: partSupply.unitOfMeasure.value,
-                    version: partSupply.version,
+                    version: partSupply.version + 1,
                 })
+                .where(
+                    and(
+                        eq(pecaInsumo.itemId, current.itemId),
+                        eq(pecaInsumo.version, partSupply.version),
+                    ),
+                )
                 .returning({ itemId: pecaInsumo.itemId });
 
-            if (!item) throw new Error('Part supply could not be inserted.');
+            if (!updated.length) {
+                throw new Error(
+                    `Optimistic locking failed for part supply ${partSupply.id.value}.`,
+                );
+            }
 
-            await this.database.insert(estoque).values({
-                itemId: item.itemId,
-                quantidadeDisponivel: String(partSupply.quantity.value),
-            });
-            await this.saveMovements(partSupply, item.itemId);
-            return;
-        }
+            const stockUpdated = await tx
+                .update(estoque)
+                .set({
+                    quantidadeDisponivel: String(partSupply.quantity.value),
+                })
+                .where(eq(estoque.itemId, current.itemId))
+                .returning({ itemId: estoque.itemId });
 
-        const updated = await this.database
-            .update(pecaInsumo)
-            .set({
-                nome: partSupply.description.slice(0, 20),
-                descricao: partSupply.description,
-                valor: partSupply.unitPriceCents,
-                partCode: partSupply.partCode.value,
-                unitOfMeasure: partSupply.unitOfMeasure.value,
-                version: partSupply.version + 1,
-            })
-            .where(
-                and(
-                    eq(pecaInsumo.itemId, current.itemId),
-                    eq(pecaInsumo.version, partSupply.version),
-                ),
-            )
-            .returning({ itemId: pecaInsumo.itemId });
-
-        if (!updated.length) {
-            throw new Error(
-                `Optimistic locking failed for part supply ${partSupply.id.value}.`,
-            );
-        }
-
-        const stockUpdated = await this.database
-            .update(estoque)
-            .set({
-                quantidadeDisponivel: String(partSupply.quantity.value),
-            })
-            .where(eq(estoque.itemId, current.itemId))
-            .returning({ itemId: estoque.itemId });
-
-        if (!stockUpdated.length) {
-            throw new Error(
-                `Stock balance not found for item ${current.itemId}.`,
-            );
-        }
-        await this.saveMovements(partSupply, current.itemId);
+            if (!stockUpdated.length) {
+                throw new Error(
+                    `Stock balance not found for item ${current.itemId}.`,
+                );
+            }
+            await saveMovements(tx, partSupply, current.itemId);
+        });
     }
 
     async findById(id: PartSupplyId | string): Promise<PartSupply | null> {
@@ -127,45 +132,57 @@ export class DrizzlePartSupplyRepository implements PartSupplyRepository {
         return row ? partSupplyFromRow(row.item, row.balance) : null;
     }
 
-    private async saveMovements(
-        partSupply: PartSupply,
-        itemId: number,
-    ): Promise<void> {
-        const movements = partSupply.pendingEvents.flatMap((event) => {
-            if (isStockUpdatedEvent(event)) {
-                return [
-                    {
-                        itemId,
-                        tipo:
-                            event.movementType === 'ENTRY'
-                                ? 'ENTRADA'
-                                : 'SAIDA',
-                        quantidade: String(event.movedQuantity),
-                        observacao: `Motivo: ${event.reason}. Saldo: ${event.previousQuantity} -> ${event.currentQuantity}.`,
-                    },
-                ];
-            }
 
-            if (isPartSupplyRegisteredEvent(event)) {
-                return event.initialQuantity > 0
-                    ? [
-                          {
-                              itemId,
-                              tipo: 'ENTRADA',
-                              quantidade: String(event.initialQuantity),
-                              observacao:
-                                  'Entrada inicial do cadastro do insumo.',
-                          },
-                      ]
-                    : [];
-            }
+    async findAllActive(): Promise<PartSupply[]> {
+        const rows = await this.database
+            .select({ item: pecaInsumo, balance: estoque })
+            .from(pecaInsumo)
+            .innerJoin(estoque, eq(estoque.itemId, pecaInsumo.itemId))
+            .where(eq(pecaInsumo.ativo, true))
+            .orderBy(asc(pecaInsumo.partCode));
+        return rows.map((row) => partSupplyFromRow(row.item, row.balance));
+    }
+}
 
-            return [];
-        });
-
-        if (movements.length) {
-            await this.database.insert(movimentoEstoque).values(movements);
+async function saveMovements(
+executor: Pick<Database, 'insert'>,
+partSupply: PartSupply,
+    itemId: number,
+): Promise<void> {
+    const movements = partSupply.pendingEvents.flatMap((event) => {
+        if (isStockUpdatedEvent(event)) {
+            return [
+                {
+                    itemId,
+                    tipo:
+                        event.movementType === 'ENTRY'
+                            ? 'ENTRADA'
+                            : 'SAIDA',
+                    quantidade: String(event.movedQuantity),
+                    observacao: `Motivo: ${event.reason}. Saldo: ${event.previousQuantity} -> ${event.currentQuantity}.`,
+                },
+            ];
         }
+
+        if (isPartSupplyRegisteredEvent(event)) {
+            return event.initialQuantity > 0
+                ? [
+                      {
+                          itemId,
+                          tipo: 'ENTRADA',
+                          quantidade: String(event.initialQuantity),
+                          observacao:
+                              'Entrada inicial do cadastro do insumo.',
+                      },
+                  ]
+                : [];
+        }
+
+        return [];
+    });
+
+    if (movements.length) {
+        await executor.insert(movimentoEstoque).values(movements);
     }
 }
 
@@ -361,6 +378,7 @@ function partSupplyFromRow(
         quantity: Quantity.create(quantity),
         unitOfMeasure: UnitOfMeasure.create(item.unitOfMeasure),
         unitPriceCents: item.valor,
+        active: item.ativo,
         version: item.version,
     });
 }

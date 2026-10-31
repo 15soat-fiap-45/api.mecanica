@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { PartSupply } from './part-supply.js';
+import {
+    InvalidPartDescriptionException,
+    InvalidPartPriceException,
+    PartSupply,
+} from './part-supply.js';
 import { PartSupplyId } from './part-supply-id.js';
 import { PartCode } from '../../../shared/domain/part-code.js';
 import { InsufficientQuantityException } from './value-objects/quantity.js';
@@ -105,5 +109,49 @@ describe('PartSupply Aggregate Root', () => {
 
         expect(part1.equals(part2)).toBe(true);
         expect(part1.equals(part3)).toBe(false);
+    });
+
+    it('should update catalog details without touching the balance or emitting events', () => {
+        const part = PartSupply.create(makeProps({ unitPriceCents: 8000 }));
+        part.updateDetails({
+            description: '  Pastilha cerâmica  ',
+            unitOfMeasure: UnitOfMeasure.create('SET'),
+            unitPriceCents: 12990,
+        });
+        expect(part.description).toBe('Pastilha cerâmica');
+        expect(part.unitOfMeasure.value).toBe('SET');
+        expect(part.unitPriceCents).toBe(12990);
+        expect(part.quantity.value).toBe(10);
+        expect(part.pullEvents()).toEqual([]);
+    });
+
+    it('should reject invalid details and keep the previous values', () => {
+        const part = PartSupply.create(makeProps({ unitPriceCents: 8000 }));
+        expect(() =>
+            part.updateDetails({
+                description: ' ',
+                unitOfMeasure: validUnit,
+                unitPriceCents: 1,
+            }),
+        ).toThrow(InvalidPartDescriptionException);
+        expect(() =>
+            part.updateDetails({
+                description: 'Nova',
+                unitOfMeasure: validUnit,
+                unitPriceCents: -1,
+            }),
+        ).toThrow(InvalidPartPriceException);
+        expect(part.description).toBe('Front brake pad');
+        expect(part.unitPriceCents).toBe(8000);
+    });
+
+    it('should be active by default and deactivate logically', () => {
+        const part = PartSupply.create(makeProps());
+        expect(part.active).toBe(true);
+        part.deactivate();
+        expect(part.active).toBe(false);
+        expect(PartSupply.create(makeProps({ active: false })).active).toBe(
+            false,
+        );
     });
 });

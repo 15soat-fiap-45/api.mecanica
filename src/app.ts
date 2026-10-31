@@ -68,6 +68,7 @@ export function buildApp(deps: AppDependencies = {}) {
             const statusCode = error.name.includes('NotFound')
                 ? 404
                 : error.name.includes('AlreadyExists') ||
+                    error.name.includes('AlreadyRegistered') ||
                     error.name.includes('Conflict') ||
                     error.name === 'CustomerHasVehiclesError' ||
                     error.name === 'ConcurrentModificationError'

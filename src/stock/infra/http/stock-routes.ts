@@ -48,6 +48,44 @@ const registerPartBody = z
         ],
     });
 
+const unitOfMeasureSchema = z.enum([
+    'UNIT',
+    'PAIR',
+    'SET',
+    'LITER',
+    'KILOGRAM',
+    'METER',
+]);
+
+const unitPriceCentsSchema = z
+    .number()
+    .int()
+    .min(0)
+    .max(Number.MAX_SAFE_INTEGER)
+    .describe(
+        'Preço unitário em centavos, usado no orçamento da OS. Exemplo: 8990 = R$ 89,90.',
+    );
+
+const partCodeParams = z
+    .object({ partCode: z.string().trim().min(1).max(50) })
+    .meta({ examples: [{ partCode: 'PAST-FREIO-01' }] });
+
+const updatePartBody = z
+    .strictObject({
+        description: z.string().trim().min(1).max(200),
+        unitOfMeasure: unitOfMeasureSchema,
+        unitPriceCents: unitPriceCentsSchema,
+    })
+    .meta({
+        examples: [
+            {
+                description: 'Pastilha de freio dianteira cerâmica',
+                unitOfMeasure: 'SET',
+                unitPriceCents: 12990,
+            },
+        ],
+    });
+
 const stockEntryBody = z
     .object({
         partCode: z.string().trim().min(1).max(50),
@@ -253,6 +291,31 @@ export function registerStockRoutes(
         }, done);
     };
 
+    const requireAuth = (
+        request: FastifyRequest,
+        reply: FastifyReply,
+        done: HookHandlerDoneFunction,
+    ) => {
+        const resolver = useCases.actorResolver;
+        const authPromise = resolver
+            ? resolver.authenticate
+                ? resolver.authenticate(request.headers.authorization)
+                : resolver
+                      .resolve(request.headers.authorization)
+                      .then((id) => (id ? { id, can: () => true } : null))
+            : Promise.resolve(null);
+        authPromise.then((actor) => {
+            if (!actor) {
+                void reply.code(401).send({
+                    error: 'UnauthorizedError',
+                    message: 'Authentication required.',
+                });
+                return;
+            }
+            actorContext.run(actor.id, done);
+        }, done);
+    };
+
     typedApp.post(
         '/stock/parts',
         {
@@ -271,6 +334,72 @@ export function registerStockRoutes(
                 request.body,
             );
             return reply.code(201).send(result);
+        },
+    );
+
+    typedApp.get(
+        '/stock/parts',
+        {
+            preValidation: requireAuth,
+            schema: {
+                tags: ['Stock'],
+                summary: 'List active parts and supplies with their balance',
+                response: { 200: z.array(partSupplyResponse) },
+            },
+        },
+        async () => useCases.listPartSupplies.execute(),
+    );
+
+    typedApp.get(
+        '/stock/parts/:partCode',
+        {
+            preValidation: requireAuth,
+            schema: {
+                tags: ['Stock'],
+                summary: 'Get a part/supply with its available balance',
+                params: partCodeParams,
+                response: { 200: partSupplyResponse },
+            },
+        },
+        async (request) => useCases.findPartSupply.execute(request.params),
+    );
+
+    typedApp.put(
+        '/stock/parts/:partCode',
+        {
+            preValidation: requireAdmin,
+            schema: {
+                tags: ['Stock'],
+                summary: 'Update description, unit of measure and unit price',
+                description:
+                    'The part code is immutable and the balance only changes through stock entries, reservations and write-offs.',
+                params: partCodeParams,
+                body: updatePartBody,
+                response: { 200: partSupplyResponse },
+            },
+        },
+        async (request) =>
+            useCases.updatePartSupply.execute({
+                ...request.body,
+                partCode: request.params.partCode,
+            }),
+    );
+
+    typedApp.delete(
+        '/stock/parts/:partCode',
+        {
+            preValidation: requireAdmin,
+            schema: {
+                tags: ['Stock'],
+                summary: 'Deactivate a part/supply (logical delete)',
+                description:
+                    'Keeps the movement history but removes the part from the catalog, so it can no longer be added to service orders. Responds 409 while there are open reservations.',
+                params: partCodeParams,
+            },
+        },
+        async (request, reply) => {
+            await useCases.deactivatePartSupply.execute(request.params);
+            return reply.code(204).send();
         },
     );
 

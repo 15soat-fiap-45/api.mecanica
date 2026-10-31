@@ -98,6 +98,8 @@ export const pecaInsumo = pgTable('peca_insumo', {
     nome: varchar('nome', { length: 20 }).notNull(),
     descricao: varchar('descricao', { length: 200 }),
     valor: bigint('valor', { mode: 'number' }).notNull().default(0),
+    // Exclusão lógica: a peça mantém histórico de movimentações e reservas.
+    ativo: boolean('ativo').notNull().default(true),
     partCode: varchar('part_code', { length: 50 }).notNull().unique(),
     unitOfMeasure: stockUnitOfMeasure('unit_of_measure')
         .notNull()

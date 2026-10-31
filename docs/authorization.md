@@ -80,6 +80,11 @@ Nas rotas de Business Intelligence (`/bi/*`), a proteção segue o mesmo padrão
 
 - `BI_VISUALIZAR` (`GERENTE`): `GET /bi/service-orders/lead-time` e `GET /bi/stock/restock-lead-time`.
 
+Nas rotas de estoque (`/stock/*`):
+
+- Qualquer usuário autenticado ativo: `GET /stock/parts` e `GET /stock/parts/:partCode`.
+- `ESTOQUE_GERENCIAR` (`GERENTE`): `POST /stock/parts`, `PUT /stock/parts/:partCode`, `DELETE /stock/parts/:partCode`, entradas, reservas, cancelamentos e baixas.
+
 ## Erros e limites atuais
 
 | Situação                                                                            | Resposta |

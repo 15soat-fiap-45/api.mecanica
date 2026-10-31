@@ -26,5 +26,8 @@ describe('StockPartCatalog', () => {
             unitPriceCents: 8500,
         });
         expect(await catalog.findByPartCode('OUTRA')).toBeNull();
+
+        part.deactivate();
+        expect(await catalog.findByPartCode('PAST-01')).toBeNull();
     });
 });

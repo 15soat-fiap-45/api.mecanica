@@ -8,7 +8,8 @@ export class StockPartCatalog implements PartCatalog {
         const part = await this.parts.findByPartCode(
             partCode.trim().toUpperCase(),
         );
-        return part
+        // Deactivated parts can no longer be included in service orders.
+        return part?.active
             ? {
                   description: part.description,
                   unitPriceCents: part.unitPriceCents,
