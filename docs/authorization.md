@@ -3,8 +3,9 @@
 O módulo Auth usa senha com hash Argon2id para autenticar usuários, JWT para identificá-los nas requisições e papéis/permissões para decidir o que podem fazer. Nesta branch:
 
 - `POST /users` exige JWT e permissão `USUARIO_PRE_CADASTRAR` (`GERENTE`).
-- As rotas de Ordem de Serviço (`/service-orders/*`) exigem JWT Bearer válido (`401 Unauthorized` quando ausente/inválido/inativo) e validam a permissão correspondente ao papel (`403 Forbidden` quando o usuário não possui a permissão exigida).
+- As rotas de Ordem de Serviço (`/service-orders/*`), exceto a consulta de andamento pelo cliente, exigem JWT Bearer válido (`401 Unauthorized` quando ausente/inválido/inativo) e validam a permissão correspondente ao papel (`403 Forbidden` quando o usuário não possui a permissão exigida).
 - As rotas de aprovação de orçamento pelo cliente (`POST /budget-approvals/decide`, `GET /orcamento/:token` e `GET /orcamento`) são públicas para acesso via link de e-mail.
+- A consulta de andamento pelo cliente (`POST /service-orders/:serviceOrderId/tracking`) é pública: em vez de JWT, o cliente informa no corpo o CPF/CNPJ do titular do veículo. Documento divergente responde `404`, como OS inexistente, e a rota é limitada a 10 requisições por minuto por IP.
 - As rotas de Registry (`/customers` e `/vehicles`) exigem JWT Bearer válido e a permissão `CLIENTE_EDITAR` (`ATENDENTE` ou `GERENTE`).
 
 ## Antes de usar
@@ -72,6 +73,7 @@ Nas rotas de Ordem de Serviço, a proteção é realizada de forma desacoplada p
 - `OS_CONCLUIR` (`MECANICO`, `GERENTE`): `PATCH /service-orders/:serviceOrderId/description`, `POST /service-orders/:serviceOrderId/awaiting-approval`, `POST /service-orders/:serviceOrderId/start` e `POST /service-orders/:serviceOrderId/finish`. A descrição pode ser atualizada apenas enquanto a OS está em `PENDING` (avaliação), inclusive no envio para aprovação pelo campo opcional `description`.
 - `ESTOQUE_BAIXAR` (`MECANICO`, `ESTOQUISTA`, `GERENTE`): `POST /service-orders/:serviceOrderId/supplies` e `POST /service-orders/:serviceOrderId/supplies/:partCode/usage`.
 - Qualquer usuário autenticado ativo (`ATENDENTE`, `MECANICO`, `ESTOQUISTA`, `GERENTE`): `GET /service-orders/:serviceOrderId` e `GET /service-orders/:serviceOrderId/history`.
+- Pública, validada pelo CPF/CNPJ do titular do veículo (`TrackServiceOrder`): `POST /service-orders/:serviceOrderId/tracking`. Retorna status, descrição, valor e histórico de fases sem `changedBy` nem insumos.
 
 Nas rotas de Business Intelligence (`/bi/*`), a proteção segue o mesmo padrão via `BiAccessGuard` (`src/business-intelligence/application/ports/bi-access-guard.ts`) e `TokenBiAccessGuard` (`src/infra/token-bi-access-guard.ts`):
 

@@ -12,6 +12,7 @@ import { UpdateServiceOrderDescription } from './application/use-cases/update-se
 import { DecideBudgetApproval } from './application/use-cases/decide-budget-approval.js';
 import type { ActorResolver } from './application/ports/actor-resolver.js';
 import { ChangeServiceOrderStatus } from './application/use-cases/change-service-order-status.js';
+import { TrackServiceOrder } from './application/use-cases/track-service-order.js';
 import { SendVehicleReadyEmail } from './application/handlers/send-vehicle-ready-email.js';
 import type { ServiceOrderFinished } from './domain/service-order/events/service-order-finished.js';
 import type { BudgetApproved } from './domain/budget/events/budget-approved.js';
@@ -89,6 +90,7 @@ export interface ServiceOrderUseCases {
             }[];
         }>;
     };
+    trackServiceOrder: TrackServiceOrder;
     decideBudgetApproval: DecideBudgetApproval;
     resendBudgetApproval: {
         execute(input: {
@@ -213,6 +215,10 @@ export function serviceOrderCompositionRoot(
                 };
             },
         },
+        trackServiceOrder: new TrackServiceOrder(
+            deps.serviceOrderRepository,
+            deps.vehicleContacts,
+        ),
         decideBudgetApproval: new DecideBudgetApproval(
             deps.approvalRequestRepository,
             deps.serviceOrderRepository,

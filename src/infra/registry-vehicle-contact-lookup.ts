@@ -13,7 +13,11 @@ export class RegistryVehicleContactLookup implements VehicleContactLookup {
         if (!vehicle) return null;
         const customer = await this.customers.findByCpfCnpj(vehicle.customerId);
         return customer
-            ? { name: customer.name, email: customer.email.value }
+            ? {
+                  name: customer.name,
+                  email: customer.email.value,
+                  customerDocument: vehicle.customerId.value,
+              }
             : null;
     }
 }

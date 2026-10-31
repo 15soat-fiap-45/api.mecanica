@@ -4,7 +4,7 @@ LAYOUT_LEFT_RIGHT()
 SHOW_PERSON_OUTLINE()
 
 Person(operator, "Operador Autenticado", "Usa Auth, Registry, Service Order e BI conforme permissoes RBAC")
-Person(customer, "Cliente do Veiculo", "Confirma a decisao sobre o orcamento recebido por e-mail")
+Person(customer, "Cliente do Veiculo", "Confirma a decisao sobre o orcamento recebido por e-mail e consulta o andamento da OS")
 
 System_Boundary(system, "API Oficina Mecanica") {
     Container(api, "Processo da API", "Node.js / TypeScript / Fastify", "Servidor, Swagger, health check, public/orcamento.html e expiração periódica de aprovações")
@@ -18,7 +18,7 @@ System_Boundary(system, "API Oficina Mecanica") {
 System_Ext(smtp, "Servidor SMTP", "Entrega de notificacoes transacionais")
 
 Rel(operator, http_adapters, "HTTP/JSON + ******")
-Rel(customer, api, "Acessa página de confirmação do orçamento", "HTTP/HTML e JSON")
+Rel(customer, api, "Acessa página de confirmação do orçamento e consulta andamento da OS", "HTTP/HTML e JSON")
 Rel(http_adapters, application, "Valida e executa casos de uso")
 Rel(application, domain, "Invoca agregados, entidades e políticas")
 Rel(application, drizzle, "Usa interfaces de repositório")

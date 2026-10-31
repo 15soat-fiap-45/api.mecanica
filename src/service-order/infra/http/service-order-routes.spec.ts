@@ -195,7 +195,11 @@ function setup(
         vehicleContacts: {
             findByVehicleId: vi.fn(async (id) =>
                 id === 'vehicle-1'
-                    ? { name: 'Ana', email: 'ana@example.com' }
+                    ? {
+                          name: 'Ana',
+                          email: 'ana@example.com',
+                          customerDocument: '52998224725',
+                      }
                     : null,
             ),
         },
@@ -216,6 +220,7 @@ function setup(
             }
             const url = typeof opts.url === 'string' ? opts.url : '';
             const isPublic =
+                url.endsWith('/tracking') ||
                 url.startsWith('/budget-approvals/') ||
                 url.startsWith('/orcamento') ||
                 url.startsWith('/docs');
@@ -842,9 +847,9 @@ describe('Service Order HTTP integration', () => {
                 }
             }
         }
-        expect(operations).toBe(12);
-        expect(bodies).toBe(5);
-        expect(documentedSchemas).toHaveLength(17);
+        expect(operations).toBe(13);
+        expect(bodies).toBe(6);
+        expect(documentedSchemas).toHaveLength(19);
         for (const schema of documentedSchemas) {
             const examples = schema.meta()?.examples;
             if (!Array.isArray(examples)) {
@@ -1033,6 +1038,56 @@ describe('Service Order HTTP integration', () => {
             headers: atendenteHeaders,
         });
         expect(missing.statusCode).toBe(404);
+    });
+
+    it('lets the customer track the order without login using the vehicle owner document', async () => {
+        const { app, orders } = setup({ defaultAuthorization: undefined });
+        orders.set(
+            'os-1',
+            ServiceOrder.create({
+                id: 'os-1',
+                description: 'Troca de pastilhas',
+                vehicleId: 'vehicle-1',
+            }),
+        );
+        const quoted = await app.inject({
+            method: 'POST',
+            url: '/service-orders/os-1/awaiting-approval',
+            headers: { authorization: 'Bearer jwt-mecanico' },
+            payload: { valueCents: 35000 },
+        });
+        expect(quoted.statusCode).toBe(200);
+
+        const response = await app.inject({
+            method: 'POST',
+            url: '/service-orders/os-1/tracking',
+            payload: { document: '529.982.247-25' },
+        });
+        expect(response.statusCode).toBe(200);
+        expect(response.json()).toEqual({
+            serviceOrderId: 'os-1',
+            description: 'Troca de pastilhas',
+            status: 'AWAITING_APPROVAL',
+            valueCents: 35000,
+            history: [
+                { status: 'AWAITING_APPROVAL', recordedAt: expect.any(String) },
+            ],
+        });
+        expect(response.body).not.toContain('mecanico-1');
+
+        for (const [url, document, status] of [
+            ['/service-orders/os-1/tracking', '111.444.777-35', 404],
+            ['/service-orders/missing/tracking', '52998224725', 404],
+            ['/service-orders/os-1/tracking', '123', 400],
+        ] as const) {
+            const denied = await app.inject({
+                method: 'POST',
+                url,
+                payload: { document },
+            });
+            expect(denied.statusCode).toBe(status);
+            expect(denied.body).not.toContain('Troca de pastilhas');
+        }
     });
 
     it('rejects requests without token or with invalid token with 401 Unauthorized on protected routes', async () => {

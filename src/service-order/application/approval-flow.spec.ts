@@ -57,6 +57,7 @@ function setup() {
         findByVehicleId: vi.fn(async () => ({
             name: '<Cliente>',
             email: 'cliente@example.com',
+            customerDocument: '52998224725',
         })),
     };
     const bus = { publish: vi.fn(), subscribe: vi.fn() };

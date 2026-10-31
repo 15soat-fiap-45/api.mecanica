@@ -12,6 +12,7 @@ describe('RegisterServiceOrder Use Case', () => {
         findByVehicleId: vi.fn(async () => ({
             name: 'Ana',
             email: 'ana@example.com',
+            customerDocument: '52998224725',
         })),
     };
 

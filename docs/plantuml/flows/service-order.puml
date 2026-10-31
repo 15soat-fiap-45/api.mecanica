@@ -1,5 +1,5 @@
 @startuml service_order_budget_approval
-title Fluxo dinamico complementar - avaliacao da OS e aprovacao de orcamento
+title Fluxo dinamico complementar - avaliacao da OS, aprovacao de orcamento e consulta pelo cliente
 autonumber
 
 actor "Mecanico ou Gerente" as Operator
@@ -15,6 +15,8 @@ participant DrizzleApprovalRequestRepository as ApprovalRepo
 participant SmtpEmailSender as Mailer
 participant DecideBudgetApproval as DecideUC
 participant MoveServiceOrderToApproved as ApproveHandler
+participant TrackServiceOrder as TrackUC
+participant RegistryVehicleContactLookup as Contacts
 database "PostgreSQL" as DB
 
 == 1. Descricao durante a Avaliacao (opcional, pode ser revisada) ==
@@ -102,4 +104,21 @@ note over ApprovalRepo,OrderRepo
   Se o orcamento/OS tiver sido modificado (budgetVersion divergente),
   retorna HTTP 400 (BudgetChangedError).
 end note
+
+== 4. Consulta do Andamento pelo Cliente (sem login) ==
+Customer -> HTTP: POST /service-orders/:id/tracking { document } (rate-limit 10/min por IP)
+HTTP -> TrackUC: execute({ serviceOrderId, document })
+TrackUC -> OrderRepo: findById(serviceOrderId)
+OrderRepo -> DB: SELECT orders
+TrackUC -> Contacts: findByVehicleId(order.vehicleId)
+Contacts -> DB: SELECT veiculo e cliente
+alt CPF/CNPJ informado = titular do veiculo
+  TrackUC -> OrderRepo: findStatusHistory(serviceOrderId)
+  OrderRepo -> DB: SELECT order_status_history
+  TrackUC --> HTTP: { serviceOrderId, description, status, valueCents, history[{ status, recordedAt }] }
+  HTTP --> Customer: HTTP 200
+else OS inexistente ou documento divergente
+  TrackUC --> HTTP: ServiceOrderNotFoundError
+  HTTP --> Customer: HTTP 404 (nao revela se a OS existe)
+end
 @enduml
