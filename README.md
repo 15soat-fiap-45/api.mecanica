@@ -403,7 +403,7 @@ drizzle/                           # migrações versionadas de auth_users
     - Eric de Sousa Sampaio - rm377720
     - Isabelly Pinheiro Serra - rm377614
     - Luis Henrique de Barros - rm377625
-    - Thiago André Alloa - rm377950
+    - Thiago André Ulloa - rm377950
 - Usuário do Discord:
     - Eric de Sousa Sampaio - ericsampaio.
     - Isabelly Serra - isabelbs
