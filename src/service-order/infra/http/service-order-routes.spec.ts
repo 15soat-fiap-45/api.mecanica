@@ -84,6 +84,23 @@ function setup(
         }),
         findById: vi.fn(async (id) => orders.get(String(id)) ?? null),
         findStatusHistory: vi.fn(async (id) => history.get(String(id)) ?? []),
+        list: vi.fn(async ({ statuses, vehicleId, limit, offset }) => {
+            const matching = [...orders.values()]
+                .filter(
+                    (o) =>
+                        (!statuses || statuses.includes(o.status.value)) &&
+                        (!vehicleId || o.vehicleId === vehicleId),
+                )
+                .map((order) => ({
+                    order,
+                    openedAt:
+                        history.get(order.id.value)?.[0]?.recordedAt ?? null,
+                }));
+            return {
+                items: matching.slice(offset, offset + limit),
+                total: matching.length,
+            };
+        }),
     };
     const budgetRepository: BudgetRepository = {
         save: vi.fn(async (budget: Budget) => {
@@ -889,9 +906,9 @@ describe('Service Order HTTP integration', () => {
                 }
             }
         }
-        expect(operations).toBe(16);
+        expect(operations).toBe(17);
         expect(bodies).toBe(7);
-        expect(documentedSchemas).toHaveLength(23);
+        expect(documentedSchemas).toHaveLength(24);
         for (const schema of documentedSchemas) {
             const examples = schema.meta()?.examples;
             if (!Array.isArray(examples)) {
@@ -1546,5 +1563,76 @@ describe('Service Order HTTP integration', () => {
         expect(emails[0]?.text).toContain(
             `Total do orçamento: ${money(35000)}`,
         );
+    });
+
+    it('lists service orders with filters and pagination for any active role', async () => {
+        const { app } = setup({ defaultAuthorization: undefined });
+        const headers = { authorization: 'Bearer jwt-atendente' };
+        for (const [description, vehicleId] of [
+            ['Freios', 'vehicle-1'],
+            ['Óleo', 'vehicle-1'],
+        ]) {
+            await app.inject({
+                method: 'POST',
+                url: '/service-orders',
+                headers,
+                payload: { description, vehicleId, serviceIds: ['svc-brakes'] },
+            });
+        }
+
+        const unauthenticated = await app.inject({
+            method: 'GET',
+            url: '/service-orders',
+        });
+        expect(unauthenticated.statusCode).toBe(401);
+
+        const all = await app.inject({
+            method: 'GET',
+            url: '/service-orders',
+            headers: { authorization: 'Bearer jwt-estoquista' },
+        });
+        expect(all.statusCode).toBe(200);
+        expect(all.json()).toMatchObject({ total: 2, limit: 20, offset: 0 });
+        expect(all.json().items[0]).toEqual({
+            id: expect.any(String),
+            vehicleId: 'vehicle-1',
+            description: 'Freios',
+            status: 'PENDING',
+            openedAt: expect.any(String),
+            totalCents: 18000,
+        });
+
+        const page = await app.inject({
+            method: 'GET',
+            url: '/service-orders?vehicleId=vehicle-1&status=pending,IN_PROGRESS&limit=1&offset=1',
+            headers,
+        });
+        expect(page.json()).toMatchObject({ total: 2, limit: 1, offset: 1 });
+        expect(
+            page
+                .json()
+                .items.map((i: { description: string }) => i.description),
+        ).toEqual(['Óleo']);
+
+        const none = await app.inject({
+            method: 'GET',
+            url: '/service-orders?status=DELIVERED',
+            headers,
+        });
+        expect(none.json()).toMatchObject({ items: [], total: 0 });
+
+        for (const query of [
+            'status=DONE',
+            'limit=0',
+            'limit=101',
+            'offset=-1',
+        ]) {
+            const invalid = await app.inject({
+                method: 'GET',
+                url: `/service-orders?${query}`,
+                headers,
+            });
+            expect(invalid.statusCode, query).toBe(400);
+        }
     });
 });

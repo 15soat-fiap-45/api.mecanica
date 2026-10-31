@@ -19,6 +19,11 @@ import {
 } from '../../application/ports/actor-resolver.js';
 import type { ServiceOrderUseCases } from '../../composition-root.js';
 import { registerServiceCatalogRoutes } from './service-catalog-routes.js';
+import {
+    DEFAULT_PAGE_SIZE,
+    MAX_PAGE_SIZE,
+} from '../../application/use-cases/list-service-orders.js';
+import { ServiceOrderStatus } from '../../domain/service-order/value-objects/service-order-status.js';
 
 function getApprovalHtml(): string {
     const filePath = path.resolve(process.cwd(), 'public', 'orcamento.html');
@@ -188,6 +193,94 @@ export function registerServiceOrderRoutes(
             );
             return reply.code(201).send(order);
         },
+    );
+
+    typedApp.get(
+        '/service-orders',
+        {
+            preValidation: requireAuth(),
+            schema: {
+                tags: ['Service orders'],
+                summary: 'Lista as ordens de serviço',
+                description:
+                    'Ordenada da OS aberta mais recentemente para a mais antiga. ' +
+                    'Filtros opcionais por status (separados por vírgula) e por veículo.',
+                querystring: z.object({
+                    status: z
+                        .string()
+                        .trim()
+                        .optional()
+                        .transform((value) =>
+                            value
+                                ?.split(',')
+                                .map((s) => s.trim().toUpperCase())
+                                .filter(Boolean),
+                        )
+                        .refine(
+                            (values) =>
+                                !values ||
+                                values.every((v) =>
+                                    ServiceOrderStatus.isValid(v),
+                                ),
+                            'Invalid service order status',
+                        )
+                        .describe('Ex.: PENDING,IN_PROGRESS'),
+                    vehicleId: idSchema.optional(),
+                    limit: z.coerce
+                        .number()
+                        .int()
+                        .min(1)
+                        .max(MAX_PAGE_SIZE)
+                        .default(DEFAULT_PAGE_SIZE),
+                    offset: z.coerce.number().int().min(0).default(0),
+                }),
+                response: {
+                    200: z
+                        .object({
+                            items: z.array(
+                                z.object({
+                                    id: z.string(),
+                                    vehicleId: z.string().nullable(),
+                                    description: z.string(),
+                                    status: z.string(),
+                                    openedAt: z.string().nullable(),
+                                    totalCents: centsSchema,
+                                }),
+                            ),
+                            total: z.number().int().nonnegative(),
+                            limit: z.number().int(),
+                            offset: z.number().int(),
+                        })
+                        .meta({
+                            examples: [
+                                {
+                                    items: [
+                                        {
+                                            id: exampleOrderId,
+                                            vehicleId: exampleVehicleId,
+                                            description: 'Barulho ao frear',
+                                            status: 'IN_PROGRESS',
+                                            openedAt:
+                                                '2026-10-28T12:00:00.000Z',
+                                            totalCents: 35000,
+                                        },
+                                    ],
+                                    total: 1,
+                                    limit: 20,
+                                    offset: 0,
+                                },
+                            ],
+                        }),
+                },
+            },
+        },
+        async (request) =>
+            useCases.listServiceOrders.execute({
+                statuses: request.query.status,
+                vehicleId: request.query.vehicleId,
+                limit: request.query.limit,
+                offset: request.query.offset,
+            }),
     );
 
     typedApp.get(

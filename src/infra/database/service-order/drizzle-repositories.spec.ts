@@ -269,6 +269,73 @@ describe('Drizzle ServiceOrderRepository', () => {
         expect(order?.totalCents).toBe(0);
     });
 
+    it('lists a filtered page with totals, loading children of the page in bulk', async () => {
+        const { database, query } = databaseWith((sql) => {
+            if (sql.includes('count(*)')) return [['3']];
+            if (sql.includes('from "service_order"."supply_items"'))
+                return [
+                    ['os-2', 'PAST-01', 2, false, 'Pastilha', '8500'],
+                    ['os-1', 'OLEO-01', 1, false, null, '4000'],
+                ];
+            if (sql.includes('from "service_order"."order_services"'))
+                return [['os-2', 'svc-1', 'Troca', '18000']];
+            return [
+                [
+                    'os-2',
+                    'Freios',
+                    'vehicle-1',
+                    'IN_PROGRESS',
+                    3,
+                    '2026-10-28 13:00:00+00',
+                ],
+                ['os-1', 'Óleo', 'vehicle-1', 'PENDING', 1, null],
+            ];
+        });
+        const page = await new DrizzleServiceOrderRepository(database).list({
+            statuses: ['PENDING', 'IN_PROGRESS'],
+            vehicleId: 'vehicle-1',
+            limit: 2,
+            offset: 0,
+        });
+
+        const texts = query.mock.calls.map(([config]) => config.text);
+        const select = texts.find((t) => t.includes('min(h.recorded_at)'))!;
+        expect(select).toContain('"service_order"."orders"."status" in');
+        expect(select).toContain('"service_order"."orders"."vehicle_id" =');
+        // Unqualified "id" would bind to h.id inside the correlated subquery.
+        expect(select).toContain('h.order_id = service_order.orders.id');
+        expect(select).toContain('DESC NULLS LAST');
+        expect(select).toContain('limit');
+        expect(page.total).toBe(3);
+        expect(
+            page.items.map(({ order, openedAt }) => ({
+                id: order.id.value,
+                total: order.totalCents,
+                openedAt: openedAt?.toISOString() ?? null,
+            })),
+        ).toEqual([
+            {
+                id: 'os-2',
+                total: 18000 + 17000,
+                openedAt: '2026-10-28T13:00:00.000Z',
+            },
+            { id: 'os-1', total: 4000, openedAt: null },
+        ]);
+    });
+
+    it('lists without filters and skips child queries for an empty page', async () => {
+        const { database, query } = databaseWith((sql) =>
+            sql.includes('count(*)') ? [['0']] : [],
+        );
+        const page = await new DrizzleServiceOrderRepository(database).list({
+            limit: 20,
+            offset: 40,
+        });
+        expect(page).toEqual({ items: [], total: 0 });
+        expect(query).toHaveBeenCalledTimes(2);
+        expect(query.mock.calls[0]?.[0].text).not.toContain('where');
+    });
+
     it('returns null for a missing order', async () => {
         const { database } = databaseWith(() => []);
         expect(
