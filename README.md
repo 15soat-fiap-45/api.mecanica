@@ -2,7 +2,15 @@
 
 Backend do Tech Challenge — FIAP, Fase 1, voltado à gestão de uma oficina mecânica. O projeto está em TypeScript, utiliza Fastify e organiza o domínio em um monólito modular com conceitos de Domain-Driven Design (DDD).
 
-> Este README descreve o estado confirmado no código analisado. Itens previstos no enunciado, mas ainda não comprovados no repositório, estão identificados como pendências.
+## Objetivo do projeto
+
+O projeto tem como objetivo disponibilizar uma API para apoiar a gestão de uma oficina mecânica, centralizando o cadastro de clientes e veículos, a abertura e o acompanhamento de ordens de serviço, a elaboração e aprovação de orçamentos, o controle de peças e insumos e a autenticação dos usuários da oficina.
+
+## Descrição resumida da solução
+
+A solução é uma API REST desenvolvida em TypeScript com Fastify e organizada como um monólito modular. Ela separa o domínio em módulos de autenticação, cadastro de clientes e veículos, ordens de serviço, catálogo de serviços, estoque e indicadores de negócio. Cada módulo concentra suas regras de negócio em casos de uso e entidades próprias, enquanto adaptadores HTTP e de persistência integram a aplicação ao PostgreSQL.
+
+O fluxo principal permite cadastrar o cliente e seu veículo, abrir uma ordem de serviço, associar serviços e peças, calcular o orçamento, enviá-lo para aprovação do cliente por e-mail e acompanhar a evolução da ordem até sua conclusão e entrega. A aplicação utiliza JWT para autenticação, controle de permissões por papel, Swagger para documentação da API, Docker para execução da infraestrutura e testes automatizados para validar as regras de negócio e os fluxos HTTP.
 
 ## Contexto e objetivo
 
@@ -14,28 +22,26 @@ O sistema modela cinco contextos principais:
 - **Auth:** usuários, primeiro acesso, login JWT, papéis e pré-cadastro por gerente.
 - **Business Intelligence:** projeções orientadas a eventos para tempo médio de O.S. (lead time total, execução e entrega) e tempo médio de reposição de estoque (ver [`docs/business-intelligence.md`](docs/business-intelligence.md)).
 
-O documento oficial `Fase 1 - Tech Challenge.pdf` não está presente na árvore analisada; os requisitos acadêmicos considerados aqui são os fornecidos na especificação da tarefa.
-
 ## Estado atual
 
-| Capacidade                                            | Estado                                         | Evidência / observação                                                                                                                 |
-| ----------------------------------------------------- | ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| Cadastrar cliente                                     | **Implementado e validado via integração E2E** | `src/registry/application/use-cases/register-customer.ts`, `DrizzleCustomerRepository` e rota `POST /customers`                        |
-| Consultar cliente por CPF/CNPJ                        | **Implementado**                               | `find-customer-by-document.ts`, `DrizzleCustomerRepository` e `GET /customers/:cpfCnpj`                                                |
-| Cadastrar veículo                                     | **Implementado e validado via integração E2E** | `register-vehicle.ts`, `DrizzleVehicleRepository` e `POST /vehicles`                                                                   |
-| Consultar veículo por placa                           | **Implementado**                               | `find-vehicle-by-plate.ts`, `DrizzleVehicleRepository` e `GET /vehicles/:plate`                                                        |
-| Validação de CPF/CNPJ, e-mail, telefone e placa       | **Implementado**                               | Value objects em `src/registry/domain/**/value-objects`                                                                                |
-| Ordens de serviço no domínio                          | **Implementado e validado via integração E2E** | Repositórios Drizzle, catálogo de serviços, ciclo de execução/entrega e rotas HTTP                                                     |
-| Histórico de fases da OS                              | **Implementado e validado via integração E2E** | Tabela `service_order.order_status_history` (`status`, `value_cents`, `changed_by`, `recorded_at`) e `GET /service-orders/:id/history` |
-| Consulta do andamento da OS pelo cliente              | **Implementado**                               | `track-service-order.ts` e `POST /service-orders/:id/tracking`, pública, validada pelo CPF/CNPJ do titular do veículo; não expõe quem alterou cada fase |
-| Orçamento e aprovação/rejeição                        | **Implementado e validado via integração E2E** | Persistência atômica orçamento+OS, envio de link único por e-mail (MailHog/SMTP), aprovação, recusa, revogação e expiração             |
-| Estoque e reservas                                    | **Parcialmente implementado**                  | Agregados, casos de uso, handlers e testes existem; não há endpoints nem repositórios PostgreSQL correspondentes                       |
-| CRUD de clientes e veículos                          | **Implementado**                               | Clientes e veículos possuem cadastro, consulta, atualização e exclusão; as rotas exigem JWT e permissão `CLIENTE_EDITAR`              |
-| CRUD de serviços (catálogo)                          | **Implementado**                               | Tipos de serviço (`tipo_servico`) e serviços com valor (`servico`) em `/service-types` e `/services`; alteração restrita a `SERVICO_GERENCIAR` (`GERENTE`) |
-| Orçamento automático (serviços + peças)              | **Implementado**                               | Total = soma dos serviços da OS + peças/insumos (quantidade × valor unitário); detalhado no e-mail e em `GET /service-orders/:id/budget` |
-| CRUD de peças e insumos e controle de estoque        | **Implementado**                               | Cadastro com valor unitário, listagem e consulta com saldo disponível, atualização de descrição/unidade/preço e exclusão lógica (`peca_insumo.ativo`); entradas, reservas e baixas movimentam o saldo |
-| Autenticação JWT e autorização administrativa         | **Implementado**                              | `ActorResolver` + `TokenActorResolver` protegem Registry, Service Order e todas as rotas HTTP de Stock; `ESTOQUE_GERENCIAR`, `USUARIO_PRE_CADASTRAR` e `USUARIO_GERENCIAR` permanecem restritas ao `GERENTE` |
-| Dockerfile da aplicação e Docker Compose completo     | **Implementado**                               | `Dockerfile` multi-stage e `docker-compose.yml` na raiz (PostgreSQL, MailHog, migrações e API)                                         |
+| Capacidade                                        | Estado                                         | Evidência / observação                                                                                                                                                                                       |
+| ------------------------------------------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Cadastrar cliente                                 | **Implementado e validado via integração E2E** | `src/registry/application/use-cases/register-customer.ts`, `DrizzleCustomerRepository` e rota `POST /customers`                                                                                              |
+| Consultar cliente por CPF/CNPJ                    | **Implementado**                               | `find-customer-by-document.ts`, `DrizzleCustomerRepository` e `GET /customers/:cpfCnpj`                                                                                                                      |
+| Cadastrar veículo                                 | **Implementado e validado via integração E2E** | `register-vehicle.ts`, `DrizzleVehicleRepository` e `POST /vehicles`                                                                                                                                         |
+| Consultar veículo por placa                       | **Implementado**                               | `find-vehicle-by-plate.ts`, `DrizzleVehicleRepository` e `GET /vehicles/:plate`                                                                                                                              |
+| Validação de CPF/CNPJ, e-mail, telefone e placa   | **Implementado**                               | Value objects em `src/registry/domain/**/value-objects`                                                                                                                                                      |
+| Ordens de serviço no domínio                      | **Implementado e validado via integração E2E** | Repositórios Drizzle, catálogo de serviços, ciclo de execução/entrega e rotas HTTP                                                                                                                           |
+| Histórico de fases da OS                          | **Implementado e validado via integração E2E** | Tabela `service_order.order_status_history` (`status`, `value_cents`, `changed_by`, `recorded_at`) e `GET /service-orders/:id/history`                                                                       |
+| Consulta do andamento da OS pelo cliente          | **Implementado**                               | `track-service-order.ts` e `POST /service-orders/:id/tracking`, pública, validada pelo CPF/CNPJ do titular do veículo; não expõe quem alterou cada fase                                                      |
+| Orçamento e aprovação/rejeição                    | **Implementado e validado via integração E2E** | Persistência atômica orçamento+OS, envio de link único por e-mail (MailHog/SMTP), aprovação, recusa, revogação e expiração                                                                                   |
+| Estoque e reservas                                | **Implementado**                               | Agregados, casos de uso, handlers e testes existem; não há endpoints nem repositórios PostgreSQL correspondentes                                                                                             |
+| CRUD de clientes e veículos                       | **Implementado**                               | Clientes e veículos possuem cadastro, consulta, atualização e exclusão; as rotas exigem JWT e permissão `CLIENTE_EDITAR`                                                                                     |
+| CRUD de serviços (catálogo)                       | **Implementado**                               | Tipos de serviço (`tipo_servico`) e serviços com valor (`servico`) em `/service-types` e `/services`; alteração restrita a `SERVICO_GERENCIAR` (`GERENTE`)                                                   |
+| Orçamento automático (serviços + peças)           | **Implementado**                               | Total = soma dos serviços da OS + peças/insumos (quantidade × valor unitário); detalhado no e-mail e em `GET /service-orders/:id/budget`                                                                     |
+| CRUD de peças e insumos e controle de estoque     | **Implementado**                               | Cadastro com valor unitário, listagem e consulta com saldo disponível, atualização de descrição/unidade/preço e exclusão lógica (`peca_insumo.ativo`); entradas, reservas e baixas movimentam o saldo        |
+| Autenticação JWT e autorização administrativa     | **Implementado**                               | `ActorResolver` + `TokenActorResolver` protegem Registry, Service Order e todas as rotas HTTP de Stock; `ESTOQUE_GERENCIAR`, `USUARIO_PRE_CADASTRAR` e `USUARIO_GERENCIAR` permanecem restritas ao `GERENTE` |
+| Dockerfile da aplicação e Docker Compose completo | **Implementado**                               | `Dockerfile` multi-stage e `docker-compose.yml` na raiz (PostgreSQL, MailHog, migrações e API)                                                                                                               |
 
 ## Arquitetura e DDD
 
@@ -87,6 +93,7 @@ Para identificar o usuário sem quebrar o isolamento entre os módulos `service-
 
 ### Documentação DDD
 
+- [Quadro de documentação DDD no Miro](https://miro.com/app/board/uXjVHn__d18=/)
 - ADR do monólito modular com DDD e Clean Architecture: [`docs/adr/modular-monolith.md`](docs/adr/modular-monolith.md)
 - ADR do Event Bus: [`docs/adr/event-bus.md`](docs/adr/event-bus.md)
 - ADR das projeções de Business Intelligence: [`docs/adr/business-intelligence-projections.md`](docs/adr/business-intelligence-projections.md)
@@ -94,8 +101,9 @@ Para identificar o usuário sem quebrar o isolamento entre os módulos `service-
 - ADR de autenticação e autorização: [`docs/adr/authentication-authorization.md`](docs/adr/authentication-authorization.md)
 - ADR do MailHog no MVP: [`docs/adr/mailhog-mvp-email.md`](docs/adr/mailhog-mvp-email.md)
 - Fluxos Auth: [`docs/plantuml/flows/auth-service.puml`](docs/plantuml/flows/auth-service.puml)
-- Event Storming: **[PREENCHER: inserir link ou caminho do artefato]**
-- Diagrama de domínio / linguagem ubíqua / glossário: **[PREENCHER: inserir link ou caminho]**
+- Event Storming: [`docs/ddd/event-storming-os.pdf`](docs/ddd/event-storming-os.pdf)
+
+- Diagrama de domínio / linguagem ubíqua / glossário:[`docs/ddd/linguagem-ubiqua.pdf`](docs/ddd/linguagem-ubiqua.pdf)
 
 ## Tecnologias
 
@@ -110,11 +118,11 @@ Para identificar o usuário sem quebrar o isolamento entre os módulos `service-
 
 ## Pré-requisitos
 
-- Node.js compatível com TypeScript 6 e as dependências do `package.json`.
-- npm.
-- Docker e Docker Compose (v2.20+ para o Compose completo da raiz, que usa `include`).
+- Node.js e npm em versões recentes, compatíveis com as dependências declaradas no `package.json`.
+- Docker com Docker Compose, preferencialmente uma versão recente com suporte ao recurso `include` utilizado pelo Compose completo da raiz.
+- Git, para clonar o repositório.
 
-As versões exatas de Node.js e npm não estão fixadas por `.nvmrc`, `engines` ou equivalente; **[PREENCHER: registrar versões oficiais da entrega]**.
+Não é necessário utilizar uma versão exata de Node.js, npm ou Docker. O projeto não fixa essas versões por `.nvmrc` ou pelo campo `engines`; basta utilizar versões recentes compatíveis com as ferramentas e dependências do projeto.
 
 ## Configuração do ambiente
 
@@ -153,7 +161,11 @@ BI_REORDER_POINT=<opcional; ponto de reposição usado pelo módulo de BI, padr�
 
 ## Banco de dados
 
-O banco identificado no projeto é o **PostgreSQL**. A escolha está refletida em `pg`, `drizzle-orm/node-postgres`, `drizzle.config.ts`, `infra/postgres/docker-compose.yml` e nos scripts SQL iniciais. O README do banco também registra a justificativa operacional para uso de PostgreSQL com Docker e Drizzle.
+O banco de dados escolhido é o **PostgreSQL**. A decisão foi tomada porque o domínio da oficina é fortemente relacional e exige integridade entre clientes, veículos, ordens de serviço, orçamentos e estoque. O PostgreSQL oferece chaves estrangeiras, constraints, índices únicos parciais e transações ACID, permitindo garantir regras importantes e operações atômicas mesmo em cenários concorrentes.
+
+Além disso, a tecnologia possui ampla documentação, suporte maduro no ecossistema Node.js, integração com `pg` e Drizzle ORM, ausência de custo de licença e uma imagem oficial para execução com Docker Compose. Essas características tornam o ambiente local e de testes mais simples, reprodutível e adequado ao MVP.
+
+A escolha e suas consequências estão detalhadas no [ADR do PostgreSQL](docs/adr/postgresql-database.md). No código, ela está refletida em `pg`, `drizzle-orm/node-postgres`, `drizzle.config.ts`, `infra/postgres/docker-compose.yml` e nos scripts SQL iniciais.
 
 Há duas representações no banco:
 
@@ -259,52 +271,52 @@ O Compose de SonarQube está em [`infra/sonarqube/docker-compose.yml`](infra/son
 
 O Fastify registra Swagger e Swagger UI em `/docs`. A especificação OpenAPI é gerada a partir das rotas registradas.
 
-| Método | Rota                                                       | Finalidade                                                                             | Autenticação / Permissão                         |
-| ------ | ---------------------------------------------------------- | -------------------------------------------------------------------------------------- | ------------------------------------------------ |
-| `GET`  | `/health`                                                  | Verifica a aplicação e executa `SELECT 1` no banco                                     | Não                                              |
-| `POST` | `/auth/first-access`                                       | Troca a senha temporária no primeiro acesso                                            | Não (rate-limit: 5/min por IP)                   |
-| `POST` | `/auth/login`                                              | Autentica usuário ativo e emite JWT HS256 (4h)                                         | Não (rate-limit: 5/min por IP)                   |
-| `POST` | `/users`                                                   | Pré-cadastra usuário com senha temporária                                              | Bearer JWT (`USUARIO_PRE_CADASTRAR` — `GERENTE`) |
-| `POST` | `/customers`                                               | Cadastra cliente                                                                       | Bearer JWT (`CLIENTE_EDITAR` — `ATENDENTE` ou `GERENTE`) |
-| `GET`  | `/customers/:cpfCnpj`                                      | Consulta cliente por CPF/CNPJ                                                          | Bearer JWT (`CLIENTE_EDITAR` — `ATENDENTE` ou `GERENTE`) |
-| `PATCH`| `/customers/:cpfCnpj`                                      | Atualiza somente e-mail e telefone; nome e CPF/CNPJ são imutáveis após o cadastro     | Bearer JWT (`CLIENTE_EDITAR`)                   |
-| `DELETE`| `/customers/:cpfCnpj`                                     | Exclui cliente sem veículos vinculados                                                  | Bearer JWT (`CLIENTE_EDITAR` — `ATENDENTE` ou `GERENTE`) |
-| `POST` | `/vehicles`                                                | Cadastra veículo vinculado a cliente                                                   | Bearer JWT (`CLIENTE_EDITAR` — `ATENDENTE` ou `GERENTE`) |
-| `GET`  | `/vehicles/:plate`                                         | Consulta veículo por placa                                                             | Bearer JWT (`CLIENTE_EDITAR` — `ATENDENTE` ou `GERENTE`) |
-| `PATCH`| `/vehicles/:id`                                             | Atualiza somente a cor; demais dados do veículo são imutáveis após o cadastro         | Bearer JWT (`CLIENTE_EDITAR` — `ATENDENTE` ou `GERENTE`) |
-| `DELETE`| `/vehicles/:id`                                            | Exclui veículo                                                                         | Bearer JWT (`CLIENTE_EDITAR` — `ATENDENTE` ou `GERENTE`) |
-| `POST`/`GET` | `/service-types`                                     | Cadastra / lista tipos de serviço (`name`)                                             | Bearer JWT (`POST`: `SERVICO_GERENCIAR`; `GET`: qualquer papel ativo) |
-| `GET`/`PUT`/`DELETE` | `/service-types/:id`                         | Consulta, renomeia ou exclui tipo de serviço (409 se houver serviços vinculados)       | Bearer JWT (`GET`: qualquer papel ativo; demais: `SERVICO_GERENCIAR`) |
-| `POST`/`GET` | `/services`                                          | Cadastra / lista serviços (`name`, `description`, `priceCents`, `serviceTypeId`; filtro `?serviceTypeId=`) | Bearer JWT (`POST`: `SERVICO_GERENCIAR`; `GET`: qualquer papel ativo) |
-| `GET`/`PUT`/`DELETE` | `/services/:id`                              | Consulta, atualiza ou exclui serviço do catálogo                                       | Bearer JWT (`GET`: qualquer papel ativo; demais: `SERVICO_GERENCIAR`) |
-| `POST` | `/service-orders`                                          | Cadastra OS (`description`, `vehicleId`, `serviceIds` opcional)                        | Bearer JWT (`OS_CRIAR`)                          |
-| `GET`  | `/service-orders`                                          | Lista OS (mais recentes primeiro) com `totalCents` e `openedAt`; filtros `status` (separados por vírgula), `vehicleId`, `limit` (1–100, padrão 20) e `offset` | Bearer JWT (qualquer papel ativo)                |
-| `GET`  | `/service-orders/:serviceOrderId`                          | Consulta OS (`services`, `supplies` com valor unitário e `totalCents`)                   | Bearer JWT (qualquer papel ativo)                |
-| `POST` | `/service-orders/:serviceOrderId/services`                 | Inclui serviço do catálogo na OS em `PENDING` (copia nome e valor)                      | Bearer JWT (`OS_CONCLUIR`)                       |
-| `DELETE` | `/service-orders/:serviceOrderId/services/:serviceId`    | Remove serviço da OS em `PENDING`                                                      | Bearer JWT (`OS_CONCLUIR`)                       |
-| `GET`  | `/service-orders/:serviceOrderId/budget`                   | Detalha o orçamento: status, serviços, peças, subtotais, `totalCents` (orçado) e `currentTotalCents` (atual) | Bearer JWT (qualquer papel ativo)                |
-| `GET`  | `/service-orders/:serviceOrderId/history`                  | Consulta histórico de fases da OS (`status`, `valueCents`, `changedBy` e `recordedAt`) | Bearer JWT (qualquer papel ativo)                |
-| `POST` | `/service-orders/:serviceOrderId/tracking`                 | Cliente consulta status atual, valor e histórico de fases (`status`, `recordedAt`) informando `document` (CPF/CNPJ do titular do veículo) no corpo; documento divergente responde 404 | Pública (rate-limit: 10/min por IP) |
-| `POST` | `/service-orders/:serviceOrderId/supplies`                 | Inclui insumo (`partCode`, `quantity`)                                                 | Bearer JWT (`ESTOQUE_BAIXAR`)                    |
-| `POST` | `/service-orders/:serviceOrderId/supplies/:partCode/usage` | Registra uso do insumo                                                                 | Bearer JWT (`ESTOQUE_BAIXAR`)                    |
-| `PATCH` | `/service-orders/:serviceOrderId/description`             | Atualiza a descrição durante a avaliação da OS em `PENDING`                            | Bearer JWT (`OS_CONCLUIR`)                       |
-| `POST` | `/service-orders/:serviceOrderId/awaiting-approval`        | Gera o orçamento (serviços + peças), atualiza `description` (opcional) e envia o link de aprovação com o detalhamento | Bearer JWT (`OS_CONCLUIR`)               |
-| `POST` | `/service-orders/:serviceOrderId/start`                    | Inicia execução da OS (`IN_PROGRESS`)                                                  | Bearer JWT (`OS_CONCLUIR`)                       |
-| `POST` | `/service-orders/:serviceOrderId/finish`                   | Finaliza execução da OS (`COMPLETED`) e notifica cliente                               | Bearer JWT (`OS_CONCLUIR`)                       |
-| `POST` | `/service-orders/:serviceOrderId/deliver`                  | Registra entrega do veículo (`DELIVERED`)                                              | Bearer JWT (`OS_CRIAR`)                          |
-| `POST` | `/service-orders/:serviceOrderId/cancel`                   | Cancela OS                                                                             | Bearer JWT (`OS_CRIAR`)                          |
-| `POST` | `/budget-approvals/decide`                                 | Confirma aprovação ou recusa do orçamento por token                                    | Pública (link de uso único enviado por e-mail)   |
-| `GET`  | `/orcamento/:token` e `/orcamento`                         | Página web de aprovação/recusa do orçamento                                            | Pública                                          |
-| `GET`  | `/bi/service-orders/lead-time`                             | Consulta tempo médio de OS (total, execução e entrega)                                 | Bearer JWT (`BI_VISUALIZAR` — `GERENTE`)         |
-| `GET`  | `/bi/stock/restock-lead-time`                              | Consulta tempo médio de reposição de estoque (geral e por peça)                        | Bearer JWT (`BI_VISUALIZAR` — `GERENTE`)         |
-| `POST` | `/stock/parts`                                             | Cadastra peça/insumo (`description`, `partCode`, `quantity` inicial, `unitOfMeasure`, `unitPriceCents`); código duplicado retorna 409 | Bearer JWT (`ESTOQUE_GERENCIAR` — `GERENTE`)     |
-| `GET`  | `/stock/parts`                                             | Lista peças ativas com saldo disponível (`quantity`), unidade e preço                  | Bearer JWT (qualquer papel ativo)                |
-| `GET`  | `/stock/parts/:partCode`                                   | Consulta peça ativa com saldo disponível                                               | Bearer JWT (qualquer papel ativo)                |
-| `PUT`  | `/stock/parts/:partCode`                                   | Atualiza descrição, unidade e preço; código e saldo não mudam por aqui                 | Bearer JWT (`ESTOQUE_GERENCIAR` — `GERENTE`)     |
-| `DELETE` | `/stock/parts/:partCode`                                 | Exclusão lógica: mantém o histórico, sai do catálogo e não pode mais entrar em OS; 409 com reserva em aberto | Bearer JWT (`ESTOQUE_GERENCIAR` — `GERENTE`)     |
-| `POST` | `/stock/entries`                                           | Registra entrada de estoque (`partCode`, `quantity`)                                   | Bearer JWT (`ESTOQUE_GERENCIAR` — `GERENTE`)     |
-| `POST` | `/stock/reservations`, `/stock/reservations/:serviceOrderId/cancel`, `/stock/write-offs/:serviceOrderId` | Reserva, cancela reservas e baixa insumos de uma OS | Bearer JWT (`ESTOQUE_GERENCIAR` — `GERENTE`)     |
-| `GET`  | `/docs`                                                    | Interface Swagger UI                                                                   | Não                                              |
+| Método               | Rota                                                                                                     | Finalidade                                                                                                                                                                            | Autenticação / Permissão                                              |
+| -------------------- | -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| `GET`                | `/health`                                                                                                | Verifica a aplicação e executa `SELECT 1` no banco                                                                                                                                    | Não                                                                   |
+| `POST`               | `/auth/first-access`                                                                                     | Troca a senha temporária no primeiro acesso                                                                                                                                           | Não (rate-limit: 5/min por IP)                                        |
+| `POST`               | `/auth/login`                                                                                            | Autentica usuário ativo e emite JWT HS256 (4h)                                                                                                                                        | Não (rate-limit: 5/min por IP)                                        |
+| `POST`               | `/users`                                                                                                 | Pré-cadastra usuário com senha temporária                                                                                                                                             | Bearer JWT (`USUARIO_PRE_CADASTRAR` — `GERENTE`)                      |
+| `POST`               | `/customers`                                                                                             | Cadastra cliente                                                                                                                                                                      | Bearer JWT (`CLIENTE_EDITAR` — `ATENDENTE` ou `GERENTE`)              |
+| `GET`                | `/customers/:cpfCnpj`                                                                                    | Consulta cliente por CPF/CNPJ                                                                                                                                                         | Bearer JWT (`CLIENTE_EDITAR` — `ATENDENTE` ou `GERENTE`)              |
+| `PATCH`              | `/customers/:cpfCnpj`                                                                                    | Atualiza somente e-mail e telefone; nome e CPF/CNPJ são imutáveis após o cadastro                                                                                                     | Bearer JWT (`CLIENTE_EDITAR`)                                         |
+| `DELETE`             | `/customers/:cpfCnpj`                                                                                    | Exclui cliente sem veículos vinculados                                                                                                                                                | Bearer JWT (`CLIENTE_EDITAR` — `ATENDENTE` ou `GERENTE`)              |
+| `POST`               | `/vehicles`                                                                                              | Cadastra veículo vinculado a cliente                                                                                                                                                  | Bearer JWT (`CLIENTE_EDITAR` — `ATENDENTE` ou `GERENTE`)              |
+| `GET`                | `/vehicles/:plate`                                                                                       | Consulta veículo por placa                                                                                                                                                            | Bearer JWT (`CLIENTE_EDITAR` — `ATENDENTE` ou `GERENTE`)              |
+| `PATCH`              | `/vehicles/:id`                                                                                          | Atualiza somente a cor; demais dados do veículo são imutáveis após o cadastro                                                                                                         | Bearer JWT (`CLIENTE_EDITAR` — `ATENDENTE` ou `GERENTE`)              |
+| `DELETE`             | `/vehicles/:id`                                                                                          | Exclui veículo                                                                                                                                                                        | Bearer JWT (`CLIENTE_EDITAR` — `ATENDENTE` ou `GERENTE`)              |
+| `POST`/`GET`         | `/service-types`                                                                                         | Cadastra / lista tipos de serviço (`name`)                                                                                                                                            | Bearer JWT (`POST`: `SERVICO_GERENCIAR`; `GET`: qualquer papel ativo) |
+| `GET`/`PUT`/`DELETE` | `/service-types/:id`                                                                                     | Consulta, renomeia ou exclui tipo de serviço (409 se houver serviços vinculados)                                                                                                      | Bearer JWT (`GET`: qualquer papel ativo; demais: `SERVICO_GERENCIAR`) |
+| `POST`/`GET`         | `/services`                                                                                              | Cadastra / lista serviços (`name`, `description`, `priceCents`, `serviceTypeId`; filtro `?serviceTypeId=`)                                                                            | Bearer JWT (`POST`: `SERVICO_GERENCIAR`; `GET`: qualquer papel ativo) |
+| `GET`/`PUT`/`DELETE` | `/services/:id`                                                                                          | Consulta, atualiza ou exclui serviço do catálogo                                                                                                                                      | Bearer JWT (`GET`: qualquer papel ativo; demais: `SERVICO_GERENCIAR`) |
+| `POST`               | `/service-orders`                                                                                        | Cadastra OS (`description`, `vehicleId`, `serviceIds` opcional)                                                                                                                       | Bearer JWT (`OS_CRIAR`)                                               |
+| `GET`                | `/service-orders`                                                                                        | Lista OS (mais recentes primeiro) com `totalCents` e `openedAt`; filtros `status` (separados por vírgula), `vehicleId`, `limit` (1–100, padrão 20) e `offset`                         | Bearer JWT (qualquer papel ativo)                                     |
+| `GET`                | `/service-orders/:serviceOrderId`                                                                        | Consulta OS (`services`, `supplies` com valor unitário e `totalCents`)                                                                                                                | Bearer JWT (qualquer papel ativo)                                     |
+| `POST`               | `/service-orders/:serviceOrderId/services`                                                               | Inclui serviço do catálogo na OS em `PENDING` (copia nome e valor)                                                                                                                    | Bearer JWT (`OS_CONCLUIR`)                                            |
+| `DELETE`             | `/service-orders/:serviceOrderId/services/:serviceId`                                                    | Remove serviço da OS em `PENDING`                                                                                                                                                     | Bearer JWT (`OS_CONCLUIR`)                                            |
+| `GET`                | `/service-orders/:serviceOrderId/budget`                                                                 | Detalha o orçamento: status, serviços, peças, subtotais, `totalCents` (orçado) e `currentTotalCents` (atual)                                                                          | Bearer JWT (qualquer papel ativo)                                     |
+| `GET`                | `/service-orders/:serviceOrderId/history`                                                                | Consulta histórico de fases da OS (`status`, `valueCents`, `changedBy` e `recordedAt`)                                                                                                | Bearer JWT (qualquer papel ativo)                                     |
+| `POST`               | `/service-orders/:serviceOrderId/tracking`                                                               | Cliente consulta status atual, valor e histórico de fases (`status`, `recordedAt`) informando `document` (CPF/CNPJ do titular do veículo) no corpo; documento divergente responde 404 | Pública (rate-limit: 10/min por IP)                                   |
+| `POST`               | `/service-orders/:serviceOrderId/supplies`                                                               | Inclui insumo (`partCode`, `quantity`)                                                                                                                                                | Bearer JWT (`ESTOQUE_BAIXAR`)                                         |
+| `POST`               | `/service-orders/:serviceOrderId/supplies/:partCode/usage`                                               | Registra uso do insumo                                                                                                                                                                | Bearer JWT (`ESTOQUE_BAIXAR`)                                         |
+| `PATCH`              | `/service-orders/:serviceOrderId/description`                                                            | Atualiza a descrição durante a avaliação da OS em `PENDING`                                                                                                                           | Bearer JWT (`OS_CONCLUIR`)                                            |
+| `POST`               | `/service-orders/:serviceOrderId/awaiting-approval`                                                      | Gera o orçamento (serviços + peças), atualiza `description` (opcional) e envia o link de aprovação com o detalhamento                                                                 | Bearer JWT (`OS_CONCLUIR`)                                            |
+| `POST`               | `/service-orders/:serviceOrderId/start`                                                                  | Inicia execução da OS (`IN_PROGRESS`)                                                                                                                                                 | Bearer JWT (`OS_CONCLUIR`)                                            |
+| `POST`               | `/service-orders/:serviceOrderId/finish`                                                                 | Finaliza execução da OS (`COMPLETED`) e notifica cliente                                                                                                                              | Bearer JWT (`OS_CONCLUIR`)                                            |
+| `POST`               | `/service-orders/:serviceOrderId/deliver`                                                                | Registra entrega do veículo (`DELIVERED`)                                                                                                                                             | Bearer JWT (`OS_CRIAR`)                                               |
+| `POST`               | `/service-orders/:serviceOrderId/cancel`                                                                 | Cancela OS                                                                                                                                                                            | Bearer JWT (`OS_CRIAR`)                                               |
+| `POST`               | `/budget-approvals/decide`                                                                               | Confirma aprovação ou recusa do orçamento por token                                                                                                                                   | Pública (link de uso único enviado por e-mail)                        |
+| `GET`                | `/orcamento/:token` e `/orcamento`                                                                       | Página web de aprovação/recusa do orçamento                                                                                                                                           | Pública                                                               |
+| `GET`                | `/bi/service-orders/lead-time`                                                                           | Consulta tempo médio de OS (total, execução e entrega)                                                                                                                                | Bearer JWT (`BI_VISUALIZAR` — `GERENTE`)                              |
+| `GET`                | `/bi/stock/restock-lead-time`                                                                            | Consulta tempo médio de reposição de estoque (geral e por peça)                                                                                                                       | Bearer JWT (`BI_VISUALIZAR` — `GERENTE`)                              |
+| `POST`               | `/stock/parts`                                                                                           | Cadastra peça/insumo (`description`, `partCode`, `quantity` inicial, `unitOfMeasure`, `unitPriceCents`); código duplicado retorna 409                                                 | Bearer JWT (`ESTOQUE_GERENCIAR` — `GERENTE`)                          |
+| `GET`                | `/stock/parts`                                                                                           | Lista peças ativas com saldo disponível (`quantity`), unidade e preço                                                                                                                 | Bearer JWT (qualquer papel ativo)                                     |
+| `GET`                | `/stock/parts/:partCode`                                                                                 | Consulta peça ativa com saldo disponível                                                                                                                                              | Bearer JWT (qualquer papel ativo)                                     |
+| `PUT`                | `/stock/parts/:partCode`                                                                                 | Atualiza descrição, unidade e preço; código e saldo não mudam por aqui                                                                                                                | Bearer JWT (`ESTOQUE_GERENCIAR` — `GERENTE`)                          |
+| `DELETE`             | `/stock/parts/:partCode`                                                                                 | Exclusão lógica: mantém o histórico, sai do catálogo e não pode mais entrar em OS; 409 com reserva em aberto                                                                          | Bearer JWT (`ESTOQUE_GERENCIAR` — `GERENTE`)                          |
+| `POST`               | `/stock/entries`                                                                                         | Registra entrada de estoque (`partCode`, `quantity`)                                                                                                                                  | Bearer JWT (`ESTOQUE_GERENCIAR` — `GERENTE`)                          |
+| `POST`               | `/stock/reservations`, `/stock/reservations/:serviceOrderId/cancel`, `/stock/write-offs/:serviceOrderId` | Reserva, cancela reservas e baixa insumos de uma OS                                                                                                                                   | Bearer JWT (`ESTOQUE_GERENCIAR` — `GERENTE`)                          |
+| `GET`                | `/docs`                                                                                                  | Interface Swagger UI                                                                                                                                                                  | Não                                                                   |
 
 A validação de payload usa Zod; erros de validação retornam HTTP 400 e exceções de aplicação/domínio são convertidas pelo error handler central em `src/app.ts`.
 
@@ -383,22 +395,18 @@ drizzle/                           # migrações versionadas de auth_users
 
 ## Links e informações da entrega
 
-- Repositório: **[PREENCHER: inserir URL pública do repositório]**
-- Vídeo de apresentação: **[PREENCHER: inserir link público do YouTube]**
-- Documentação DDD: **[PREENCHER: inserir link público ou manter os caminhos locais acima]**
-- Grupo: **[PREENCHER]**
+- Repositório: [api.mecanica no GitHub](https://github.com/15soat-fiap-45/api.mecanica)
+- Vídeo de apresentação: [Assistir ao vídeo da entrega](https://youtu.be/wlS_F2O1Etg)
+- Documentação DDD: [Quadro no Miro](https://miro.com/app/board/uXjVHn__d18=/)
+- Grupo: **45**
 - Integrantes e RMs:
     - Eric de Sousa Sampaio - rm377720
     - Isabelly Pinheiro Serra - rm377614
     - Luis Henrique de Barros - rm377625
-    - Thiago André Alloa - rm377950
+    - Thiago André Ulloa - rm377950
 - Usuário do Discord:
     - Eric de Sousa Sampaio - ericsampaio.
     - Isabelly Serra - isabelbs
     - Luis Henrique de Barros - luisao0680
     - Thiago Ulloa - tafareid
 - Branch entregue: `main`
-
-## Status da documentação
-
-README elaborado a partir da árvore do repositório, `package.json`, configurações TypeScript/Drizzle, código de domínio/aplicação, rotas, testes, Docker e documentação existente. Os placeholders devem ser preenchidos manualmente antes da entrega acadêmica final.
