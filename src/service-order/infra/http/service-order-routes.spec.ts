@@ -14,6 +14,12 @@ import { actorContext } from '../../application/ports/actor-resolver.js';
 import { TokenActorResolver } from '../../../infra/token-actor-resolver.js';
 import type { EmailMessage } from '../../application/ports/email-sender.js';
 import { z } from 'zod';
+import {
+    InMemoryServiceRepository,
+    InMemoryServiceTypeRepository,
+} from '../persistence/in-memory-catalog-repositories.js';
+import { Service } from '../../domain/catalog/service.js';
+import { ServiceType } from '../../domain/catalog/service-type.js';
 
 vi.mock('../../../infra/database/connection.js', () => ({
     db: {},
@@ -53,9 +59,7 @@ function setup(
             .at(-1);
         list.push({
             status,
-            valueCents: orderBudget
-                ? orderBudget.totalCents
-                : (orders.get(orderId)?.valueCents ?? null),
+            valueCents: orderBudget ? orderBudget.totalCents : null,
             changedBy: actorContext.getStore() ?? null,
             recordedAt: new Date(),
         });
@@ -188,8 +192,30 @@ function setup(
         'jwt-mecanico': { id: 'mecanico-1', role: 'MECANICO' as const },
         'jwt-estoquista': { id: 'estoquista-1', role: 'ESTOQUISTA' as const },
     };
+    const serviceTypes = new InMemoryServiceTypeRepository();
+    const services = new InMemoryServiceRepository();
+    void serviceTypes.save(
+        ServiceType.create({ id: 'type-1', name: 'Freios' }),
+    );
+    void services.save(
+        Service.create({
+            id: 'svc-brakes',
+            name: 'Troca de pastilhas',
+            priceCents: 18000,
+            serviceTypeId: 'type-1',
+        }),
+    );
     const serviceOrder = serviceOrderCompositionRoot(bus, {
         serviceOrderRepository,
+        serviceTypeRepository: serviceTypes,
+        serviceRepository: services,
+        partCatalog: {
+            findByPartCode: vi.fn(async (code: string) =>
+                code.trim().toUpperCase().startsWith('PAST')
+                    ? { description: 'Pastilha de freio', unitPriceCents: 8500 }
+                    : { description: 'Insumo', unitPriceCents: 1000 },
+            ),
+        },
         budgetRepository,
         approvalRequestRepository: approvals,
         vehicleContacts: {
@@ -250,7 +276,23 @@ function setup(
         events,
         serviceOrderRepository,
         budgetRepository,
+        services,
+        serviceTypes,
     };
+}
+
+/** PENDING order with a catalog service priced at `priceCents`. */
+function quotedOrder(
+    props: Parameters<typeof ServiceOrder.create>[0],
+    priceCents = 35000,
+): ServiceOrder {
+    const order = ServiceOrder.create(props);
+    order.addService({
+        serviceId: 'svc-quoted',
+        name: 'Serviço orçado',
+        priceCents,
+    });
+    return order;
 }
 
 describe('Service Order HTTP integration', () => {
@@ -260,7 +302,7 @@ describe('Service Order HTTP integration', () => {
         });
         orders.set(
             'os-1',
-            ServiceOrder.create({
+            quotedOrder({
                 id: 'os-1',
                 description: 'Barulho nos freios',
                 vehicleId: 'vehicle-1',
@@ -295,7 +337,6 @@ describe('Service Order HTTP integration', () => {
         const response = await app.inject({
             method: 'POST',
             url: '/service-orders/os-1/awaiting-approval',
-            payload: { valueCents: 35000 },
         });
         expect(response.statusCode).toBe(200);
         expect(emails[0]?.text).toContain(
@@ -309,7 +350,7 @@ describe('Service Order HTTP integration', () => {
         });
         orders.set(
             'os-1',
-            ServiceOrder.create({
+            quotedOrder({
                 id: 'os-1',
                 description: 'Barulho',
                 vehicleId: 'vehicle-1',
@@ -319,7 +360,6 @@ describe('Service Order HTTP integration', () => {
             method: 'POST',
             url: '/service-orders/os-1/awaiting-approval',
             payload: {
-                valueCents: 35000,
                 description: '  Substituir pastilhas.  ',
             },
         });
@@ -345,11 +385,7 @@ describe('Service Order HTTP integration', () => {
         for (const description of ['', ' \n ', null, 42]) {
             for (const [method, url, extra] of [
                 ['PATCH', '/service-orders/os-1/description', {}],
-                [
-                    'POST',
-                    '/service-orders/os-1/awaiting-approval',
-                    { valueCents: 35000 },
-                ],
+                ['POST', '/service-orders/os-1/awaiting-approval', {}],
             ] as const) {
                 const response = await app.inject({
                     method,
@@ -459,7 +495,8 @@ describe('Service Order HTTP integration', () => {
             description: 'Troca de óleo',
             status: 'PENDING',
             vehicleId: 'vehicle-1',
-            valueCents: null,
+            services: [],
+            totalCents: 0,
         });
         expect(order.id).not.toBe('caller-id');
         expect(orders.has(order.id)).toBe(true);
@@ -491,6 +528,8 @@ describe('Service Order HTTP integration', () => {
             serviceOrderId: 'os-1',
             partCode: 'PAST-01',
             quantity: 2,
+            description: 'Pastilha de freio',
+            unitPriceCents: 8500,
         });
         expect(events).toEqual([
             expect.objectContaining({
@@ -508,17 +547,24 @@ describe('Service Order HTTP integration', () => {
             description: 'Freios',
             vehicleId: 'vehicle-1',
         });
-        order.addSupply('PAST-01', 2);
+        order.addSupply('PAST-01', 2, { unitPriceCents: 1000 });
+        order.addService({
+            serviceId: 'svc-1',
+            name: 'Troca de pastilhas',
+            priceCents: 10345,
+        });
         order.pullEvents();
         orders.set('os-1', order);
 
         const approved = await app.inject({
             method: 'POST',
             url: '/service-orders/os-1/awaiting-approval',
-            payload: { valueCents: 12345 },
         });
         expect(approved.statusCode).toBe(200);
-        expect(approved.json()).toEqual({ status: 'AWAITING_APPROVAL' });
+        expect(approved.json()).toEqual({
+            status: 'AWAITING_APPROVAL',
+            totalCents: 12345,
+        });
         expect(emails).toHaveLength(1);
         const token = emails[0]!.text.match(
             /orcamento\/([A-Za-z0-9_-]{43})/,
@@ -575,12 +621,10 @@ describe('Service Order HTTP integration', () => {
         } = setup();
         orders.set(
             'os-1',
-            ServiceOrder.create({
-                id: 'os-1',
-                vehicleId: 'vehicle-1',
-                description: 'Freios',
-                valueCents: 12345,
-            }),
+            quotedOrder(
+                { id: 'os-1', vehicleId: 'vehicle-1', description: 'Freios' },
+                12345,
+            ),
         );
         emailSender.send.mockRejectedValueOnce(new Error('SMTP down'));
         const response = await app.inject({
@@ -608,16 +652,14 @@ describe('Service Order HTTP integration', () => {
         const { app, orders, budgets, emails } = setup();
         orders.set(
             'os-1',
-            ServiceOrder.create({
-                id: 'os-1',
-                vehicleId: 'vehicle-1',
-                description: 'Freios',
-            }),
+            quotedOrder(
+                { id: 'os-1', vehicleId: 'vehicle-1', description: 'Freios' },
+                12345,
+            ),
         );
         await app.inject({
             method: 'POST',
             url: '/service-orders/os-1/awaiting-approval',
-            payload: { valueCents: 12345 },
         });
         const token = emails[0]!.text.match(
             /orcamento\/([A-Za-z0-9_-]{43})/,
@@ -847,9 +889,9 @@ describe('Service Order HTTP integration', () => {
                 }
             }
         }
-        expect(operations).toBe(13);
-        expect(bodies).toBe(6);
-        expect(documentedSchemas).toHaveLength(19);
+        expect(operations).toBe(16);
+        expect(bodies).toBe(7);
+        expect(documentedSchemas).toHaveLength(23);
         for (const schema of documentedSchemas) {
             const examples = schema.meta()?.examples;
             if (!Array.isArray(examples)) {
@@ -899,15 +941,16 @@ describe('Service Order HTTP integration', () => {
         expect(baseRoute.body).toContain('Oficina Mecânica');
     });
 
-    it('lists an order with its associated supplies and valueCents and moves it through execution and delivery', async () => {
+    it('lists an order with its services, priced supplies and total and moves it through execution and delivery', async () => {
         const { app, orders, emails } = setup();
-        const order = ServiceOrder.create({
-            id: 'os-1',
-            vehicleId: 'vehicle-1',
-            description: 'Freios',
-            valueCents: 12345,
+        const order = quotedOrder(
+            { id: 'os-1', vehicleId: 'vehicle-1', description: 'Freios' },
+            12345,
+        );
+        order.addSupply('PAST-01', 2, {
+            description: 'Pastilha',
+            unitPriceCents: 1000,
         });
-        order.addSupply('PAST-01', 2);
         order.approve();
         orders.set('os-1', order);
         const listed = await app.inject({
@@ -920,8 +963,24 @@ describe('Service Order HTTP integration', () => {
             vehicleId: 'vehicle-1',
             description: 'Freios',
             status: 'APPROVED',
-            valueCents: 12345,
-            supplies: [{ partCode: 'PAST-01', quantity: 2, used: false }],
+            services: [
+                {
+                    serviceId: 'svc-quoted',
+                    name: 'Serviço orçado',
+                    priceCents: 12345,
+                },
+            ],
+            supplies: [
+                {
+                    partCode: 'PAST-01',
+                    description: 'Pastilha',
+                    quantity: 2,
+                    unitPriceCents: 1000,
+                    totalCents: 2000,
+                    used: false,
+                },
+            ],
+            totalCents: 14345,
         });
         for (const [path, status] of [
             ['start', 'IN_PROGRESS'],
@@ -940,7 +999,7 @@ describe('Service Order HTTP integration', () => {
         ).toBe(true);
     });
 
-    it('accepts valueCents at order creation and transitions to awaiting approval without requiring an existing budget id', async () => {
+    it('includes catalog services at order creation and generates the budget from them without requiring a budget id', async () => {
         const { app, budgets } = setup();
         const created = await app.inject({
             method: 'POST',
@@ -948,11 +1007,18 @@ describe('Service Order HTTP integration', () => {
             payload: {
                 description: 'Freios',
                 vehicleId: 'vehicle-1',
-                valueCents: 12345,
+                serviceIds: ['svc-brakes'],
             },
         });
         expect(created.statusCode).toBe(201);
-        expect(created.json().valueCents).toBe(12345);
+        expect(created.json().services).toEqual([
+            {
+                serviceId: 'svc-brakes',
+                name: 'Troca de pastilhas',
+                priceCents: 18000,
+            },
+        ]);
+        expect(created.json().totalCents).toBe(18000);
         const orderId = created.json().id as string;
 
         const awaiting = await app.inject({
@@ -961,7 +1027,7 @@ describe('Service Order HTTP integration', () => {
         });
         expect(awaiting.statusCode).toBe(200);
         expect(awaiting.json().status).toBe('AWAITING_APPROVAL');
-        expect([...budgets.values()][0]?.totalCents).toBe(12345);
+        expect([...budgets.values()][0]?.totalCents).toBe(18000);
     });
 
     it('returns the chronological status history with inspection value and actor once quoted', async () => {
@@ -972,7 +1038,11 @@ describe('Service Order HTTP integration', () => {
             method: 'POST',
             url: '/service-orders',
             headers: atendenteHeaders,
-            payload: { description: 'Freios', vehicleId: 'vehicle-1' },
+            payload: {
+                description: 'Freios',
+                vehicleId: 'vehicle-1',
+                serviceIds: ['svc-brakes'],
+            },
         });
         const orderId = created.json().id as string;
 
@@ -980,7 +1050,6 @@ describe('Service Order HTTP integration', () => {
             method: 'POST',
             url: `/service-orders/${orderId}/awaiting-approval`,
             headers: mecanicoHeaders,
-            payload: { valueCents: 12345 },
         });
         const token = emails[0]!.text.match(
             /orcamento\/([A-Za-z0-9_-]{43})/,
@@ -1013,19 +1082,19 @@ describe('Service Order HTTP integration', () => {
                 },
                 {
                     status: 'AWAITING_APPROVAL',
-                    valueCents: 12345,
+                    valueCents: 18000,
                     changedBy: 'mecanico-1',
                     recordedAt: expect.any(String),
                 },
                 {
                     status: 'APPROVED',
-                    valueCents: 12345,
+                    valueCents: 18000,
                     changedBy: null,
                     recordedAt: expect.any(String),
                 },
                 {
                     status: 'IN_PROGRESS',
-                    valueCents: 12345,
+                    valueCents: 18000,
                     changedBy: 'mecanico-1',
                     recordedAt: expect.any(String),
                 },
@@ -1044,7 +1113,7 @@ describe('Service Order HTTP integration', () => {
         const { app, orders } = setup({ defaultAuthorization: undefined });
         orders.set(
             'os-1',
-            ServiceOrder.create({
+            quotedOrder({
                 id: 'os-1',
                 description: 'Troca de pastilhas',
                 vehicleId: 'vehicle-1',
@@ -1054,7 +1123,6 @@ describe('Service Order HTTP integration', () => {
             method: 'POST',
             url: '/service-orders/os-1/awaiting-approval',
             headers: { authorization: 'Bearer jwt-mecanico' },
-            payload: { valueCents: 35000 },
         });
         expect(quoted.statusCode).toBe(200);
 
@@ -1068,7 +1136,7 @@ describe('Service Order HTTP integration', () => {
             serviceOrderId: 'os-1',
             description: 'Troca de pastilhas',
             status: 'AWAITING_APPROVAL',
-            valueCents: 35000,
+            totalCents: 35000,
             history: [
                 { status: 'AWAITING_APPROVAL', recordedAt: expect.any(String) },
             ],
@@ -1196,12 +1264,10 @@ describe('Service Order HTTP integration', () => {
         const { app, orders, budgets, serviceOrderRepository } = setup();
         orders.set(
             'os-1',
-            ServiceOrder.create({
-                id: 'os-1',
-                description: 'Freios',
-                vehicleId: 'vehicle-1',
-                valueCents: 12345,
-            }),
+            quotedOrder(
+                { id: 'os-1', description: 'Freios', vehicleId: 'vehicle-1' },
+                12345,
+            ),
         );
         vi.mocked(serviceOrderRepository.save).mockRejectedValueOnce(
             new Error('db write failed'),
@@ -1248,13 +1314,16 @@ describe('Service Order HTTP integration', () => {
         const created = await app.inject({
             method: 'POST',
             url: '/service-orders',
-            payload: { description: 'Freios', vehicleId: 'vehicle-1' },
+            payload: {
+                description: 'Freios',
+                vehicleId: 'vehicle-1',
+                serviceIds: ['svc-brakes'],
+            },
         });
         const cancelledViaHttpId = created.json().id as string;
         await app.inject({
             method: 'POST',
             url: `/service-orders/${cancelledViaHttpId}/awaiting-approval`,
-            payload: { valueCents: 12345 },
         });
         await app.inject({
             method: 'POST',
@@ -1298,6 +1367,184 @@ describe('Service Order HTTP integration', () => {
         expect(orders.get('os-waiting-101')?.status.value).toBe('REJECTED');
         expect(budgets.get('budget-waiting-101')?.status.value).toBe(
             'REJECTED',
+        );
+    });
+
+    it('includes and removes catalog services while pending and details the budget for the attendant', async () => {
+        const { app, orders } = setup({ defaultAuthorization: undefined });
+        const mechanic = { authorization: 'Bearer jwt-mecanico' };
+        const attendant = { authorization: 'Bearer jwt-atendente' };
+        orders.set(
+            'os-1',
+            ServiceOrder.create({
+                id: 'os-1',
+                description: 'Freios',
+                vehicleId: 'vehicle-1',
+            }),
+        );
+
+        const noBudgetYet = await app.inject({
+            method: 'GET',
+            url: '/service-orders/os-1/budget',
+            headers: attendant,
+        });
+        expect(noBudgetYet.statusCode).toBe(404);
+
+        const empty = await app.inject({
+            method: 'POST',
+            url: '/service-orders/os-1/awaiting-approval',
+            headers: mechanic,
+        });
+        expect(empty.statusCode).toBe(400);
+        expect(empty.json().error).toBe('EmptyBudgetError');
+
+        const forbidden = await app.inject({
+            method: 'POST',
+            url: '/service-orders/os-1/services',
+            headers: attendant,
+            payload: { serviceId: 'svc-brakes' },
+        });
+        expect(forbidden.statusCode).toBe(403);
+
+        const unknown = await app.inject({
+            method: 'POST',
+            url: '/service-orders/os-1/services',
+            headers: mechanic,
+            payload: { serviceId: 'missing' },
+        });
+        expect(unknown.statusCode).toBe(404);
+
+        const added = await app.inject({
+            method: 'POST',
+            url: '/service-orders/os-1/services',
+            headers: mechanic,
+            payload: { serviceId: 'svc-brakes' },
+        });
+        expect(added.statusCode).toBe(201);
+        expect(added.json()).toEqual({
+            serviceOrderId: 'os-1',
+            services: [
+                {
+                    serviceId: 'svc-brakes',
+                    name: 'Troca de pastilhas',
+                    priceCents: 18000,
+                },
+            ],
+            totalCents: 18000,
+        });
+        const duplicated = await app.inject({
+            method: 'POST',
+            url: '/service-orders/os-1/services',
+            headers: mechanic,
+            payload: { serviceId: 'svc-brakes' },
+        });
+        expect(duplicated.statusCode).toBe(400);
+
+        const removed = await app.inject({
+            method: 'DELETE',
+            url: '/service-orders/os-1/services/svc-brakes',
+            headers: mechanic,
+        });
+        expect(removed.statusCode).toBe(200);
+        expect(removed.json().services).toEqual([]);
+        await app.inject({
+            method: 'POST',
+            url: '/service-orders/os-1/services',
+            headers: mechanic,
+            payload: { serviceId: 'svc-brakes' },
+        });
+        const supply = await app.inject({
+            method: 'POST',
+            url: '/service-orders/os-1/supplies',
+            headers: mechanic,
+            payload: { partCode: 'PAST-01', quantity: 2 },
+        });
+        expect(supply.statusCode).toBe(201);
+
+        const quoted = await app.inject({
+            method: 'POST',
+            url: '/service-orders/os-1/awaiting-approval',
+            headers: mechanic,
+        });
+        expect(quoted.json()).toEqual({
+            status: 'AWAITING_APPROVAL',
+            totalCents: 35000,
+        });
+        const locked = await app.inject({
+            method: 'DELETE',
+            url: '/service-orders/os-1/services/svc-brakes',
+            headers: mechanic,
+        });
+        expect(locked.statusCode).toBe(400);
+
+        const budget = await app.inject({
+            method: 'GET',
+            url: '/service-orders/os-1/budget',
+            headers: attendant,
+        });
+        expect(budget.statusCode).toBe(200);
+        expect(budget.json()).toEqual({
+            budgetId: expect.any(String),
+            serviceOrderId: 'os-1',
+            status: 'PENDING',
+            services: [
+                {
+                    serviceId: 'svc-brakes',
+                    name: 'Troca de pastilhas',
+                    priceCents: 18000,
+                },
+            ],
+            parts: [
+                {
+                    partCode: 'PAST-01',
+                    description: 'Pastilha de freio',
+                    quantity: 2,
+                    unitPriceCents: 8500,
+                    totalCents: 17000,
+                },
+            ],
+            servicesCents: 18000,
+            partsCents: 17000,
+            totalCents: 35000,
+            currentTotalCents: 35000,
+        });
+    });
+
+    it('emails the budget detailing each service and part with the total', async () => {
+        const { app, orders, emails } = setup();
+        const order = ServiceOrder.create({
+            id: 'os-1',
+            description: 'Freios',
+            vehicleId: 'vehicle-1',
+        });
+        order.addService({
+            serviceId: 'svc-brakes',
+            name: 'Troca de pastilhas',
+            priceCents: 18000,
+        });
+        order.addSupply('PAST-01', 2, {
+            description: 'Pastilha de freio',
+            unitPriceCents: 8500,
+        });
+        orders.set('os-1', order);
+
+        await app.inject({
+            method: 'POST',
+            url: '/service-orders/os-1/awaiting-approval',
+        });
+        const money = (cents: number) =>
+            (cents / 100).toLocaleString('pt-BR', {
+                style: 'currency',
+                currency: 'BRL',
+            });
+        expect(emails[0]?.text).toContain(
+            `- Troca de pastilhas: ${money(18000)}`,
+        );
+        expect(emails[0]?.text).toContain(
+            `- Pastilha de freio (PAST-01): 2 x ${money(8500)} = ${money(17000)}`,
+        );
+        expect(emails[0]?.text).toContain(
+            `Total do orçamento: ${money(35000)}`,
         );
     });
 });

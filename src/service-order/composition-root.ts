@@ -5,6 +5,18 @@ import type { BudgetRepository } from './domain/budget/budget.repository.js';
 import type { ApprovalRequestRepository } from './domain/approval/approval-request.repository.js';
 import type { EmailSender } from './application/ports/email-sender.js';
 import type { VehicleContactLookup } from './application/ports/vehicle-contact.js';
+import type { PartCatalog } from './application/ports/part-catalog.js';
+import type { ServiceRepository } from './domain/catalog/service.repository.js';
+import type { ServiceTypeRepository } from './domain/catalog/service-type.repository.js';
+import {
+    serviceCatalogUseCases,
+    type ServiceCatalogUseCases,
+} from './catalog-composition.js';
+import { GetServiceOrderBudget } from './application/use-cases/get-service-order-budget.js';
+import {
+    AddServiceToServiceOrder,
+    RemoveServiceFromServiceOrder,
+} from './application/use-cases/manage-service-order-services.js';
 import { OrderAwaitingApproval } from './domain/service-order/events/order-awaiting-approval.js';
 import { SendBudgetApprovalEmail } from './application/handlers/send-budget-approval-email.js';
 import { AwaitBudgetApproval } from './application/use-cases/await-budget-approval.js';
@@ -44,6 +56,9 @@ export interface ServiceOrderDependencies {
     budgetRepository: BudgetRepository;
     approvalRequestRepository: ApprovalRequestRepository;
     vehicleContacts: VehicleContactLookup;
+    serviceTypeRepository: ServiceTypeRepository;
+    serviceRepository: ServiceRepository;
+    partCatalog: PartCatalog;
     emailSender: EmailSender;
     frontendUrl: string;
     approvalTokenTtlMinutes: number;
@@ -52,6 +67,10 @@ export interface ServiceOrderDependencies {
 
 export interface ServiceOrderUseCases {
     actorResolver?: ActorResolver | undefined;
+    catalog: ServiceCatalogUseCases;
+    addServiceToServiceOrder: AddServiceToServiceOrder;
+    removeServiceFromServiceOrder: RemoveServiceFromServiceOrder;
+    getServiceOrderBudget: GetServiceOrderBudget;
     registerServiceOrder: UseCase<
         RegisterServiceOrderInput,
         RegisterServiceOrderOutput
@@ -71,12 +90,20 @@ export interface ServiceOrderUseCases {
             vehicleId: string | null;
             description: string;
             status: string;
-            valueCents: number | null;
+            services: {
+                serviceId: string;
+                name: string;
+                priceCents: number;
+            }[];
             supplies: {
                 partCode: string;
+                description: string | null;
                 quantity: number;
+                unitPriceCents: number;
+                totalCents: number;
                 used: boolean;
             }[];
+            totalCents: number;
         }>;
     };
     findServiceOrderHistory: {
@@ -144,13 +171,30 @@ export function serviceOrderCompositionRoot(
 
     return {
         actorResolver: deps.actorResolver,
+        catalog: serviceCatalogUseCases(
+            deps.serviceTypeRepository,
+            deps.serviceRepository,
+        ),
         registerServiceOrder: new RegisterServiceOrder(
             deps.serviceOrderRepository,
             deps.vehicleContacts,
+            deps.serviceRepository,
             eventBus,
+        ),
+        addServiceToServiceOrder: new AddServiceToServiceOrder(
+            deps.serviceOrderRepository,
+            deps.serviceRepository,
+        ),
+        removeServiceFromServiceOrder: new RemoveServiceFromServiceOrder(
+            deps.serviceOrderRepository,
+        ),
+        getServiceOrderBudget: new GetServiceOrderBudget(
+            deps.serviceOrderRepository,
+            deps.budgetRepository,
         ),
         addSupplyToServiceOrder: new AddSupplyToServiceOrder(
             deps.serviceOrderRepository,
+            deps.partCatalog,
             eventBus,
         ),
         updateServiceOrderDescription: new UpdateServiceOrderDescription(
@@ -186,12 +230,20 @@ export function serviceOrderCompositionRoot(
                     vehicleId: order.vehicleId,
                     description: order.description,
                     status: order.status.value,
-                    valueCents: order.valueCents,
+                    services: order.services.map((item) => ({
+                        serviceId: item.serviceId,
+                        name: item.name,
+                        priceCents: item.priceCents,
+                    })),
                     supplies: order.items.map((item) => ({
                         partCode: item.partCode,
+                        description: item.description,
                         quantity: item.quantity,
+                        unitPriceCents: item.unitPriceCents,
+                        totalCents: item.totalCents,
                         used: item.used,
                     })),
+                    totalCents: order.totalCents,
                 };
             },
         },

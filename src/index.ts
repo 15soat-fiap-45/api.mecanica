@@ -26,6 +26,11 @@ import { DrizzleServiceOrderRepository } from './infra/database/service-order/dr
 import { DrizzleBudgetRepository } from './infra/database/service-order/drizzle-budget-repository.js';
 import { DrizzleApprovalRequestRepository } from './infra/database/service-order/drizzle-approval-request-repository.js';
 import { RegistryVehicleContactLookup } from './infra/registry-vehicle-contact-lookup.js';
+import { StockPartCatalog } from './infra/stock-part-catalog.js';
+import {
+    DrizzleServiceRepository,
+    DrizzleServiceTypeRepository,
+} from './infra/database/service-order/drizzle-service-catalog-repositories.js';
 import { TokenActorResolver } from './infra/token-actor-resolver.js';
 import { SmtpEmailSender } from './service-order/infra/email/smtp-email-sender.js';
 import { readEmailConfig } from './service-order/infra/email/email.config.js';
@@ -66,6 +71,7 @@ const registry = registryCompositionRoot(eventBus, {
 });
 const emailConfig = readEmailConfig();
 const approvalRequests = new DrizzleApprovalRequestRepository();
+const partSupplyRepository = new DrizzlePartSupplyRepository(db);
 const serviceOrder = serviceOrderCompositionRoot(eventBus, {
     serviceOrderRepository: new DrizzleServiceOrderRepository(),
     budgetRepository: new DrizzleBudgetRepository(),
@@ -74,6 +80,9 @@ const serviceOrder = serviceOrderCompositionRoot(eventBus, {
         new DrizzleVehicleRepository(),
         new DrizzleCustomerRepository(),
     ),
+    serviceTypeRepository: new DrizzleServiceTypeRepository(),
+    serviceRepository: new DrizzleServiceRepository(),
+    partCatalog: new StockPartCatalog(partSupplyRepository),
     actorResolver: new TokenActorResolver(resolveAuthenticatedUser),
     emailSender: new SmtpEmailSender(emailConfig.smtp),
     frontendUrl: emailConfig.frontendUrl,
@@ -89,7 +98,7 @@ const businessIntelligence = businessIntelligenceCompositionRoot(eventBus, {
     accessGuard: new TokenBiAccessGuard(resolveAuthenticatedUser),
 });
 const stock = stockCompositionRoot(eventBus, {
-    partSupplyRepository: new DrizzlePartSupplyRepository(db),
+    partSupplyRepository,
     reservationRepository: new DrizzleSupplyReservationRepository(db),
     actorResolver: new TokenActorResolver(resolveAuthenticatedUser),
 });

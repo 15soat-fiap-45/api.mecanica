@@ -6,8 +6,10 @@ import { InvalidServiceOrderStatusException } from '../../domain/service-order/v
 import type { EventBus } from '../../../shared/application/event-bus.js';
 import {
     AddSupplyToServiceOrder,
+    PartNotFoundError,
     ServiceOrderNotFoundError,
 } from './add-supply-to-service-order.js';
+import type { PartCatalog } from '../ports/part-catalog.js';
 
 describe('AddSupplyToServiceOrder Use Case', () => {
     const validInput = {
@@ -29,6 +31,17 @@ describe('AddSupplyToServiceOrder Use Case', () => {
         findById: vi.fn().mockResolvedValue(serviceOrder),
     });
 
+    const parts: PartCatalog = {
+        findByPartCode: vi.fn(async (code: string) =>
+            code.toUpperCase() === 'PAST-FREIO-01'
+                ? {
+                      description: 'Pastilha de freio dianteira',
+                      unitPriceCents: 8500,
+                  }
+                : null,
+        ),
+    };
+
     const makeEventBus = (): EventBus => ({
         publish: vi.fn().mockResolvedValue(undefined),
         subscribe: vi.fn(),
@@ -38,7 +51,11 @@ describe('AddSupplyToServiceOrder Use Case', () => {
         const serviceOrder = makeServiceOrder();
         const repository = makeRepository(serviceOrder);
         const eventBus = makeEventBus();
-        const useCase = new AddSupplyToServiceOrder(repository, eventBus);
+        const useCase = new AddSupplyToServiceOrder(
+            repository,
+            parts,
+            eventBus,
+        );
 
         const result = await useCase.execute(validInput);
 
@@ -46,7 +63,10 @@ describe('AddSupplyToServiceOrder Use Case', () => {
             serviceOrderId: 'os-1',
             partCode: 'PAST-FREIO-01',
             quantity: 2,
+            description: 'Pastilha de freio dianteira',
+            unitPriceCents: 8500,
         });
+        expect(serviceOrder.totalCents).toBe(17000);
         expect(repository.save).toHaveBeenCalledTimes(1);
         expect(eventBus.publish).toHaveBeenCalledWith(
             expect.arrayContaining([
@@ -61,7 +81,7 @@ describe('AddSupplyToServiceOrder Use Case', () => {
 
     it('should throw ServiceOrderNotFoundError when the order does not exist', async () => {
         const repository = makeRepository(null);
-        const useCase = new AddSupplyToServiceOrder(repository);
+        const useCase = new AddSupplyToServiceOrder(repository, parts);
 
         await expect(useCase.execute(validInput)).rejects.toThrow(
             ServiceOrderNotFoundError,
@@ -75,7 +95,7 @@ describe('AddSupplyToServiceOrder Use Case', () => {
         serviceOrder.startExecution();
         serviceOrder.finish();
         const repository = makeRepository(serviceOrder);
-        const useCase = new AddSupplyToServiceOrder(repository);
+        const useCase = new AddSupplyToServiceOrder(repository, parts);
 
         await expect(useCase.execute(validInput)).rejects.toThrow(
             InvalidServiceOrderStatusException,
@@ -87,11 +107,21 @@ describe('AddSupplyToServiceOrder Use Case', () => {
         const serviceOrder = makeServiceOrder();
         serviceOrder.addSupply('PAST-FREIO-01', 2);
         const repository = makeRepository(serviceOrder);
-        const useCase = new AddSupplyToServiceOrder(repository);
+        const useCase = new AddSupplyToServiceOrder(repository, parts);
 
         await expect(useCase.execute(validInput)).rejects.toThrow(
             SupplyItemAlreadyAddedException,
         );
+        expect(repository.save).not.toHaveBeenCalled();
+    });
+
+    it('should throw PartNotFoundError when the part is not in stock', async () => {
+        const repository = makeRepository();
+        const useCase = new AddSupplyToServiceOrder(repository, parts);
+
+        await expect(
+            useCase.execute({ ...validInput, partCode: 'NAO-EXISTE' }),
+        ).rejects.toThrow(PartNotFoundError);
         expect(repository.save).not.toHaveBeenCalled();
     });
 });

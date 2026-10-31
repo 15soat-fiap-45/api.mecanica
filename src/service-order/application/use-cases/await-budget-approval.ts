@@ -11,6 +11,12 @@ export class InvalidOrderBudgetError extends ApplicationException {
     }
 }
 
+export class EmptyBudgetError extends ApplicationException {
+    constructor() {
+        super('Add at least one service or part before sending the budget.');
+    }
+}
+
 export class AwaitBudgetApproval {
     constructor(
         private readonly orders: ServiceOrderRepository,
@@ -20,41 +26,25 @@ export class AwaitBudgetApproval {
 
     async execute(input: {
         serviceOrderId: string;
-        valueCents?: number | undefined;
         description?: string | undefined;
-    }): Promise<{ status: string }> {
+    }): Promise<{ status: string; totalCents: number }> {
         const order = await this.orders.findById(input.serviceOrderId);
         if (!order) throw new ServiceOrderNotFoundError();
         if (!order.status.canTransitionTo('AWAITING_APPROVAL'))
             throw new InvalidOrderBudgetError();
-        if (input.valueCents !== undefined) {
-            if (
-                typeof input.valueCents !== 'number' ||
-                !Number.isSafeInteger(input.valueCents) ||
-                input.valueCents < 0
-            ) {
-                throw new InvalidOrderBudgetError();
-            }
-            order.setValueCents(input.valueCents);
-        }
-        const totalCents = order.valueCents;
-        if (
-            totalCents === null ||
-            !Number.isSafeInteger(totalCents) ||
-            totalCents < 0
-        ) {
-            throw new InvalidOrderBudgetError();
-        }
+        if (order.services.length === 0 && order.items.length === 0)
+            throw new EmptyBudgetError();
         if (input.description !== undefined) {
             order.updateDescription(input.description);
         }
+        // The budget is generated from the order: services + parts.
         const budget = Budget.create({
             serviceOrderId: order.id.value,
-            totalCents,
+            totalCents: order.totalCents,
         });
         order.awaitApproval(budget.id.value);
         await this.orders.save(order, budget);
         await this.bus.publish(order.pullEvents());
-        return { status: order.status.value };
+        return { status: order.status.value, totalCents: budget.totalCents };
     }
 }

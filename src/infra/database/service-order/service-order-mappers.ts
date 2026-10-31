@@ -2,21 +2,28 @@ import { Budget } from '../../../service-order/domain/budget/budget.js';
 import { BudgetStatus } from '../../../service-order/domain/budget/value-objects/budget-status.js';
 import { ServiceOrder } from '../../../service-order/domain/service-order/service-order.js';
 import { SupplyItem } from '../../../service-order/domain/service-order/supply-item.js';
+import { ServiceItem } from '../../../service-order/domain/service-order/service-item.js';
 import { ServiceOrderStatus } from '../../../service-order/domain/service-order/value-objects/service-order-status.js';
-import { budgets, serviceOrders, serviceOrderSupplies } from '../schema.js';
+import {
+    budgets,
+    serviceOrders,
+    serviceOrderServices,
+    serviceOrderSupplies,
+} from '../schema.js';
 
 export function serviceOrderFromRow(
     row: typeof serviceOrders.$inferSelect,
     items: (typeof serviceOrderSupplies.$inferSelect)[],
+    services: (typeof serviceOrderServices.$inferSelect)[] = [],
 ): ServiceOrder {
     return ServiceOrder.create({
         id: row.id,
         description: row.description,
         vehicleId: row.vehicleId ?? undefined,
-        valueCents: row.valueCents ?? null,
         status: ServiceOrderStatus.create(row.status),
         version: row.version,
         items: items.map((item) => SupplyItem.create(item)),
+        services: services.map((service) => ServiceItem.create(service)),
     });
 }
 
@@ -27,7 +34,6 @@ export function serviceOrderToRow(
         id: order.id.value,
         description: order.description,
         vehicleId: order.vehicleId,
-        valueCents: order.valueCents,
         status: order.status.value,
         version: order.version + 1,
     };
@@ -41,6 +47,19 @@ export function supplyItemsToRows(
         partCode: item.partCode,
         quantity: item.quantity,
         used: item.used,
+        description: item.description,
+        unitPriceCents: item.unitPriceCents,
+    }));
+}
+
+export function serviceItemsToRows(
+    order: ServiceOrder,
+): (typeof serviceOrderServices.$inferInsert)[] {
+    return order.services.map((service) => ({
+        serviceOrderId: order.id.value,
+        serviceId: service.serviceId,
+        name: service.name,
+        priceCents: service.priceCents,
     }));
 }
 

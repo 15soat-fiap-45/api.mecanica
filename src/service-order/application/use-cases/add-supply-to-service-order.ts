@@ -2,10 +2,17 @@ import type { ServiceOrderRepository } from '../../domain/service-order/service-
 import type { EventBus } from '../../../shared/application/event-bus.js';
 import type { UseCase } from '../../../shared/application/use-case.js';
 import { ApplicationException } from '../../../shared/application/application-exception.js';
+import type { PartCatalog } from '../ports/part-catalog.js';
 
 export class ServiceOrderNotFoundError extends ApplicationException {
     constructor() {
         super('Service order not found.');
+    }
+}
+
+export class PartNotFoundError extends ApplicationException {
+    constructor() {
+        super('Part/supply not found in stock.');
     }
 }
 
@@ -19,6 +26,8 @@ export interface AddSupplyToServiceOrderOutput {
     serviceOrderId: string;
     partCode: string;
     quantity: number;
+    description: string | null;
+    unitPriceCents: number;
 }
 
 export class AddSupplyToServiceOrder implements UseCase<
@@ -27,6 +36,7 @@ export class AddSupplyToServiceOrder implements UseCase<
 > {
     constructor(
         private readonly serviceOrderRepository: ServiceOrderRepository,
+        private readonly parts: PartCatalog,
         private readonly eventBus?: EventBus,
     ) {}
 
@@ -40,7 +50,9 @@ export class AddSupplyToServiceOrder implements UseCase<
             throw new ServiceOrderNotFoundError();
         }
 
-        serviceOrder.addSupply(input.partCode, input.quantity);
+        const part = await this.parts.findByPartCode(input.partCode);
+        if (!part) throw new PartNotFoundError();
+        serviceOrder.addSupply(input.partCode, input.quantity, part);
 
         await this.serviceOrderRepository.save(serviceOrder);
 
@@ -56,6 +68,8 @@ export class AddSupplyToServiceOrder implements UseCase<
             serviceOrderId: serviceOrder.id.value,
             partCode: item?.partCode ?? input.partCode,
             quantity: item?.quantity ?? input.quantity,
+            description: item?.description ?? part.description,
+            unitPriceCents: item?.unitPriceCents ?? part.unitPriceCents,
         };
     }
 }
