@@ -30,11 +30,19 @@ function databaseWith(
 }
 
 describe('Drizzle ServiceOrderRepository', () => {
-    it('commits the order and its items atomically, advancing the version after commit', async () => {
+    it('commits the order, its items and services atomically, advancing the version after commit', async () => {
         const { database, query, statements } = databaseWith();
         const repository = new DrizzleServiceOrderRepository(database);
         const order = ServiceOrder.register({ description: 'Freios' });
-        order.addSupply('PAST-01', 2);
+        order.addSupply('PAST-01', 2, {
+            description: 'Pastilha',
+            unitPriceCents: 8500,
+        });
+        order.addService({
+            serviceId: 'svc-1',
+            name: 'Troca de pastilhas',
+            priceCents: 18000,
+        });
 
         await repository.save(order);
         expect(statements()[0]).toBe('begin');
@@ -55,11 +63,25 @@ describe('Drizzle ServiceOrderRepository', () => {
             'PAST-01',
             2,
             false,
+            'Pastilha',
+            8500,
         ]);
         expect(statements()[4]).toContain(
+            'delete from "service_order"."order_services"',
+        );
+        expect(statements()[5]).toContain(
+            'insert into "service_order"."order_services"',
+        );
+        expect(query.mock.calls[5]?.[1]).toEqual([
+            order.id.value,
+            'svc-1',
+            'Troca de pastilhas',
+            18000,
+        ]);
+        expect(statements()[6]).toContain(
             'INSERT INTO service_order.order_status_history',
         );
-        expect(statements()[5]).toBe('commit');
+        expect(statements()[7]).toBe('commit');
         expect(order.version).toBe(1);
         expect(order.pullEvents()).toHaveLength(2);
 
@@ -177,74 +199,74 @@ describe('Drizzle ServiceOrderRepository', () => {
         expect(statements().at(-1)).toBe('commit');
     });
 
-    it('rehydrates a consistent order snapshot with used items and no pending events', async () => {
+    it('rehydrates a consistent order snapshot with items, services and no pending events', async () => {
+        const order = ['os-1', 'Freios', 'vehicle-1', 'IN_PROGRESS', 4];
+        const past = ['os-1', 'PAST-01', 2, true, 'Pastilha', '8500'];
+        const fluid = ['os-1', 'FLUID-01', 1, false, null, '4000'];
+        const swap = ['os-1', 'svc-1', 'Troca de pastilhas', '18000'];
+        const bleed = ['os-1', 'svc-2', 'Sangria', '6000'];
+        // Joining both child tables multiplies rows: items x services.
         const { database, query } = databaseWith(() => [
-            [
-                'os-1',
-                'Freios',
-                'vehicle-1',
-                '12345',
-                'IN_PROGRESS',
-                4,
-                'os-1',
-                'PAST-01',
-                2,
-                true,
-            ],
-            [
-                'os-1',
-                'Freios',
-                'vehicle-1',
-                '12345',
-                'IN_PROGRESS',
-                4,
-                'os-1',
-                'FLUID-01',
-                1,
-                false,
-            ],
+            [...order, ...past, ...swap],
+            [...order, ...past, ...bleed],
+            [...order, ...fluid, ...swap],
+            [...order, ...fluid, ...bleed],
         ]);
-        const order = await new DrizzleServiceOrderRepository(
+        const rehydrated = await new DrizzleServiceOrderRepository(
             database,
         ).findById(new ServiceOrderId('os-1'));
         expect(query).toHaveBeenCalledTimes(1);
         expect(query.mock.calls[0]?.[1]).toEqual(['os-1']);
-        expect(order?.status.value).toBe('IN_PROGRESS');
-        expect(order?.version).toBe(4);
-        expect(order?.vehicleId).toBe('vehicle-1');
-        expect(order?.valueCents).toBe(12345);
+        expect(rehydrated?.status.value).toBe('IN_PROGRESS');
+        expect(rehydrated?.version).toBe(4);
+        expect(rehydrated?.vehicleId).toBe('vehicle-1');
         expect(
-            order?.items.map((item) => ({
+            rehydrated?.items.map((item) => ({
                 partCode: item.partCode,
                 used: item.used,
+                description: item.description,
+                unitPriceCents: item.unitPriceCents,
             })),
         ).toEqual([
-            { partCode: 'PAST-01', used: true },
-            { partCode: 'FLUID-01', used: false },
+            {
+                partCode: 'PAST-01',
+                used: true,
+                description: 'Pastilha',
+                unitPriceCents: 8500,
+            },
+            {
+                partCode: 'FLUID-01',
+                used: false,
+                description: null,
+                unitPriceCents: 4000,
+            },
         ]);
-        expect(order?.pullEvents()).toEqual([]);
+        expect(rehydrated?.services.map((item) => item.name)).toEqual([
+            'Sangria',
+            'Troca de pastilhas',
+        ]);
+        expect(rehydrated?.totalCents).toBe(17000 + 4000 + 18000 + 6000);
+        expect(rehydrated?.pullEvents()).toEqual([]);
     });
 
-    it('rehydrates orders without items', async () => {
+    it('rehydrates orders without items or services', async () => {
         const { database } = databaseWith(() => [
             [
                 'os-1',
                 'Freios',
                 null,
-                null,
                 'PENDING',
                 1,
-                null,
-                null,
-                null,
-                null,
+                ...Array(6).fill(null),
+                ...Array(4).fill(null),
             ],
         ]);
         const order = await new DrizzleServiceOrderRepository(
             database,
         ).findById('os-1');
         expect(order?.items).toEqual([]);
-        expect(order?.valueCents).toBeNull();
+        expect(order?.services).toEqual([]);
+        expect(order?.totalCents).toBe(0);
     });
 
     it('returns null for a missing order', async () => {

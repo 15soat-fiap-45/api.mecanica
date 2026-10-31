@@ -37,7 +37,7 @@ export class DrizzlePartSupplyRepository implements PartSupplyRepository {
                     stockId: partSupply.id.value,
                     nome: partSupply.description.slice(0, 20),
                     descricao: partSupply.description,
-                    valor: 0,
+                    valor: partSupply.unitPriceCents,
                     partCode: partSupply.partCode.value,
                     unitOfMeasure: partSupply.unitOfMeasure.value,
                     version: partSupply.version,
@@ -59,6 +59,7 @@ export class DrizzlePartSupplyRepository implements PartSupplyRepository {
             .set({
                 nome: partSupply.description.slice(0, 20),
                 descricao: partSupply.description,
+                valor: partSupply.unitPriceCents,
                 partCode: partSupply.partCode.value,
                 unitOfMeasure: partSupply.unitOfMeasure.value,
                 version: partSupply.version + 1,
@@ -359,6 +360,7 @@ function partSupplyFromRow(
         partCode: PartCode.create(item.partCode),
         quantity: Quantity.create(quantity),
         unitOfMeasure: UnitOfMeasure.create(item.unitOfMeasure),
+        unitPriceCents: item.valor,
         version: item.version,
     });
 }

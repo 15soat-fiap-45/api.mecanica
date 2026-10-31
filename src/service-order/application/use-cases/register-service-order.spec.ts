@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 import type { ServiceOrderRepository } from '../../domain/service-order/service-order.repository.js';
 import type { EventBus } from '../../../shared/application/event-bus.js';
 import { RegisterServiceOrder } from './register-service-order.js';
+import { InMemoryServiceRepository } from '../../infra/persistence/in-memory-catalog-repositories.js';
+import { Service } from '../../domain/catalog/service.js';
 
 describe('RegisterServiceOrder Use Case', () => {
     const validInput = {
@@ -15,6 +17,16 @@ describe('RegisterServiceOrder Use Case', () => {
             customerDocument: '52998224725',
         })),
     };
+
+    const services = new InMemoryServiceRepository();
+    void services.save(
+        Service.create({
+            id: 'svc-oil',
+            name: 'Troca de óleo',
+            priceCents: 12000,
+            serviceTypeId: 'type-1',
+        }),
+    );
 
     const makeRepository = (): ServiceOrderRepository => ({
         save: vi.fn().mockResolvedValue(undefined),
@@ -32,6 +44,7 @@ describe('RegisterServiceOrder Use Case', () => {
         const useCase = new RegisterServiceOrder(
             repository,
             contacts,
+            services,
             eventBus,
         );
 
@@ -41,7 +54,8 @@ describe('RegisterServiceOrder Use Case', () => {
         expect(result.description).toBe('Troca de pastilhas e fluido de freio');
         expect(result.status).toBe('PENDING');
         expect(result.vehicleId).toBe('vehicle-1');
-        expect(result.valueCents).toBeNull();
+        expect(result.services).toEqual([]);
+        expect(result.totalCents).toBe(0);
         expect(repository.save).toHaveBeenCalledTimes(1);
         expect(eventBus.publish).toHaveBeenCalledTimes(1);
         expect(eventBus.publish).toHaveBeenCalledWith(
@@ -54,22 +68,47 @@ describe('RegisterServiceOrder Use Case', () => {
         );
     });
 
-    it('should register a service order with an initial valueCents when provided', async () => {
+    it('should include the requested catalog services with their current price', async () => {
         const repository = makeRepository();
-        const useCase = new RegisterServiceOrder(repository, contacts);
+        const useCase = new RegisterServiceOrder(
+            repository,
+            contacts,
+            services,
+        );
 
         const result = await useCase.execute({
             ...validInput,
-            valueCents: 18500,
+            serviceIds: ['svc-oil', 'svc-oil'],
         });
 
-        expect(result.valueCents).toBe(18500);
+        expect(result.services).toEqual([
+            { serviceId: 'svc-oil', name: 'Troca de óleo', priceCents: 12000 },
+        ]);
+        expect(result.totalCents).toBe(12000);
         expect(repository.save).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not register an order with an unknown catalog service', async () => {
+        const repository = makeRepository();
+        const useCase = new RegisterServiceOrder(
+            repository,
+            contacts,
+            services,
+        );
+
+        await expect(
+            useCase.execute({ ...validInput, serviceIds: ['missing'] }),
+        ).rejects.toThrow('Service not found');
+        expect(repository.save).not.toHaveBeenCalled();
     });
 
     it('should always generate the id (a caller-chosen id could overwrite an existing order on retry)', async () => {
         const repository = makeRepository();
-        const useCase = new RegisterServiceOrder(repository, contacts);
+        const useCase = new RegisterServiceOrder(
+            repository,
+            contacts,
+            services,
+        );
 
         const first = await useCase.execute(validInput);
         const second = await useCase.execute(validInput);
@@ -82,9 +121,11 @@ describe('RegisterServiceOrder Use Case', () => {
 
     it('does not register an order for an unknown vehicle', async () => {
         const repository = makeRepository();
-        const useCase = new RegisterServiceOrder(repository, {
-            findByVehicleId: vi.fn(async () => null),
-        });
+        const useCase = new RegisterServiceOrder(
+            repository,
+            { findByVehicleId: vi.fn(async () => null) },
+            services,
+        );
         await expect(useCase.execute(validInput)).rejects.toThrow(
             'Vehicle not found',
         );

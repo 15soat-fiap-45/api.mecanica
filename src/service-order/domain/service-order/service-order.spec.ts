@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
     InvalidServiceOrderDescriptionException,
-    InvalidServiceOrderValueException,
+    ServiceItemAlreadyAddedException,
+    ServiceItemNotFoundException,
     ServiceOrder,
     SupplyItemAlreadyAddedException,
     SupplyItemNotFoundException,
@@ -11,6 +12,7 @@ import {
     InvalidSupplyItemException,
     SupplyItemAlreadyUsedException,
 } from './supply-item.js';
+import { InvalidServiceItemException } from './service-item.js';
 import {
     InvalidServiceOrderStatusException,
     ServiceOrderStatus,
@@ -362,40 +364,87 @@ describe('ServiceOrder Aggregate Root', () => {
         expect(os1.equals(os3)).toBe(false);
     });
 
-    it('should support optional valueCents on creation and updating via setValueCents while PENDING', () => {
-        const osWithoutValue = ServiceOrder.create(makeProps());
-        expect(osWithoutValue.valueCents).toBeNull();
+    const oilChange = {
+        serviceId: 'svc-oil',
+        name: 'Troca de óleo',
+        priceCents: 12000,
+    };
 
-        osWithoutValue.setValueCents(15000);
-        expect(osWithoutValue.valueCents).toBe(15000);
-
-        const osWithValue = ServiceOrder.create(
-            makeProps({ valueCents: 25000 }),
-        );
-        expect(osWithValue.valueCents).toBe(25000);
-        osWithValue.setValueCents(30000);
-        expect(osWithValue.valueCents).toBe(30000);
+    it('should start without services and with zero total', () => {
+        const os = ServiceOrder.create(makeProps());
+        expect(os.services).toEqual([]);
+        expect(os.totalCents).toBe(0);
     });
 
-    it('should reject invalid valueCents on creation or setValueCents', () => {
-        for (const invalid of [-1, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
-            expect(() =>
-                ServiceOrder.create(makeProps({ valueCents: invalid })),
-            ).toThrow(InvalidServiceOrderValueException);
-        }
-
+    it('should sum services and parts (quantity x unit price) in totalCents', () => {
         const os = ServiceOrder.create(makeProps());
-        for (const invalid of [-1, 1.5, Number.NaN]) {
-            expect(() => os.setValueCents(invalid)).toThrow(
-                InvalidServiceOrderValueException,
+        os.addService(oilChange);
+        os.addService({
+            serviceId: 'svc-align',
+            name: 'Alinhamento',
+            priceCents: 8000,
+        });
+        os.addSupply('OLEO-5W30', 4, {
+            description: 'Óleo 5W30',
+            unitPriceCents: 4500,
+        });
+        os.addSupply('FILTRO-01', 1);
+
+        expect(os.services.map((s) => s.name)).toEqual([
+            'Troca de óleo',
+            'Alinhamento',
+        ]);
+        expect(os.items[0]?.description).toBe('Óleo 5W30');
+        expect(os.items[0]?.totalCents).toBe(18000);
+        expect(os.items[1]?.unitPriceCents).toBe(0);
+        expect(os.totalCents).toBe(12000 + 8000 + 18000);
+    });
+
+    it('should reject a service included twice and remove services while PENDING', () => {
+        const os = ServiceOrder.create(makeProps());
+        os.addService(oilChange);
+        expect(() => os.addService(oilChange)).toThrow(
+            ServiceItemAlreadyAddedException,
+        );
+
+        os.removeService('svc-oil');
+        expect(os.services).toEqual([]);
+        expect(() => os.removeService('svc-oil')).toThrow(
+            ServiceItemNotFoundException,
+        );
+    });
+
+    it('should reject invalid service items', () => {
+        const os = ServiceOrder.create(makeProps());
+        for (const invalid of [
+            { ...oilChange, serviceId: ' ' },
+            { ...oilChange, name: '' },
+            { ...oilChange, priceCents: -1 },
+            { ...oilChange, priceCents: 1.5 },
+        ]) {
+            expect(() => os.addService(invalid)).toThrow(
+                InvalidServiceItemException,
             );
         }
     });
 
-    it('should not allow setValueCents when order is not PENDING', () => {
-        const os = ServiceOrder.create(makeProps({ valueCents: 10000 }));
+    it('should reject a negative or fractional part unit price', () => {
+        const os = ServiceOrder.create(makeProps());
+        for (const unitPriceCents of [-1, 0.5]) {
+            expect(() =>
+                os.addSupply('OLEO-5W30', 1, { unitPriceCents }),
+            ).toThrow(InvalidSupplyItemException);
+        }
+    });
+
+    it('should not allow changing services once the order left PENDING', () => {
+        const os = ServiceOrder.create(makeProps());
+        os.addService(oilChange);
         os.awaitApproval('budget-1');
-        expect(() => os.setValueCents(20000)).toThrow(
+        expect(() =>
+            os.addService({ ...oilChange, serviceId: 'svc-2' }),
+        ).toThrow(InvalidServiceOrderStatusException);
+        expect(() => os.removeService('svc-oil')).toThrow(
             InvalidServiceOrderStatusException,
         );
     });

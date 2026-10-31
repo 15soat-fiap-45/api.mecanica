@@ -18,6 +18,7 @@ import {
     type ServiceOrderPermission,
 } from '../../application/ports/actor-resolver.js';
 import type { ServiceOrderUseCases } from '../../composition-root.js';
+import { registerServiceCatalogRoutes } from './service-catalog-routes.js';
 
 function getApprovalHtml(): string {
     const filePath = path.resolve(process.cwd(), 'public', 'orcamento.html');
@@ -29,6 +30,7 @@ function getApprovalHtml(): string {
 
 const exampleOrderId = '550e8400-e29b-41d4-a716-446655440000';
 const exampleVehicleId = '6f9619ff-8b86-4d01-b42d-00c04fc964ff';
+const exampleServiceId = '9b8a7c6d-5e4f-4a3b-2c1d-0e9f8a7b6c5d';
 const exampleToken = 'abcdefghijklmnopqrstuvwxyz0123456789-_ABCDE';
 const idSchema = z
     .string()
@@ -39,12 +41,29 @@ const idSchema = z
         examples: [exampleOrderId],
     });
 const orderParams = z.object({ serviceOrderId: idSchema });
-const valueCentsSchema = z
+const centsSchema = z
     .number()
     .int()
     .min(0)
     .max(Number.MAX_SAFE_INTEGER)
     .describe('Valor em centavos. Exemplo: 35000 corresponde a R$ 350,00.');
+const orderServiceSchema = z.object({
+    serviceId: z.string(),
+    name: z.string(),
+    priceCents: centsSchema,
+});
+const exampleOrderService = {
+    serviceId: exampleServiceId,
+    name: 'Troca de pastilhas de freio',
+    priceCents: 18000,
+};
+const exampleSupply = {
+    partCode: 'PAST-FREIO-01',
+    description: 'Pastilha de freio dianteira',
+    quantity: 2,
+    unitPriceCents: 8500,
+    totalCents: 17000,
+};
 const partCodeSchema = z
     .string()
     .trim()
@@ -121,14 +140,20 @@ export function registerServiceOrderRoutes(
                         vehicleId: idSchema.meta({
                             examples: [exampleVehicleId],
                         }),
-                        valueCents: valueCentsSchema.nullable().optional(),
+                        serviceIds: z
+                            .array(idSchema)
+                            .max(50)
+                            .optional()
+                            .describe(
+                                'Serviços do catálogo solicitados pelo cliente. O valor de cada um é copiado do catálogo.',
+                            ),
                     })
                     .meta({
                         examples: [
                             {
-                                description: 'Troca de pastilhas de freio',
+                                description: 'Barulho ao frear',
                                 vehicleId: exampleVehicleId,
-                                valueCents: 35000,
+                                serviceIds: [exampleServiceId],
                             },
                         ],
                     }),
@@ -139,16 +164,18 @@ export function registerServiceOrderRoutes(
                             description: z.string(),
                             status: z.string(),
                             vehicleId: z.string(),
-                            valueCents: valueCentsSchema.nullable(),
+                            services: z.array(orderServiceSchema),
+                            totalCents: centsSchema,
                         })
                         .meta({
                             examples: [
                                 {
                                     id: exampleOrderId,
-                                    description: 'Troca de pastilhas de freio',
+                                    description: 'Barulho ao frear',
                                     status: 'PENDING',
                                     vehicleId: exampleVehicleId,
-                                    valueCents: 35000,
+                                    services: [exampleOrderService],
+                                    totalCents: 18000,
                                 },
                             ],
                         }),
@@ -177,13 +204,19 @@ export function registerServiceOrderRoutes(
                             vehicleId: z.string().nullable(),
                             description: z.string(),
                             status: z.string(),
-                            valueCents: valueCentsSchema.nullable(),
+                            services: z.array(orderServiceSchema),
                             supplies: z.array(
                                 z.object({
                                     partCode: z.string(),
+                                    description: z.string().nullable(),
                                     quantity: z.number(),
+                                    unitPriceCents: centsSchema,
+                                    totalCents: centsSchema,
                                     used: z.boolean(),
                                 }),
+                            ),
+                            totalCents: centsSchema.describe(
+                                'Serviços + peças (quantidade x valor unitário), em centavos.',
                             ),
                         })
                         .meta({
@@ -191,16 +224,13 @@ export function registerServiceOrderRoutes(
                                 {
                                     id: exampleOrderId,
                                     vehicleId: exampleVehicleId,
-                                    description: 'Troca de pastilhas de freio',
+                                    description: 'Barulho ao frear',
                                     status: 'IN_PROGRESS',
-                                    valueCents: 35000,
+                                    services: [exampleOrderService],
                                     supplies: [
-                                        {
-                                            partCode: 'PAST-FREIO-01',
-                                            quantity: 2,
-                                            used: true,
-                                        },
+                                        { ...exampleSupply, used: true },
                                     ],
+                                    totalCents: 35000,
                                 },
                             ],
                         }),
@@ -349,7 +379,7 @@ export function registerServiceOrderRoutes(
                             serviceOrderId: z.string(),
                             description: z.string(),
                             status: z.string(),
-                            valueCents: valueCentsSchema.nullable(),
+                            totalCents: centsSchema,
                             history: z.array(
                                 z.object({
                                     status: z.string(),
@@ -363,7 +393,7 @@ export function registerServiceOrderRoutes(
                                     serviceOrderId: exampleOrderId,
                                     description: 'Troca de pastilhas de freio',
                                     status: 'IN_PROGRESS',
-                                    valueCents: 35000,
+                                    totalCents: 35000,
                                     history: [
                                         {
                                             status: 'PENDING',
@@ -399,6 +429,121 @@ export function registerServiceOrderRoutes(
             }),
     );
 
+    const servicesResponse = z
+        .object({
+            serviceOrderId: z.string(),
+            services: z.array(orderServiceSchema),
+            totalCents: centsSchema,
+        })
+        .meta({
+            examples: [
+                {
+                    serviceOrderId: exampleOrderId,
+                    services: [exampleOrderService],
+                    totalCents: 18000,
+                },
+            ],
+        });
+
+    typedApp.get(
+        '/service-orders/:serviceOrderId/budget',
+        {
+            preValidation: requireAuth(),
+            schema: {
+                tags: ['Budgets'],
+                summary: 'Detalha o orçamento da OS (serviços, peças e totais)',
+                description:
+                    '`totalCents` é o valor enviado ao cliente para aprovação. ' +
+                    '`currentTotalCents` é o total atual da OS e difere do orçado quando ' +
+                    'insumos adicionais são incluídos depois do envio. Responde 404 se o orçamento ainda não foi gerado.',
+                params: orderParams,
+                response: {
+                    200: z
+                        .object({
+                            budgetId: z.string(),
+                            serviceOrderId: z.string(),
+                            status: z
+                                .string()
+                                .describe('PENDING, APPROVED ou REJECTED'),
+                            services: z.array(orderServiceSchema),
+                            parts: z.array(
+                                z.object({
+                                    partCode: z.string(),
+                                    description: z.string().nullable(),
+                                    quantity: z.number(),
+                                    unitPriceCents: centsSchema,
+                                    totalCents: centsSchema,
+                                }),
+                            ),
+                            servicesCents: centsSchema,
+                            partsCents: centsSchema,
+                            totalCents: centsSchema,
+                            currentTotalCents: centsSchema,
+                        })
+                        .meta({
+                            examples: [
+                                {
+                                    budgetId:
+                                        '1d2c3b4a-5e6f-4a7b-8c9d-0e1f2a3b4c5d',
+                                    serviceOrderId: exampleOrderId,
+                                    status: 'APPROVED',
+                                    services: [exampleOrderService],
+                                    parts: [exampleSupply],
+                                    servicesCents: 18000,
+                                    partsCents: 17000,
+                                    totalCents: 35000,
+                                    currentTotalCents: 35000,
+                                },
+                            ],
+                        }),
+                },
+            },
+        },
+        async (request) =>
+            useCases.getServiceOrderBudget.execute(request.params),
+    );
+
+    typedApp.post(
+        '/service-orders/:serviceOrderId/services',
+        {
+            preValidation: requireAuth('OS_CONCLUIR'),
+            schema: {
+                tags: ['Service orders'],
+                summary: 'Inclui um serviço do catálogo na OS pendente',
+                description:
+                    'Nome e valor são copiados do catálogo no momento da inclusão. ' +
+                    'Permitido somente enquanto a OS está em avaliação (PENDING).',
+                params: orderParams,
+                body: z
+                    .object({ serviceId: idSchema })
+                    .meta({ examples: [{ serviceId: exampleServiceId }] }),
+                response: { 201: servicesResponse },
+            },
+        },
+        async (request, reply) => {
+            const result = await useCases.addServiceToServiceOrder.execute({
+                ...request.params,
+                ...request.body,
+            });
+            return reply.code(201).send(result);
+        },
+    );
+
+    typedApp.delete(
+        '/service-orders/:serviceOrderId/services/:serviceId',
+        {
+            preValidation: requireAuth('OS_CONCLUIR'),
+            schema: {
+                tags: ['Service orders'],
+                summary: 'Remove um serviço da OS pendente',
+                params: orderParams.extend({ serviceId: idSchema }),
+                response: { 200: servicesResponse },
+            },
+        },
+        async (request) =>
+            useCases.removeServiceFromServiceOrder.execute(request.params),
+    );
+
     typedApp.post(
         '/service-orders/:serviceOrderId/supplies',
         {
@@ -420,6 +565,8 @@ export function registerServiceOrderRoutes(
                             serviceOrderId: z.string(),
                             partCode: z.string(),
                             quantity: z.number(),
+                            description: z.string().nullable(),
+                            unitPriceCents: centsSchema,
                         })
                         .meta({
                             examples: [
@@ -427,6 +574,8 @@ export function registerServiceOrderRoutes(
                                     serviceOrderId: exampleOrderId,
                                     partCode: 'PAST-FREIO-01',
                                     quantity: 2,
+                                    description: 'Pastilha de freio dianteira',
+                                    unitPriceCents: 8500,
                                 },
                             ],
                         }),
@@ -507,20 +656,20 @@ export function registerServiceOrderRoutes(
             schema: {
                 tags: ['Service orders'],
                 params: orderParams,
+                description:
+                    'Gera o orçamento somando os serviços da OS e as peças/insumos ' +
+                    '(quantidade x valor unitário) e envia ao cliente o e-mail com o detalhamento.',
                 body: z
                     .object({
-                        valueCents: valueCentsSchema.optional(),
                         description: z.string().trim().min(1).optional(),
                     })
                     .nullish()
                     .describe(
-                        'Permite informar a descrição da avaliação e o valor em centavos. Campos omitidos preservam os dados da OS.',
+                        'Permite informar a descrição da avaliação. Se omitida, a descrição da OS é preservada.',
                     )
                     .meta({
                         examples: [
-                            { valueCents: 35000 },
                             {
-                                valueCents: 35000,
                                 description:
                                     'Pastilhas desgastadas; substituir o par dianteiro.',
                             },
@@ -530,15 +679,22 @@ export function registerServiceOrderRoutes(
                     200: z
                         .object({
                             status: z.string(),
+                            totalCents: centsSchema,
                         })
-                        .meta({ examples: [{ status: 'AWAITING_APPROVAL' }] }),
+                        .meta({
+                            examples: [
+                                {
+                                    status: 'AWAITING_APPROVAL',
+                                    totalCents: 35000,
+                                },
+                            ],
+                        }),
                 },
             },
         },
         async (request) =>
             useCases.awaitBudgetApproval.execute({
                 serviceOrderId: request.params.serviceOrderId,
-                valueCents: request.body?.valueCents,
                 description: request.body?.description,
             }),
     );
@@ -652,4 +808,6 @@ export function registerServiceOrderRoutes(
                 .send(getApprovalHtml());
         },
     );
+
+    registerServiceCatalogRoutes(app, useCases.catalog, useCases.actorResolver);
 }

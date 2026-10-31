@@ -27,6 +27,14 @@ const registerPartBody = z
             'KILOGRAM',
             'METER',
         ]),
+        unitPriceCents: z
+            .number()
+            .int()
+            .min(0)
+            .max(Number.MAX_SAFE_INTEGER)
+            .describe(
+                'Preço unitário em centavos, usado no orçamento da OS. Exemplo: 8990 = R$ 89,90.',
+            ),
     })
     .meta({
         examples: [
@@ -35,6 +43,7 @@ const registerPartBody = z
                 partCode: 'PAST-FREIO-01',
                 quantity: 10,
                 unitOfMeasure: 'UNIT',
+                unitPriceCents: 8990,
             },
         ],
     });
@@ -84,6 +93,7 @@ const partSupplyResponse = z
         partCode: z.string(),
         quantity: z.number(),
         unitOfMeasure: z.string(),
+        unitPriceCents: z.number(),
     })
     .meta({
         examples: [
@@ -93,6 +103,7 @@ const partSupplyResponse = z
                 partCode: 'PAST-FREIO-01',
                 quantity: 10,
                 unitOfMeasure: 'UNIT',
+                unitPriceCents: 8990,
             },
         ],
     });

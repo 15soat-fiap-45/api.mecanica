@@ -9,6 +9,13 @@ import {
 import type { PartCode } from '../../../shared/domain/part-code.js';
 import { Quantity } from './value-objects/quantity.js';
 import type { UnitOfMeasure } from './value-objects/unit-of-measure.js';
+import { DomainException } from '../../../shared/domain/domain-exception.js';
+
+export class InvalidPartPriceException extends DomainException {
+    constructor() {
+        super('Unit price must be a non-negative integer number of cents');
+    }
+}
 
 export interface PartSupplyProps {
     id?: PartSupplyId | string | undefined;
@@ -16,6 +23,8 @@ export interface PartSupplyProps {
     partCode: PartCode;
     quantity?: Quantity | number | undefined;
     unitOfMeasure: UnitOfMeasure;
+    /** Sale price per unit of measure, in cents. */
+    unitPriceCents?: number | undefined;
     version?: number | undefined;
 }
 
@@ -23,6 +32,7 @@ export class PartSupply extends AggregateRoot<PartSupplyId> {
     description: string;
     partCode: PartCode;
     unitOfMeasure: UnitOfMeasure;
+    readonly unitPriceCents: number;
     private _quantity: Quantity;
 
     constructor(
@@ -32,6 +42,7 @@ export class PartSupply extends AggregateRoot<PartSupplyId> {
         quantity: Quantity | number,
         unitOfMeasure: UnitOfMeasure,
         version = 0,
+        unitPriceCents = 0,
     ) {
         const partSupplyId =
             id instanceof PartSupplyId ? id : new PartSupplyId(id);
@@ -41,6 +52,14 @@ export class PartSupply extends AggregateRoot<PartSupplyId> {
         this._quantity =
             quantity instanceof Quantity ? quantity : Quantity.create(quantity);
         this.unitOfMeasure = unitOfMeasure;
+        if (
+            typeof unitPriceCents !== 'number' ||
+            !Number.isSafeInteger(unitPriceCents) ||
+            unitPriceCents < 0
+        ) {
+            throw new InvalidPartPriceException();
+        }
+        this.unitPriceCents = unitPriceCents;
     }
 
     get quantity(): Quantity {
@@ -59,6 +78,7 @@ export class PartSupply extends AggregateRoot<PartSupplyId> {
             props.quantity ?? Quantity.zero(),
             props.unitOfMeasure,
             props.version ?? 0,
+            props.unitPriceCents ?? 0,
         );
     }
 

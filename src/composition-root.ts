@@ -170,10 +170,12 @@ export function compositionRoot(
     const registerServiceOrder = new RegisterServiceOrder(
         deps.serviceOrderRepository,
         deps.vehicleContacts,
+        deps.serviceRepository,
         eventBus,
     );
     const addSupplyToServiceOrder = new AddSupplyToServiceOrder(
         deps.serviceOrderRepository,
+        deps.partCatalog,
         eventBus,
     );
     const approveBudget = new ApproveBudget(deps.budgetRepository, eventBus);

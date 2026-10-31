@@ -5,7 +5,8 @@ export type ApplicationPermission =
     | 'OS_CRIAR'
     | 'OS_CONCLUIR'
     | 'ESTOQUE_BAIXAR'
-    | 'ESTOQUE_GERENCIAR';
+    | 'ESTOQUE_GERENCIAR'
+    | 'SERVICO_GERENCIAR';
 
 export type ServiceOrderPermission = Exclude<
     ApplicationPermission,

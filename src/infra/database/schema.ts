@@ -51,14 +51,28 @@ export const veiculo = pgTable('veiculo', {
         .references(() => cliente.clienteId),
 });
 
-export const servico = pgTable('servico', {
-    servicoId: bigint('servico_id', { mode: 'number' })
-        .generatedByDefaultAsIdentity()
-        .primaryKey(),
-    titulo: varchar('titulo', { length: 20 }).notNull(),
-    descricao: varchar('descricao', { length: 200 }),
-    valor: bigint('valor', { mode: 'number' }).notNull(),
+export const tipoServico = pgTable('tipo_servico', {
+    id: varchar('id', { length: 36 }).primaryKey(),
+    nome: varchar('nome', { length: 50 }).notNull().unique(),
 });
+
+export const servico = pgTable(
+    'servico',
+    {
+        id: varchar('id', { length: 36 }).primaryKey(),
+        nome: varchar('nome', { length: 100 }).notNull(),
+        descricao: varchar('descricao', { length: 500 }),
+        // Valor em centavos.
+        valor: bigint('valor', { mode: 'number' }).notNull(),
+        tipoServicoId: varchar('tipo_servico_id', { length: 36 })
+            .notNull()
+            .references(() => tipoServico.id),
+    },
+    (table) => [
+        index('servico_tipo_servico_id_idx').on(table.tipoServicoId),
+        check('servico_valor_check', sql`${table.valor} >= 0`),
+    ],
+);
 
 export const stockUnitOfMeasure = pgEnum('stock_unit_of_measure', [
     'UNIT',
@@ -175,7 +189,6 @@ export const serviceOrders = serviceOrderSchema.table(
         id: varchar('id', { length: 36 }).primaryKey(),
         description: text('description').notNull(),
         vehicleId: varchar('vehicle_id', { length: 36 }),
-        valueCents: bigint('value_cents', { mode: 'number' }),
         status: varchar('status', { length: 20 }).notNull().default('PENDING'),
         version: integer('version').notNull().default(0),
     },
@@ -183,10 +196,6 @@ export const serviceOrders = serviceOrderSchema.table(
         check(
             'orders_status_check',
             sql`${table.status} IN ('PENDING', 'AWAITING_APPROVAL', 'REJECTED', 'APPROVED', 'IN_PROGRESS', 'PAUSED', 'COMPLETED', 'DELIVERED', 'CANCELLED')`,
-        ),
-        check(
-            'orders_value_cents_check',
-            sql`${table.valueCents} IS NULL OR ${table.valueCents} >= 0`,
         ),
     ],
 );
@@ -200,10 +209,39 @@ export const serviceOrderSupplies = serviceOrderSchema.table(
         partCode: varchar('part_code', { length: 50 }).notNull(),
         quantity: integer('quantity').notNull(),
         used: boolean('used').notNull().default(false),
+        description: varchar('description', { length: 200 }),
+        unitPriceCents: bigint('unit_price_cents', { mode: 'number' })
+            .notNull()
+            .default(0),
     },
     (table) => [
         primaryKey({ columns: [table.serviceOrderId, table.partCode] }),
         check('supply_items_quantity_check', sql`${table.quantity} > 0`),
+        check(
+            'supply_items_unit_price_cents_check',
+            sql`${table.unitPriceCents} >= 0`,
+        ),
+    ],
+);
+
+// Catalog services included in the order. Name and price are copied from
+// public.servico at inclusion time, so there is no foreign key to it.
+export const serviceOrderServices = serviceOrderSchema.table(
+    'order_services',
+    {
+        serviceOrderId: varchar('service_order_id', { length: 36 })
+            .notNull()
+            .references(() => serviceOrders.id, { onDelete: 'cascade' }),
+        serviceId: varchar('service_id', { length: 36 }).notNull(),
+        name: varchar('name', { length: 100 }).notNull(),
+        priceCents: bigint('price_cents', { mode: 'number' }).notNull(),
+    },
+    (table) => [
+        primaryKey({ columns: [table.serviceOrderId, table.serviceId] }),
+        check(
+            'order_services_price_cents_check',
+            sql`${table.priceCents} >= 0`,
+        ),
     ],
 );
 

@@ -14,8 +14,15 @@ export function budgetVersion(budget: Budget, order: ServiceOrder): string {
                     .map((i) => ({
                         partCode: i.partCode,
                         quantity: i.quantity,
+                        unitPriceCents: i.unitPriceCents,
                     }))
                     .sort((a, b) => a.partCode.localeCompare(b.partCode)),
+                services: order.services
+                    .map((s) => ({
+                        serviceId: s.serviceId,
+                        priceCents: s.priceCents,
+                    }))
+                    .sort((a, b) => a.serviceId.localeCompare(b.serviceId)),
             }),
         )
         .digest('hex');

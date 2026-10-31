@@ -45,7 +45,7 @@ describe('TrackServiceOrder Use Case', () => {
             serviceOrderId: 'os-1',
             description: 'Troca de pastilhas',
             status: 'PENDING',
-            valueCents: null,
+            totalCents: 0,
             history: [
                 { status: 'PENDING', recordedAt: '2026-10-28T12:00:00.000Z' },
             ],

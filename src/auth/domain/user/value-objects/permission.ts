@@ -11,6 +11,7 @@ export class Permission {
     static readonly USUARIO_PRE_CADASTRAR = 'USUARIO_PRE_CADASTRAR';
     static readonly USUARIO_GERENCIAR = 'USUARIO_GERENCIAR';
     static readonly BI_VISUALIZAR = 'BI_VISUALIZAR';
+    static readonly SERVICO_GERENCIAR = 'SERVICO_GERENCIAR';
 
     private constructor(public readonly value: PermissionValue) {
         Object.freeze(this);
@@ -35,4 +36,5 @@ export type PermissionValue =
     | typeof Permission.ESTOQUE_GERENCIAR
     | typeof Permission.USUARIO_PRE_CADASTRAR
     | typeof Permission.USUARIO_GERENCIAR
-    | typeof Permission.BI_VISUALIZAR;
+    | typeof Permission.BI_VISUALIZAR
+    | typeof Permission.SERVICO_GERENCIAR;

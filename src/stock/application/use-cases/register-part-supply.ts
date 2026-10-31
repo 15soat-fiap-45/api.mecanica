@@ -18,6 +18,7 @@ export interface RegisterPartSupplyInput {
     partCode: string;
     quantity?: number | undefined;
     unitOfMeasure: string;
+    unitPriceCents?: number | undefined;
 }
 
 export interface RegisterPartSupplyOutput {
@@ -26,6 +27,7 @@ export interface RegisterPartSupplyOutput {
     partCode: string;
     quantity: number;
     unitOfMeasure: string;
+    unitPriceCents: number;
 }
 
 export class RegisterPartSupply implements UseCase<
@@ -67,6 +69,7 @@ export class RegisterPartSupply implements UseCase<
             partCode,
             quantity: input.quantity,
             unitOfMeasure,
+            unitPriceCents: input.unitPriceCents,
         });
 
         await this.partSupplyRepository.save(partSupply);
@@ -81,6 +84,7 @@ export class RegisterPartSupply implements UseCase<
             partCode: partSupply.partCode.value,
             quantity: partSupply.quantity.value,
             unitOfMeasure: partSupply.unitOfMeasure.value,
+            unitPriceCents: partSupply.unitPriceCents,
         };
     }
 }

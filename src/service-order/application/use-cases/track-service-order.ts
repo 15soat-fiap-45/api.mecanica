@@ -12,7 +12,7 @@ export interface TrackServiceOrderOutput {
     serviceOrderId: string;
     description: string;
     status: string;
-    valueCents: number | null;
+    totalCents: number;
     history: { status: string; recordedAt: string }[];
 }
 
@@ -52,7 +52,7 @@ export class TrackServiceOrder implements UseCase<
             serviceOrderId: order.id.value,
             description: order.description,
             status: order.status.value,
-            valueCents: order.valueCents,
+            totalCents: order.totalCents,
             history: entries.map((entry) => ({
                 status: entry.status,
                 recordedAt: entry.recordedAt.toISOString(),

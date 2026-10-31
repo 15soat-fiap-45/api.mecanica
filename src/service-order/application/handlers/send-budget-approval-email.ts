@@ -65,6 +65,8 @@ export class SendBudgetApprovalEmail {
                 name: contact.name,
                 orderId: order.id.value,
                 description: order.description,
+                services: order.services,
+                parts: order.items,
                 totalCents: budget.totalCents,
                 expiresAt: request.expiresAt,
                 approveUrl: `${base}?acao=aprovar`,

@@ -65,15 +65,16 @@ As regras estão em `src/auth/domain/services/access-policy.ts`:
 | `ATENDENTE`  | `OS_CRIAR`, `CLIENTE_EDITAR`                                                       |
 | `MECANICO`   | `OS_CONCLUIR`, `ESTOQUE_BAIXAR`                                                    |
 | `ESTOQUISTA` | `ESTOQUE_BAIXAR`                                                                   |
-| `GERENTE`    | Todas as anteriores, `USUARIO_PRE_CADASTRAR`, `USUARIO_GERENCIAR`, `BI_VISUALIZAR` |
+| `GERENTE`    | Todas as anteriores, `USUARIO_PRE_CADASTRAR`, `USUARIO_GERENCIAR`, `BI_VISUALIZAR`, `SERVICO_GERENCIAR` |
 
 Nas rotas de Ordem de Serviço, a proteção é realizada de forma desacoplada pela porta `ActorResolver` (`src/service-order/application/ports/actor-resolver.ts`) e seu adaptador `TokenActorResolver` (`src/infra/token-actor-resolver.ts`):
 
 - `OS_CRIAR` (`ATENDENTE`, `GERENTE`): `POST /service-orders`, `POST /service-orders/:serviceOrderId/cancel` e `POST /service-orders/:serviceOrderId/deliver`.
-- `OS_CONCLUIR` (`MECANICO`, `GERENTE`): `PATCH /service-orders/:serviceOrderId/description`, `POST /service-orders/:serviceOrderId/awaiting-approval`, `POST /service-orders/:serviceOrderId/start` e `POST /service-orders/:serviceOrderId/finish`. A descrição pode ser atualizada apenas enquanto a OS está em `PENDING` (avaliação), inclusive no envio para aprovação pelo campo opcional `description`.
+- `OS_CONCLUIR` (`MECANICO`, `GERENTE`): `PATCH /service-orders/:serviceOrderId/description`, `POST /service-orders/:serviceOrderId/services`, `DELETE /service-orders/:serviceOrderId/services/:serviceId`, `POST /service-orders/:serviceOrderId/awaiting-approval`, `POST /service-orders/:serviceOrderId/start` e `POST /service-orders/:serviceOrderId/finish`. A descrição pode ser atualizada apenas enquanto a OS está em `PENDING` (avaliação), inclusive no envio para aprovação pelo campo opcional `description`.
 - `ESTOQUE_BAIXAR` (`MECANICO`, `ESTOQUISTA`, `GERENTE`): `POST /service-orders/:serviceOrderId/supplies` e `POST /service-orders/:serviceOrderId/supplies/:partCode/usage`.
-- Qualquer usuário autenticado ativo (`ATENDENTE`, `MECANICO`, `ESTOQUISTA`, `GERENTE`): `GET /service-orders/:serviceOrderId` e `GET /service-orders/:serviceOrderId/history`.
-- Pública, validada pelo CPF/CNPJ do titular do veículo (`TrackServiceOrder`): `POST /service-orders/:serviceOrderId/tracking`. Retorna status, descrição, valor e histórico de fases sem `changedBy` nem insumos.
+- Qualquer usuário autenticado ativo (`ATENDENTE`, `MECANICO`, `ESTOQUISTA`, `GERENTE`): `GET /service-orders/:serviceOrderId`, `GET /service-orders/:serviceOrderId/history`, `GET /service-orders/:serviceOrderId/budget` e as consultas do catálogo (`GET /service-types`, `GET /service-types/:id`, `GET /services`, `GET /services/:id`).
+- `SERVICO_GERENCIAR` (`GERENTE`): cadastro, alteração e exclusão do catálogo (`POST`/`PUT`/`DELETE` em `/service-types` e `/services`).
+- Pública, validada pelo CPF/CNPJ do titular do veículo (`TrackServiceOrder`): `POST /service-orders/:serviceOrderId/tracking`. Retorna status, descrição, total (`totalCents`) e histórico de fases sem `changedBy` nem insumos.
 
 Nas rotas de Business Intelligence (`/bi/*`), a proteção segue o mesmo padrão via `BiAccessGuard` (`src/business-intelligence/application/ports/bi-access-guard.ts`) e `TokenBiAccessGuard` (`src/infra/token-bi-access-guard.ts`):
 

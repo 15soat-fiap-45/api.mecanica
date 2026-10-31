@@ -4,6 +4,8 @@ import type { EventBus } from '../../../shared/application/event-bus.js';
 import type { UseCase } from '../../../shared/application/use-case.js';
 import { ApplicationException } from '../../../shared/application/application-exception.js';
 import type { VehicleContactLookup } from '../ports/vehicle-contact.js';
+import type { ServiceRepository } from '../../domain/catalog/service.repository.js';
+import { ServiceNotFoundError } from './service-use-cases.js';
 
 export class VehicleNotFoundError extends ApplicationException {
     constructor() {
@@ -14,7 +16,8 @@ export class VehicleNotFoundError extends ApplicationException {
 export interface RegisterServiceOrderInput {
     description: string;
     vehicleId: string;
-    valueCents?: number | null | undefined;
+    /** Catalog services requested by the customer (optional). */
+    serviceIds?: string[] | undefined;
 }
 
 export interface RegisterServiceOrderOutput {
@@ -22,7 +25,8 @@ export interface RegisterServiceOrderOutput {
     description: string;
     status: string;
     vehicleId: string;
-    valueCents: number | null;
+    services: { serviceId: string; name: string; priceCents: number }[];
+    totalCents: number;
 }
 
 export class RegisterServiceOrder implements UseCase<
@@ -32,6 +36,7 @@ export class RegisterServiceOrder implements UseCase<
     constructor(
         private readonly serviceOrderRepository: ServiceOrderRepository,
         private readonly contacts: VehicleContactLookup,
+        private readonly services: ServiceRepository,
         private readonly eventBus?: EventBus,
     ) {}
 
@@ -46,8 +51,16 @@ export class RegisterServiceOrder implements UseCase<
         const serviceOrder = ServiceOrder.register({
             description: input.description,
             vehicleId: input.vehicleId,
-            valueCents: input.valueCents,
         });
+        for (const serviceId of new Set(input.serviceIds ?? [])) {
+            const service = await this.services.findById(serviceId);
+            if (!service) throw new ServiceNotFoundError();
+            serviceOrder.addService({
+                serviceId: service.id.value,
+                name: service.name,
+                priceCents: service.priceCents,
+            });
+        }
 
         await this.serviceOrderRepository.save(serviceOrder);
 
@@ -60,7 +73,12 @@ export class RegisterServiceOrder implements UseCase<
             description: serviceOrder.description,
             status: serviceOrder.status.value,
             vehicleId: input.vehicleId,
-            valueCents: serviceOrder.valueCents,
+            services: serviceOrder.services.map((item) => ({
+                serviceId: item.serviceId,
+                name: item.name,
+                priceCents: item.priceCents,
+            })),
+            totalCents: serviceOrder.totalCents,
         };
     }
 }

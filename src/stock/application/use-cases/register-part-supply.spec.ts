@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { PartSupplyRepository } from '../../domain/part-supply/part-supply.repository.js';
 import type { PartSupply } from '../../domain/part-supply/part-supply.js';
 import { InvalidPartCodeException } from '../../../shared/domain/part-code.js';
+import { InvalidPartPriceException } from '../../domain/part-supply/part-supply.js';
 import type { EventBus } from '../../../shared/application/event-bus.js';
 import {
     RegisterPartSupply,
@@ -15,6 +16,7 @@ describe('RegisterPartSupply Use Case', () => {
         partCode: 'past-freio-01',
         quantity: 10,
         unitOfMeasure: 'unit',
+        unitPriceCents: 8990,
     };
 
     const makeRepository = (
@@ -44,6 +46,7 @@ describe('RegisterPartSupply Use Case', () => {
             partCode: 'PAST-FREIO-01',
             quantity: 10,
             unitOfMeasure: 'UNIT',
+            unitPriceCents: 8990,
         });
         expect(repository.save).toHaveBeenCalledTimes(1);
         expect(eventBus.publish).toHaveBeenCalledTimes(1);
@@ -102,5 +105,17 @@ describe('RegisterPartSupply Use Case', () => {
             useCase.execute({ ...validInput, partCode: 'AB' }),
         ).rejects.toThrow(InvalidPartCodeException);
         expect(repository.save).not.toHaveBeenCalled();
+    });
+
+    it('should default the unit price to zero and reject an invalid price', async () => {
+        const useCase = new RegisterPartSupply(makeRepository());
+        await expect(
+            useCase.execute({ ...validInput, unitPriceCents: undefined }),
+        ).resolves.toMatchObject({
+            unitPriceCents: 0,
+        });
+        await expect(
+            useCase.execute({ ...validInput, unitPriceCents: -1 }),
+        ).rejects.toThrow(InvalidPartPriceException);
     });
 });

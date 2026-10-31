@@ -15,6 +15,7 @@ it.skipIf(!process.env.TEST_DATABASE_URL || !process.env.TEST_MAILHOG_URL)(
             { DrizzleBudgetRepository },
             { DrizzleApprovalRequestRepository },
             { RegistryVehicleContactLookup },
+            { DrizzleServiceTypeRepository, DrizzleServiceRepository },
             { TokenActorResolver },
             { registryCompositionRoot },
             { serviceOrderCompositionRoot },
@@ -31,6 +32,7 @@ it.skipIf(!process.env.TEST_DATABASE_URL || !process.env.TEST_MAILHOG_URL)(
             import('../../../infra/database/service-order/drizzle-budget-repository.js'),
             import('../../../infra/database/service-order/drizzle-approval-request-repository.js'),
             import('../../../infra/registry-vehicle-contact-lookup.js'),
+            import('../../../infra/database/service-order/drizzle-service-catalog-repositories.js'),
             import('../../../infra/token-actor-resolver.js'),
             import('../../../registry/composition-root.js'),
             import('../../composition-root.js'),
@@ -56,6 +58,15 @@ it.skipIf(!process.env.TEST_DATABASE_URL || !process.env.TEST_MAILHOG_URL)(
                 vehicles,
                 customers,
             ),
+            serviceTypeRepository: new DrizzleServiceTypeRepository(),
+            serviceRepository: new DrizzleServiceRepository(),
+            // Stock is not under test here: every part costs R$ 23,45.
+            partCatalog: {
+                findByPartCode: async () => ({
+                    description: 'Pastilha de freio',
+                    unitPriceCents: 2345,
+                }),
+            },
             actorResolver: new TokenActorResolver({
                 verify: async (token) =>
                     token === 'jwt-mecanico' ? 'mecanico@oficina.com' : null,
@@ -128,11 +139,31 @@ it.skipIf(!process.env.TEST_DATABASE_URL || !process.env.TEST_MAILHOG_URL)(
                 plate: process.env.TEST_VEHICLE_PLATE ?? randomPlate(),
             });
             const mechanicHeaders = { authorization: 'Bearer jwt-mecanico' };
+            const serviceType =
+                await serviceOrder.catalog.registerServiceType.execute({
+                    name: `Freios ${randomUUID().slice(0, 8)}`,
+                });
+            const registerService = (name: string, priceCents: number) =>
+                serviceOrder.catalog.registerService.execute({
+                    name,
+                    priceCents,
+                    serviceTypeId: serviceType.id,
+                });
+            // 7655 + 2 x 2345 (parts) = 12345
+            const brakeService = await registerService(
+                'Troca de pastilhas',
+                7655,
+            );
+            const repairService = await registerService('Reparo', 4000);
             const created = await app.inject({
                 method: 'POST',
                 url: '/service-orders',
                 headers: mechanicHeaders,
-                payload: { description: 'Freios', vehicleId: vehicle.id },
+                payload: {
+                    description: 'Freios',
+                    vehicleId: vehicle.id,
+                    serviceIds: [brakeService.id],
+                },
             });
             expect(created.statusCode).toBe(201);
             const orderId = created.json().id as string;
@@ -149,7 +180,6 @@ it.skipIf(!process.env.TEST_DATABASE_URL || !process.env.TEST_MAILHOG_URL)(
                 method: 'POST',
                 url: `/service-orders/${orderId}/awaiting-approval`,
                 headers: mechanicHeaders,
-                payload: { valueCents: 12345 },
             });
             expect(awaiting.statusCode).toBe(200);
             const [quotedBudget] = await db
@@ -229,7 +259,11 @@ it.skipIf(!process.env.TEST_DATABASE_URL || !process.env.TEST_MAILHOG_URL)(
                     method: 'POST',
                     url: '/service-orders',
                     headers: mechanicHeaders,
-                    payload: { description: 'Reparo', vehicleId: vehicle.id },
+                    payload: {
+                        description: 'Reparo',
+                        vehicleId: vehicle.id,
+                        serviceIds: [repairService.id],
+                    },
                 });
                 expect(response.statusCode).toBe(201);
                 const id = response.json().id as string;
@@ -237,7 +271,6 @@ it.skipIf(!process.env.TEST_DATABASE_URL || !process.env.TEST_MAILHOG_URL)(
                     method: 'POST',
                     url: `/service-orders/${id}/awaiting-approval`,
                     headers: mechanicHeaders,
-                    payload: { valueCents: 4000 },
                 });
                 expect(waiting.statusCode).toBe(200);
                 return id;

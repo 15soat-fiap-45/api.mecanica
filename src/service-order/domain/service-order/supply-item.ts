@@ -19,6 +19,9 @@ export interface SupplyItemProps {
     partCode: string;
     quantity: number;
     used?: boolean | undefined;
+    description?: string | null | undefined;
+    /** Unit price in cents, copied from Stock when the part is included. */
+    unitPriceCents?: number | undefined;
 }
 
 /**
@@ -28,11 +31,15 @@ export interface SupplyItemProps {
 export class SupplyItem {
     readonly partCode: string;
     readonly quantity: number;
+    readonly description: string | null;
+    readonly unitPriceCents: number;
     private _used: boolean;
 
     private constructor(props: SupplyItemProps) {
         this.partCode = props.partCode;
         this.quantity = props.quantity;
+        this.description = props.description ?? null;
+        this.unitPriceCents = props.unitPriceCents ?? 0;
         this._used = props.used ?? false;
     }
 
@@ -53,11 +60,27 @@ export class SupplyItem {
                 'Quantity must be a positive integer',
             );
         }
+        const unitPriceCents = props.unitPriceCents ?? 0;
+        if (
+            typeof unitPriceCents !== 'number' ||
+            !Number.isSafeInteger(unitPriceCents) ||
+            unitPriceCents < 0
+        ) {
+            throw new InvalidSupplyItemException(
+                'Unit price must be a non-negative integer number of cents',
+            );
+        }
         return new SupplyItem({
             partCode: partCode.value.value,
             quantity: props.quantity,
             used: props.used,
+            description: props.description?.trim() || null,
+            unitPriceCents,
         });
+    }
+
+    get totalCents(): number {
+        return this.quantity * this.unitPriceCents;
     }
 
     get used(): boolean {
