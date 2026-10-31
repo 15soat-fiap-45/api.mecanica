@@ -13,6 +13,7 @@ import {
     type ServiceCatalogUseCases,
 } from './catalog-composition.js';
 import { GetServiceOrderBudget } from './application/use-cases/get-service-order-budget.js';
+import { ListServiceOrders } from './application/use-cases/list-service-orders.js';
 import {
     AddServiceToServiceOrder,
     RemoveServiceFromServiceOrder,
@@ -71,6 +72,7 @@ export interface ServiceOrderUseCases {
     addServiceToServiceOrder: AddServiceToServiceOrder;
     removeServiceFromServiceOrder: RemoveServiceFromServiceOrder;
     getServiceOrderBudget: GetServiceOrderBudget;
+    listServiceOrders: ListServiceOrders;
     registerServiceOrder: UseCase<
         RegisterServiceOrderInput,
         RegisterServiceOrderOutput
@@ -192,6 +194,7 @@ export function serviceOrderCompositionRoot(
             deps.serviceOrderRepository,
             deps.budgetRepository,
         ),
+        listServiceOrders: new ListServiceOrders(deps.serviceOrderRepository),
         addSupplyToServiceOrder: new AddSupplyToServiceOrder(
             deps.serviceOrderRepository,
             deps.partCatalog,

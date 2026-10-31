@@ -1,7 +1,9 @@
-import { and, asc, eq, isNull, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { actorContext } from '../../../service-order/application/ports/actor-resolver.js';
 import type { Budget } from '../../../service-order/domain/budget/budget.js';
 import type {
+    ServiceOrderListFilter,
+    ServiceOrderListPage,
     ServiceOrderRepository,
     ServiceOrderStatusHistoryEntry,
 } from '../../../service-order/domain/service-order/service-order.repository.js';
@@ -188,5 +190,68 @@ export class DrizzleServiceOrderRepository implements ServiceOrderRepository {
             changedBy: row.changedBy,
             recordedAt: row.recordedAt,
         }));
+    }
+
+    async list(filter: ServiceOrderListFilter): Promise<ServiceOrderListPage> {
+        // The order has no creation column: it opens with its first status record.
+        // orders.id is qualified by hand: inside the select list Drizzle renders it
+        // unqualified, which the subquery would resolve to h.id.
+        const openedAt = sql`(
+            SELECT min(h.recorded_at)
+            FROM service_order.order_status_history h
+            WHERE h.order_id = service_order.orders.id
+        )`.mapWith(orderStatusHistory.recordedAt);
+        const where = and(
+            filter.statuses?.length
+                ? inArray(serviceOrders.status, filter.statuses)
+                : undefined,
+            filter.vehicleId
+                ? eq(serviceOrders.vehicleId, filter.vehicleId)
+                : undefined,
+        );
+
+        const [rows, counted] = await Promise.all([
+            this.database
+                .select({ order: serviceOrders, openedAt })
+                .from(serviceOrders)
+                .where(where)
+                .orderBy(
+                    sql`${openedAt} DESC NULLS LAST`,
+                    asc(serviceOrders.id),
+                )
+                .limit(filter.limit)
+                .offset(filter.offset),
+            this.database
+                .select({ total: sql<number>`count(*)`.mapWith(Number) })
+                .from(serviceOrders)
+                .where(where),
+        ]);
+        const total = counted[0]?.total ?? 0;
+        const ids = rows.map((row) => row.order.id);
+        if (ids.length === 0) return { items: [], total };
+
+        const [items, services] = await Promise.all([
+            this.database
+                .select()
+                .from(serviceOrderSupplies)
+                .where(inArray(serviceOrderSupplies.serviceOrderId, ids))
+                .orderBy(asc(serviceOrderSupplies.partCode)),
+            this.database
+                .select()
+                .from(serviceOrderServices)
+                .where(inArray(serviceOrderServices.serviceOrderId, ids))
+                .orderBy(asc(serviceOrderServices.name)),
+        ]);
+        return {
+            items: rows.map((row) => ({
+                order: serviceOrderFromRow(
+                    row.order,
+                    items.filter((i) => i.serviceOrderId === row.order.id),
+                    services.filter((s) => s.serviceOrderId === row.order.id),
+                ),
+                openedAt: row.openedAt ?? null,
+            })),
+            total,
+        };
     }
 }
