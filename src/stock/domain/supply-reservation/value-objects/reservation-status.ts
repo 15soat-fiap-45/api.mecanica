@@ -69,6 +69,11 @@ export class ReservationStatus {
         return this._value;
     }
 
+    /** PENDING or CONFIRMED: the quantity is still held for an order. */
+    isOpen(): boolean {
+        return this._value === 'PENDING' || this._value === 'CONFIRMED';
+    }
+
     canTransitionTo(next: ReservationStatusType): boolean {
         return TRANSITIONS[this._value].includes(next);
     }

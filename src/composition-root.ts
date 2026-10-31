@@ -7,6 +7,12 @@ import { RegisterStockEntry } from './stock/application/use-cases/register-stock
 import { ReserveSupply } from './stock/application/use-cases/reserve-supply.js';
 import { WriteOffStock } from './stock/application/use-cases/write-off-stock.js';
 import { CancelReservation } from './stock/application/use-cases/cancel-reservation.js';
+import {
+    DeactivatePartSupply,
+    FindPartSupply,
+    ListPartSupplies,
+    UpdatePartSupply,
+} from './stock/application/use-cases/manage-part-supplies.js';
 import { CheckAvailability } from './stock/application/handlers/check-availability.js';
 import type { AdditionalSuppliesIncluded } from './stock/application/handlers/check-availability.js';
 import { WriteOffReservedSupplies } from './stock/application/handlers/write-off-reserved-supplies.js';
@@ -63,6 +69,10 @@ export interface StockUseCases {
         CancelReservationInput,
         CancelReservationOutput
     >;
+    listPartSupplies: ListPartSupplies;
+    findPartSupply: FindPartSupply;
+    updatePartSupply: UpdatePartSupply;
+    deactivatePartSupply: DeactivatePartSupply;
 }
 import type { BusinessIntelligenceDependencies } from './business-intelligence/composition-root.js';
 export type { BusinessIntelligenceDependencies } from './business-intelligence/composition-root.js';
@@ -142,6 +152,13 @@ export function stockCompositionRoot(
         reserveSupply,
         writeOffStock,
         cancelReservation,
+        listPartSupplies: new ListPartSupplies(deps.partSupplyRepository),
+        findPartSupply: new FindPartSupply(deps.partSupplyRepository),
+        updatePartSupply: new UpdatePartSupply(deps.partSupplyRepository),
+        deactivatePartSupply: new DeactivatePartSupply(
+            deps.partSupplyRepository,
+            deps.reservationRepository,
+        ),
     };
 }
 

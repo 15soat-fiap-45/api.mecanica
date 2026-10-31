@@ -17,6 +17,23 @@ export class InvalidPartPriceException extends DomainException {
     }
 }
 
+export class InvalidPartDescriptionException extends DomainException {
+    constructor() {
+        super('Part/supply description must not be empty');
+    }
+}
+
+function assertValidPrice(unitPriceCents: number): number {
+    if (
+        typeof unitPriceCents !== 'number' ||
+        !Number.isSafeInteger(unitPriceCents) ||
+        unitPriceCents < 0
+    ) {
+        throw new InvalidPartPriceException();
+    }
+    return unitPriceCents;
+}
+
 export interface PartSupplyProps {
     id?: PartSupplyId | string | undefined;
     description: string;
@@ -25,14 +42,23 @@ export interface PartSupplyProps {
     unitOfMeasure: UnitOfMeasure;
     /** Sale price per unit of measure, in cents. */
     unitPriceCents?: number | undefined;
+    /** Deactivated parts keep their history but leave the catalog. */
+    active?: boolean | undefined;
     version?: number | undefined;
+}
+
+export interface PartSupplyDetails {
+    description: string;
+    unitOfMeasure: UnitOfMeasure;
+    unitPriceCents: number;
 }
 
 export class PartSupply extends AggregateRoot<PartSupplyId> {
     description: string;
     partCode: PartCode;
     unitOfMeasure: UnitOfMeasure;
-    readonly unitPriceCents: number;
+    private _unitPriceCents: number;
+    private _active: boolean;
     private _quantity: Quantity;
 
     constructor(
@@ -43,6 +69,7 @@ export class PartSupply extends AggregateRoot<PartSupplyId> {
         unitOfMeasure: UnitOfMeasure,
         version = 0,
         unitPriceCents = 0,
+        active = true,
     ) {
         const partSupplyId =
             id instanceof PartSupplyId ? id : new PartSupplyId(id);
@@ -52,14 +79,33 @@ export class PartSupply extends AggregateRoot<PartSupplyId> {
         this._quantity =
             quantity instanceof Quantity ? quantity : Quantity.create(quantity);
         this.unitOfMeasure = unitOfMeasure;
-        if (
-            typeof unitPriceCents !== 'number' ||
-            !Number.isSafeInteger(unitPriceCents) ||
-            unitPriceCents < 0
-        ) {
-            throw new InvalidPartPriceException();
-        }
-        this.unitPriceCents = unitPriceCents;
+        this._unitPriceCents = assertValidPrice(unitPriceCents);
+        this._active = active;
+    }
+
+    get unitPriceCents(): number {
+        return this._unitPriceCents;
+    }
+
+    get active(): boolean {
+        return this._active;
+    }
+
+    /** Catalog data only: the balance changes through stock movements. */
+    updateDetails(details: PartSupplyDetails): void {
+        const unitPriceCents = assertValidPrice(details.unitPriceCents);
+        const description =
+            typeof details.description === 'string'
+                ? details.description.trim()
+                : '';
+        if (!description) throw new InvalidPartDescriptionException();
+        this.description = description;
+        this.unitOfMeasure = details.unitOfMeasure;
+        this._unitPriceCents = unitPriceCents;
+    }
+
+    deactivate(): void {
+        this._active = false;
     }
 
     get quantity(): Quantity {
@@ -79,6 +125,7 @@ export class PartSupply extends AggregateRoot<PartSupplyId> {
             props.unitOfMeasure,
             props.version ?? 0,
             props.unitPriceCents ?? 0,
+            props.active ?? true,
         );
     }
 
